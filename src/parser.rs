@@ -49,6 +49,7 @@ impl Parser {
         self.expect(TokenKind::Entry)?;
         self.expect(TokenKind::Colon)?;
         let entry = self.expect_ident()?;
+        self.expect(TokenKind::Semicolon)?;
 
         let end = self.cur_span();
         self.expect(TokenKind::RBrace)?;
@@ -436,7 +437,10 @@ impl Parser {
     fn parse_transfer(&mut self) -> Result<Transfer, ParseError> {
         if self.check(TokenKind::Next) {
             self.advance();
-            Ok(Transfer::Next)
+            self.expect(TokenKind::LParen)?;
+            let target = self.expect_ident()?;
+            self.expect(TokenKind::RParen)?;
+            Ok(Transfer::Next(target))
         } else if self.check(TokenKind::Return) {
             self.advance();
             Ok(Transfer::Return)
@@ -475,13 +479,9 @@ impl Parser {
 
     fn parse_cond_expr(&mut self) -> Result<CondExpr, ParseError> {
         let start = self.cur_span();
-        let lhs = self.expect_ident()?;
+        let lhs = self.parse_expr()?;
         let op = self.parse_cmp_op()?;
-        let rhs = if self.is_literal() {
-            CondOperand::Literal(self.parse_literal()?)
-        } else {
-            CondOperand::Ident(self.expect_ident()?)
-        };
+        let rhs = self.parse_expr()?;
         Ok(CondExpr {
             span: start.merge(self.prev_span()),
             lhs,
@@ -510,41 +510,66 @@ impl Parser {
         Ok(Case { label, target })
     }
 
-    // ──────────────────── Expressions ────────────────────
+    // ──────────────────── Expressions (precedence climbing) ────────────────────
 
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
+        self.parse_expr_bp(0)
+    }
+
+    /// Precedence climbing: higher `min_bp` binds tighter.
+    /// +/- → bp 1, *// /% → bp 2
+    fn parse_expr_bp(&mut self, min_bp: u8) -> Result<Expr, ParseError> {
+        let mut lhs = self.parse_expr_atom()?;
+
+        loop {
+            let (op, bp) = match self.current().kind {
+                TokenKind::Plus => (ArithOp::Add, 1),
+                TokenKind::Minus => (ArithOp::Sub, 1),
+                TokenKind::Star => (ArithOp::Mul, 2),
+                TokenKind::Slash => (ArithOp::Div, 2),
+                TokenKind::Percent => (ArithOp::Mod, 2),
+                _ => break,
+            };
+            if bp < min_bp {
+                break;
+            }
+            self.advance();
+            let rhs = self.parse_expr_bp(bp + 1)?;
+            lhs = Expr::BinOp(Box::new(lhs), op, Box::new(rhs));
+        }
+
+        Ok(lhs)
+    }
+
+    fn parse_expr_atom(&mut self) -> Result<Expr, ParseError> {
+        // Unary minus
+        if self.check(TokenKind::Minus) {
+            self.advance();
+            let inner = self.parse_expr_atom()?;
+            return Ok(Expr::UnaryMinus(Box::new(inner)));
+        }
+
+        // Parenthesized expression
+        if self.check(TokenKind::LParen) {
+            self.advance();
+            let inner = self.parse_expr()?;
+            self.expect(TokenKind::RParen)?;
+            return Ok(Expr::Paren(Box::new(inner)));
+        }
+
+        // Literals (int, float, bool, string, compound)
         if self.is_literal() {
             let lit = self.parse_literal()?;
             return Ok(Expr::Literal(lit));
         }
-        let ident = self.expect_ident()?;
-        if self.is_arith_op() {
-            let op = self.parse_arith_op()?;
-            let rhs = self.parse_literal()?;
-            Ok(Expr::BinOp(ident, op, rhs))
-        } else {
-            Ok(Expr::Ident(ident))
-        }
-    }
 
-    fn is_arith_op(&self) -> bool {
-        matches!(
-            self.current().kind,
-            TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash | TokenKind::Percent
-        )
-    }
-
-    fn parse_arith_op(&mut self) -> Result<ArithOp, ParseError> {
-        let kind = self.current().kind.clone();
-        self.advance();
-        match kind {
-            TokenKind::Plus => Ok(ArithOp::Add),
-            TokenKind::Minus => Ok(ArithOp::Sub),
-            TokenKind::Star => Ok(ArithOp::Mul),
-            TokenKind::Slash => Ok(ArithOp::Div),
-            TokenKind::Percent => Ok(ArithOp::Mod),
-            _ => unreachable!(),
+        // Identifier
+        if matches!(self.current().kind, TokenKind::Ident(_)) {
+            let ident = self.expect_ident()?;
+            return Ok(Expr::Ident(ident));
         }
+
+        Err(self.error("expected expression"))
     }
 
     fn is_literal(&self) -> bool {

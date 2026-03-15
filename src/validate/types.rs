@@ -46,8 +46,6 @@ fn check_init_values(program: &Program, source: &str, diags: &mut Vec<Diagnostic
             let expected = match vt {
                 VarType::Var(bt) | VarType::Atomic(bt) => bt,
             };
-            // Init value is not stored in AST currently; skip deep check.
-            // This would require extending the parser to keep the init literal.
             let _ = expected;
         }
     }
@@ -63,25 +61,46 @@ fn check_branch_conditions(
     for f in &program.functions {
         for stmt in &f.statements {
             if let Transfer::Branch(ref cond, _, _) = stmt.transfer {
-                let lhs_name = &cond.lhs.value;
-                if let Some(rt) = resource_types.get(lhs_name) {
-                    let lhs_type = res_type_to_base(rt);
-                    if let Some(bt) = lhs_type {
-                        if !is_comparable_to_bool(&bt, &cond.op, &cond.rhs) {
-                            diags.push(
-                                Diagnostic::error(
-                                    "E201",
-                                    format!(
-                                        "branch condition does not produce Bool: '{lhs_name}' is of type {bt:?}"
-                                    ),
-                                )
-                                .with_span(cond.span, source)
-                                .with_fix("use a comparison operator (==, !=, >, <, >=, <=) that yields Bool"),
-                            );
-                        }
+                // With the v0.2 grammar, cond_expr is always `expr cmp_op expr`,
+                // which always produces Bool. We only flag E201 when operands are
+                // structurally incomparable types (Struct, Array).
+                let lhs_type = infer_expr_resource_type(&cond.lhs, resource_types);
+                let rhs_type = infer_expr_resource_type(&cond.rhs, resource_types);
+
+                for bt in [&lhs_type, &rhs_type].into_iter().flatten() {
+                    if matches!(bt, BaseType::Struct(_) | BaseType::Array(_, _)) {
+                        diags.push(
+                            Diagnostic::error(
+                                "E201",
+                                format!(
+                                    "branch condition uses incomparable type {bt:?}"
+                                ),
+                            )
+                            .with_span(cond.span, source)
+                            .with_fix("use a comparable type (Int, Float, Bool, String, Enum)"),
+                        );
+                        break;
                     }
                 }
             }
+        }
+    }
+}
+
+/// Try to infer the base type of an expression by looking up identifiers
+/// in the resource type map.
+fn infer_expr_resource_type(
+    expr: &Expr,
+    resource_types: &HashMap<String, ResType>,
+) -> Option<BaseType> {
+    match expr {
+        Expr::Ident(id) => {
+            resource_types.get(&id.value).and_then(res_type_to_base)
+        }
+        Expr::Literal(lit) => lit.infer_base_type(),
+        Expr::BinOp(lhs, _, _) => infer_expr_resource_type(lhs, resource_types),
+        Expr::Paren(inner) | Expr::UnaryMinus(inner) => {
+            infer_expr_resource_type(inner, resource_types)
         }
     }
 }
@@ -201,11 +220,7 @@ fn check_expr_type(
     expr: &Expr,
     expected: &BaseType,
 ) {
-    let inferred = match expr {
-        Expr::Literal(lit) => lit.infer_base_type(),
-        Expr::BinOp(_, _, lit) => lit.infer_base_type(),
-        Expr::Ident(_) => None,
-    };
+    let inferred = expr.infer_base_type();
     if let Some(ref actual) = inferred {
         if actual != expected {
             diags.push(
@@ -225,12 +240,4 @@ fn res_type_to_base(rt: &ResType) -> Option<BaseType> {
         ResType::Var(bt) | ResType::Atomic(bt) | ResType::Channel(bt) => Some(bt.clone()),
         _ => None,
     }
-}
-
-fn is_comparable_to_bool(bt: &BaseType, _op: &CmpOp, _rhs: &CondOperand) -> bool {
-    // Any comparison on numeric/bool/string/enum types produces Bool.
-    matches!(
-        bt,
-        BaseType::Int | BaseType::Float | BaseType::Bool | BaseType::String | BaseType::Enum(_)
-    )
 }

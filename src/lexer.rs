@@ -41,6 +41,14 @@ impl<'src> Lexer<'src> {
             while self.pos < self.source.len() && self.source[self.pos].is_ascii_whitespace() {
                 self.pos += 1;
             }
+            // # line comments
+            if self.pos < self.source.len() && self.source[self.pos] == b'#' {
+                while self.pos < self.source.len() && self.source[self.pos] != b'\n' {
+                    self.pos += 1;
+                }
+                continue;
+            }
+            // // line comments (legacy)
             if self.pos + 1 < self.source.len()
                 && self.source[self.pos] == b'/'
                 && self.source[self.pos + 1] == b'/'
@@ -50,6 +58,7 @@ impl<'src> Lexer<'src> {
                 }
                 continue;
             }
+            // /* */ block comments (legacy)
             if self.pos + 1 < self.source.len()
                 && self.source[self.pos] == b'/'
                 && self.source[self.pos + 1] == b'*'

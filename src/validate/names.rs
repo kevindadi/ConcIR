@@ -156,9 +156,10 @@ fn check_sid_references(program: &Program, source: &str, diags: &mut Vec<Diagnos
         let sids: HashSet<&str> = f.statements.iter().map(|s| s.sid.value.as_str()).collect();
         for stmt in &f.statements {
             let targets: Vec<&Spanned<String>> = match &stmt.transfer {
-                Transfer::Branch(_, t, f) => vec![t, f],
+                Transfer::Next(t) => vec![t],
+                Transfer::Branch(_, t, fl) => vec![t, fl],
                 Transfer::Switch(_, cases) => cases.iter().map(|c| &c.target).collect(),
-                _ => vec![],
+                Transfer::Return => vec![],
             };
             for t in targets {
                 if !sids.contains(t.value.as_str()) {

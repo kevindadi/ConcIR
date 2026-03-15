@@ -63,9 +63,9 @@ fn build_cfg(f: &Function) -> Cfg {
 
     for (i, stmt) in f.statements.iter().enumerate() {
         match &stmt.transfer {
-            Transfer::Next => {
-                if i + 1 < n {
-                    successors[i].push(i + 1);
+            Transfer::Next(ref target) => {
+                if let Some(&ti) = sid_to_idx.get(&target.value) {
+                    successors[i].push(ti);
                 }
             }
             Transfer::Branch(_, t, fl) => {

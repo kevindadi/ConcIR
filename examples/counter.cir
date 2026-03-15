@@ -1,3 +1,4 @@
+# CIR v0.2 — valid counter example
 program counter_example {
     resources {
         sync mtx : Mutex(Sync);
@@ -11,27 +12,27 @@ program counter_example {
     }
 
     fn normal main {
-        s1: spawn(worker) => next;
-        s2: spawn(worker2) => next;
-        s3: join(worker) => next;
-        s4: join(worker2) => next;
-        s5: return => return;
+        s0: spawn(worker) => next(s1);
+        s1: spawn(worker2) => next(s2);
+        s2: join(worker) => next(s3);
+        s3: join(worker2) => next(s4);
+        s4: return => return;
     }
 
     fn normal worker {
-        w1: res_op(mtx, lock) => next;
-        w2: res_op(counter, read) => next;
-        w3: res_op(counter, write(counter + 1)) => next;
-        w4: res_op(mtx, drop) => next;
-        w5: res_op(ch, send(42)) => next;
-        w6: return => return;
+        s0: res_op(mtx, lock) => next(s1);
+        s1: res_op(counter, read) => next(s2);
+        s2: res_op(counter, write(counter + 1)) => next(s3);
+        s3: res_op(mtx, drop) => next(s4);
+        s4: res_op(ch, send(42)) => next(s5);
+        s5: return => return;
     }
 
     fn async worker2 {
-        a1: res_op(flag, store(true)) => next;
-        a2: res_op(ch, recv) => next;
-        a3: return => return;
+        s0: res_op(flag, store(true)) => next(s1);
+        s1: res_op(ch, recv) => next(s2);
+        s2: return => return;
     }
 
-    entry: main
+    entry: main;
 }

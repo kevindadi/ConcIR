@@ -147,7 +147,7 @@ pub enum Action {
 
 #[derive(Debug, Clone)]
 pub enum Transfer {
-    Next,
+    Next(Spanned<String>),
     Branch(CondExpr, Spanned<String>, Spanned<String>),
     Switch(Spanned<String>, Vec<Case>),
     Return,
@@ -155,16 +155,10 @@ pub enum Transfer {
 
 #[derive(Debug, Clone)]
 pub struct CondExpr {
-    pub lhs: Spanned<String>,
+    pub lhs: Expr,
     pub op: CmpOp,
-    pub rhs: CondOperand,
+    pub rhs: Expr,
     pub span: Span,
-}
-
-#[derive(Debug, Clone)]
-pub enum CondOperand {
-    Literal(Literal),
-    Ident(Spanned<String>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,7 +183,20 @@ pub struct Case {
 pub enum Expr {
     Literal(Literal),
     Ident(Spanned<String>),
-    BinOp(Spanned<String>, ArithOp, Literal),
+    BinOp(Box<Expr>, ArithOp, Box<Expr>),
+    Paren(Box<Expr>),
+    UnaryMinus(Box<Expr>),
+}
+
+impl Expr {
+    pub fn infer_base_type(&self) -> Option<BaseType> {
+        match self {
+            Expr::Literal(lit) => lit.infer_base_type(),
+            Expr::Ident(_) => None,
+            Expr::BinOp(lhs, _, _) => lhs.infer_base_type(),
+            Expr::Paren(inner) | Expr::UnaryMinus(inner) => inner.infer_base_type(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
