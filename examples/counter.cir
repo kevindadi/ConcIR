@@ -1,0 +1,37 @@
+program counter_example {
+    resources {
+        sync mtx : Mutex(Sync);
+        var counter : Var<Int> = 0;
+        sync ch : Channel(Async, Int);
+        var flag : Atomic<Bool> = false;
+    }
+
+    protection {
+        counter -> mtx;
+    }
+
+    fn normal main {
+        s1: spawn(worker) => next;
+        s2: spawn(worker2) => next;
+        s3: join(worker) => next;
+        s4: join(worker2) => next;
+        s5: return => return;
+    }
+
+    fn normal worker {
+        w1: res_op(mtx, lock) => next;
+        w2: res_op(counter, read) => next;
+        w3: res_op(counter, write(counter + 1)) => next;
+        w4: res_op(mtx, drop) => next;
+        w5: res_op(ch, send(42)) => next;
+        w6: return => return;
+    }
+
+    fn async worker2 {
+        a1: res_op(flag, store(true)) => next;
+        a2: res_op(ch, recv) => next;
+        a3: return => return;
+    }
+
+    entry: main
+}

@@ -1,0 +1,49 @@
+program error_example {
+    resources {
+        sync mtx : Mutex(Sync);
+        sync mtx : Mutex(Async);
+        var counter : Var<Int> = 0;
+        var unprotected_var : Var<Int> = 0;
+        var flag : Atomic<Bool> = false;
+        sync sem : Semaphore(Sync, 3);
+    }
+
+    protection {
+        counter -> mtx;
+        flag -> sem;
+    }
+
+    fn normal main {
+        s1: spawn(worker) => next;
+        s1: spawn(missing_fn) => next;
+        s2: res_op(nonexistent, lock) => next;
+        s3: join(worker) => next;
+        s4: await(worker) => next;
+        s5: return => return;
+    }
+
+    fn normal worker {
+        w1: res_op(counter, read) => next;
+        w2: res_op(counter, write(3.14)) => next;
+        w3: res_op(sem, lock) => next;
+        w4: res_op(flag, lock) => next;
+        w5: res_op(mtx, lock) => next;
+        w6: return => return;
+    }
+
+    fn async async_worker {
+        a1: res_op(mtx, lock) => next;
+        a2: spawn_async(helper) => next;
+        a3: await(helper) => next;
+        a4: return => return;
+    }
+
+    fn_summary helper {
+        reads: [counter, ghost_resource];
+        writes: [];
+        callees: [];
+        has_concurrency: false;
+    }
+
+    entry: main
+}
