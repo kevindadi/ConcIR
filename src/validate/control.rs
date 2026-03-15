@@ -5,42 +5,46 @@ use crate::diagnostic::Diagnostic;
 use crate::validate::types::{build_resource_type_map, ResType};
 
 /// E6xx: Control flow checks.
-pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
+pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let rt_map = build_resource_type_map(program);
 
-    for f in &program.functions {
-        if f.statements.is_empty() {
+    for (fi, f) in program.functions.iter().enumerate() {
+        if f.body.is_empty() {
             continue;
         }
 
         let sid_to_idx: HashMap<&str, usize> = f
-            .statements
+            .body
             .iter()
             .enumerate()
-            .map(|(i, s)| (s.sid.value.as_str(), i))
+            .map(|(i, s)| (s.sid.as_str(), i))
             .collect();
 
-        let n = f.statements.len();
+        let n = f.body.len();
         let mut successors = vec![Vec::new(); n];
 
-        for (i, stmt) in f.statements.iter().enumerate() {
+        for (i, stmt) in f.body.iter().enumerate() {
             match &stmt.transfer {
                 Transfer::Next(ref target) => {
-                    if let Some(&ti) = sid_to_idx.get(target.value.as_str()) {
+                    if let Some(&ti) = sid_to_idx.get(target.as_str()) {
                         successors[i].push(ti);
                     }
                 }
-                Transfer::Branch(_, t, fl) => {
-                    if let Some(&ti) = sid_to_idx.get(t.value.as_str()) {
+                Transfer::Branch {
+                    true_target,
+                    false_target,
+                    ..
+                } => {
+                    if let Some(&ti) = sid_to_idx.get(true_target.as_str()) {
                         successors[i].push(ti);
                     }
-                    if let Some(&fi) = sid_to_idx.get(fl.value.as_str()) {
-                        successors[i].push(fi);
+                    if let Some(&fli) = sid_to_idx.get(false_target.as_str()) {
+                        successors[i].push(fli);
                     }
                 }
-                Transfer::Switch(_, cases) => {
-                    for c in cases {
-                        if let Some(&ci) = sid_to_idx.get(c.target.value.as_str()) {
+                Transfer::Switch { cases, .. } => {
+                    for (_, target) in cases {
+                        if let Some(&ci) = sid_to_idx.get(target.as_str()) {
                             successors[i].push(ci);
                         }
                     }
@@ -49,11 +53,12 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
             }
         }
 
-        check_reachability(f, &successors, n, source, diags);
-        check_return_paths(f, &successors, n, source, diags);
-        check_branch_targets_same(f, source, diags);
-        check_switch_exhaustive(f, &rt_map, source, diags);
-        check_infinite_loop(f, &successors, n, source, diags);
+        let fn_path = format!("functions[{fi}]");
+        check_reachability(f, &successors, n, &fn_path, diags);
+        check_return_paths(f, &successors, n, &fn_path, diags);
+        check_branch_targets_same(f, &fn_path, diags);
+        check_switch_exhaustive(f, &rt_map, &fn_path, diags);
+        check_infinite_loop(f, &successors, n, &fn_path, diags);
     }
 }
 
@@ -62,7 +67,7 @@ fn check_reachability(
     f: &Function,
     successors: &[Vec<usize>],
     n: usize,
-    source: &str,
+    fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
     let mut reachable = vec![false; n];
@@ -86,10 +91,10 @@ fn check_reachability(
                     "E601",
                     format!(
                         "unreachable statement '{}' in function '{}'",
-                        f.statements[i].sid.value, f.name.value
+                        f.body[i].sid, f.name
                     ),
                 )
-                .with_span(f.statements[i].span, source)
+                .with_path(format!("{fn_path}.body[{i}]"))
                 .with_fix("remove the statement or fix control flow to reach it"),
             );
         }
@@ -101,15 +106,13 @@ fn check_return_paths(
     f: &Function,
     successors: &[Vec<usize>],
     n: usize,
-    source: &str,
+    fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
-    // A statement is a "sink" if it has no successors in the CFG
-    for i in 0..n {
-        let stmt = &f.statements[i];
-        let is_return =
-            matches!(stmt.op, Op::Return) || matches!(stmt.transfer, Transfer::Return);
-        let has_no_successors = successors[i].is_empty();
+    for (i, succs) in successors.iter().enumerate().take(n) {
+        let stmt = &f.body[i];
+        let is_return = matches!(stmt.op, Op::Return) || matches!(stmt.transfer, Transfer::Return);
+        let has_no_successors = succs.is_empty();
 
         if has_no_successors && !is_return {
             diags.push(
@@ -117,30 +120,35 @@ fn check_return_paths(
                     "E602",
                     format!(
                         "function '{}' has a path ending at '{}' without return",
-                        f.name.value, stmt.sid.value
+                        f.name, stmt.sid
                     ),
                 )
-                .with_span(stmt.span, source)
-                .with_fix("add 'return => return;' at the end of this path"),
+                .with_path(format!("{fn_path}.body[{i}]"))
+                .with_fix("add a return statement at the end of this path"),
             );
         }
     }
 }
 
 /// E603: branch with same true/false targets
-fn check_branch_targets_same(f: &Function, source: &str, diags: &mut Vec<Diagnostic>) {
-    for stmt in &f.statements {
-        if let Transfer::Branch(_, ref t, ref fl) = stmt.transfer {
-            if t.value == fl.value {
+fn check_branch_targets_same(f: &Function, fn_path: &str, diags: &mut Vec<Diagnostic>) {
+    for (si, stmt) in f.body.iter().enumerate() {
+        if let Transfer::Branch {
+            ref true_target,
+            ref false_target,
+            ..
+        } = stmt.transfer
+        {
+            if true_target == false_target {
                 diags.push(
                     Diagnostic::warning(
                         "E603",
                         format!(
-                            "branch at '{}' has identical true/false targets '{}'",
-                            stmt.sid.value, t.value
+                            "branch at '{}' has identical true/false targets '{true_target}'",
+                            stmt.sid
                         ),
                     )
-                    .with_span(stmt.span, source)
+                    .with_path(format!("{fn_path}.body[{si}].transfer"))
                     .with_fix("use 'next' instead, or correct the branch targets"),
                 );
             }
@@ -152,44 +160,36 @@ fn check_branch_targets_same(f: &Function, source: &str, diags: &mut Vec<Diagnos
 fn check_switch_exhaustive(
     f: &Function,
     rt_map: &HashMap<String, ResType>,
-    source: &str,
+    fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
-    for stmt in &f.statements {
-        if let Transfer::Switch(ref var, ref cases) = stmt.transfer {
-            if let Some(ResType::Var(BaseType::Enum(ref variants)))
-            | Some(ResType::Atomic(BaseType::Enum(ref variants))) = rt_map.get(&var.value)
-            {
-                let covered: HashSet<&str> = cases
-                    .iter()
-                    .filter_map(|c| {
-                        if let Literal::Ident(ref s) = c.label {
-                            Some(s.as_str())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+    for (si, stmt) in f.body.iter().enumerate() {
+        if let Transfer::Switch { ref var, ref cases } = stmt.transfer {
+            if let Some(rt) = rt_map.get(var) {
+                let bt = crate::validate::types::res_type_to_base(rt);
+                if let Some(BaseType::Complex(ComplexBaseType::Enum(ref variants))) = bt {
+                    let covered: HashSet<&str> =
+                        cases.iter().map(|(label, _)| label.as_str()).collect();
 
-                let missing: Vec<&str> = variants
-                    .iter()
-                    .filter(|v| !covered.contains(v.as_str()))
-                    .map(|v| v.as_str())
-                    .collect();
+                    let missing: Vec<&str> = variants
+                        .iter()
+                        .filter(|v| !covered.contains(v.as_str()))
+                        .map(|v| v.as_str())
+                        .collect();
 
-                if !missing.is_empty() {
-                    diags.push(
-                        Diagnostic::error(
-                            "E604",
-                            format!(
-                                "switch on '{}' is not exhaustive; missing variants: [{}]",
-                                var.value,
-                                missing.join(", ")
-                            ),
-                        )
-                        .with_span(stmt.span, source)
-                        .with_fix("add case branches for the missing variants"),
-                    );
+                    if !missing.is_empty() {
+                        diags.push(
+                            Diagnostic::error(
+                                "E604",
+                                format!(
+                                    "switch on '{var}' is not exhaustive; missing variants: [{}]",
+                                    missing.join(", ")
+                                ),
+                            )
+                            .with_path(format!("{fn_path}.body[{si}].transfer[2]"))
+                            .with_fix("add case branches for the missing variants"),
+                        );
+                    }
                 }
             }
         }
@@ -201,15 +201,13 @@ fn check_infinite_loop(
     f: &Function,
     successors: &[Vec<usize>],
     n: usize,
-    source: &str,
+    fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
-    // Find SCCs with no exit edge and no blocking operation
     let sccs = tarjan_scc(successors, n);
 
     for scc in &sccs {
         if scc.len() < 2 {
-            // Single node self-loop check
             let idx = scc[0];
             if !successors[idx].contains(&idx) {
                 continue;
@@ -220,8 +218,8 @@ fn check_infinite_loop(
 
         let has_exit = scc.iter().any(|&idx| {
             successors[idx].iter().any(|s| !scc_set.contains(s))
-                || matches!(f.statements[idx].transfer, Transfer::Return)
-                || matches!(f.statements[idx].op, Op::Return)
+                || matches!(f.body[idx].transfer, Transfer::Return)
+                || matches!(f.body[idx].op, Op::Return)
         });
 
         if has_exit {
@@ -229,15 +227,14 @@ fn check_infinite_loop(
         }
 
         let has_blocking = scc.iter().any(|&idx| {
-            let stmt = &f.statements[idx];
-            matches!(
-                stmt.op,
-                Op::Await(_)
-                    | Op::Join(_)
-                    | Op::ResOp(_, Action::Recv)
-                    | Op::ResOp(_, Action::Acquire)
-                    | Op::ResOp(_, Action::Wait(_))
-            )
+            let stmt = &f.body[idx];
+            match &stmt.op {
+                Op::Await(_) | Op::Join(_) => true,
+                Op::ResOp { ref action, .. } => {
+                    matches!(action.as_str(), "recv" | "acquire" | "wait")
+                }
+                _ => false,
+            }
         });
 
         if !has_blocking {
@@ -247,10 +244,10 @@ fn check_infinite_loop(
                     "E605",
                     format!(
                         "potential infinite loop with no exit in function '{}' starting at '{}'",
-                        f.name.value, f.statements[first].sid.value
+                        f.name, f.body[first].sid
                     ),
                 )
-                .with_span(f.statements[first].span, source)
+                .with_path(format!("{fn_path}.body[{first}]"))
                 .with_fix("add an exit condition or confirm this is an intentional event loop"),
             );
         }

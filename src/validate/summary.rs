@@ -4,93 +4,83 @@ use crate::ast::*;
 use crate::diagnostic::Diagnostic;
 
 /// E8xx: FnSummary consistency checks.
-pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
-    let resource_names: HashSet<&str> = program
-        .resources
-        .iter()
-        .map(|r| r.name.value.as_str())
-        .collect();
+pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
+    let resource_names: HashSet<&str> = program.resources.iter().map(|r| r.name.as_str()).collect();
 
     let function_names: HashSet<&str> = program
         .functions
         .iter()
-        .map(|f| f.name.value.as_str())
-        .chain(program.fn_summaries.iter().map(|s| s.name.value.as_str()))
+        .map(|f| f.name.as_str())
+        .chain(program.fn_summaries.iter().map(|s| s.name.as_str()))
         .collect();
 
-    let fn_body_names: HashSet<&str> = program
-        .functions
-        .iter()
-        .map(|f| f.name.value.as_str())
-        .collect();
+    let fn_body_names: HashSet<&str> = program.functions.iter().map(|f| f.name.as_str()).collect();
 
-    // Build a map of has_concurrency for summaries
     let summary_concurrency: HashMap<&str, bool> = program
         .fn_summaries
         .iter()
-        .map(|s| (s.name.value.as_str(), s.has_concurrency))
+        .map(|s| (s.name.as_str(), s.has_concurrency))
         .collect();
 
-    for s in &program.fn_summaries {
+    for (si, s) in program.fn_summaries.iter().enumerate() {
+        let sum_path = format!("fn_summaries[{si}]");
+
         // E803: fn has both body and summary
-        if fn_body_names.contains(s.name.value.as_str()) {
+        if fn_body_names.contains(s.name.as_str()) {
             diags.push(
                 Diagnostic::error(
                     "E803",
-                    format!(
-                        "function '{}' has both a fn body and an fn_summary",
-                        s.name.value
-                    ),
+                    format!("function '{}' has both a fn body and an fn_summary", s.name),
                 )
-                .with_span(s.name.span, source)
+                .with_path(sum_path.clone())
                 .with_fix("remove the fn_summary; let the tool compute it from the body"),
             );
         }
 
         // E801: reads/writes reference non-existent resources
-        for r in &s.reads {
-            if !resource_names.contains(r.value.as_str()) {
+        for (ri, r) in s.reads.iter().enumerate() {
+            if !resource_names.contains(r.as_str()) {
                 diags.push(
                     Diagnostic::error(
                         "E801",
                         format!(
-                            "fn_summary '{}' reads resource '{}' which is not declared",
-                            s.name.value, r.value
+                            "fn_summary '{}' reads resource '{r}' which is not declared",
+                            s.name
                         ),
                     )
-                    .with_span(r.span, source)
+                    .with_path(format!("{sum_path}.reads[{ri}]"))
                     .with_fix("correct the resource name or add it to the resources block"),
                 );
             }
         }
-        for w in &s.writes {
-            if !resource_names.contains(w.value.as_str()) {
+        for (wi, w) in s.writes.iter().enumerate() {
+            if !resource_names.contains(w.as_str()) {
                 diags.push(
                     Diagnostic::error(
                         "E801",
                         format!(
-                            "fn_summary '{}' writes resource '{}' which is not declared",
-                            s.name.value, w.value
+                            "fn_summary '{}' writes resource '{w}' which is not declared",
+                            s.name
                         ),
                     )
-                    .with_span(w.span, source)
+                    .with_path(format!("{sum_path}.writes[{wi}]"))
                     .with_fix("correct the resource name or add it to the resources block"),
                 );
             }
         }
 
         // E802: callees reference non-existent functions
-        for c in &s.callees {
-            if !function_names.contains(c.value.as_str()) {
+        for (ci, c) in s.callees.iter().enumerate() {
+            if !function_names.contains(c.as_str()) {
                 diags.push(
                     Diagnostic::error(
                         "E802",
                         format!(
-                            "fn_summary '{}' lists callee '{}' which has no fn or fn_summary",
-                            s.name.value, c.value
+                            "fn_summary '{}' lists callee '{c}' which has no fn or fn_summary",
+                            s.name
                         ),
                     )
-                    .with_span(c.span, source)
+                    .with_path(format!("{sum_path}.callees[{ci}]"))
                     .with_fix("add a fn definition or fn_summary for this callee"),
                 );
             }
@@ -100,20 +90,20 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
         if !s.has_concurrency {
             let callee_has_concurrency = s.callees.iter().any(|c| {
                 summary_concurrency
-                    .get(c.value.as_str())
+                    .get(c.as_str())
                     .copied()
                     .unwrap_or(false)
             });
-            // Also check if any callee fn body has spawn/spawn_async
+
             let callee_body_concurrent = s.callees.iter().any(|c| {
                 program
                     .functions
                     .iter()
-                    .find(|f| f.name.value == c.value)
+                    .find(|f| f.name == *c)
                     .map(|f| {
-                        f.statements.iter().any(|st| {
-                            matches!(st.op, Op::Spawn(_) | Op::SpawnAsync(_))
-                        })
+                        f.body
+                            .iter()
+                            .any(|st| matches!(st.op, Op::Spawn(_) | Op::SpawnAsync(_)))
                     })
                     .unwrap_or(false)
             });
@@ -124,10 +114,10 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
                         "E804",
                         format!(
                             "fn_summary '{}' has has_concurrency=false but a callee has concurrency",
-                            s.name.value
+                            s.name
                         ),
                     )
-                    .with_span(s.name.span, source)
+                    .with_path(format!("{sum_path}.has_concurrency"))
                     .with_fix("set has_concurrency to true"),
                 );
             }

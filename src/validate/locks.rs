@@ -5,7 +5,7 @@ use crate::diagnostic::Diagnostic;
 use crate::validate::types::{build_resource_type_map, ResType};
 
 /// E5xx (+ E309): Lock safety analysis via CFG path traversal.
-pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
+pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let rt_map = build_resource_type_map(program);
 
     let lock_resources: HashSet<&str> = rt_map
@@ -17,98 +17,104 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
     let sync_lock_resources: HashSet<&str> = program
         .resources
         .iter()
-        .filter_map(|r| match &r.kind {
-            ResourceKind::Sync(SyncType::Mutex(Mode::Sync)) => Some(r.name.value.as_str()),
-            ResourceKind::Sync(SyncType::RwLock(Mode::Sync)) => Some(r.name.value.as_str()),
-            _ => None,
+        .filter(|r| {
+            r.kind == "sync"
+                && (r.res_type == "Mutex" || r.res_type == "RwLock")
+                && r.mode.as_deref() == Some("Sync")
         })
+        .map(|r| r.name.as_str())
         .collect();
 
-    // Build protection map: var_name -> lock_name
     let protection_map: HashMap<String, String> = program
-        .protections
+        .protection
         .iter()
-        .map(|p| (p.var_name.value.clone(), p.lock_name.value.clone()))
+        .map(|p| (p.var.clone(), p.lock.clone()))
         .collect();
 
-    for f in &program.functions {
-        if f.statements.is_empty() {
+    for (fi, f) in program.functions.iter().enumerate() {
+        if f.body.is_empty() {
             continue;
         }
 
         let cfg = build_cfg(f);
+        let fn_path = format!("functions[{fi}]");
 
-        check_lock_drop_pairing(f, &cfg, &lock_resources, source, diags);
-        check_sync_lock_across_await(f, &cfg, &sync_lock_resources, source, diags);
-        check_lock_ordering(f, &cfg, &lock_resources, source, diags);
-        check_var_access_without_lock(f, &cfg, &lock_resources, &protection_map, source, diags);
+        check_lock_drop_pairing(f, &cfg, &lock_resources, &fn_path, diags);
+        check_sync_lock_across_await(f, &cfg, &sync_lock_resources, &fn_path, diags);
+        check_lock_ordering(f, &cfg, &lock_resources, &fn_path, diags);
+        check_var_access_without_lock(f, &cfg, &lock_resources, &protection_map, &fn_path, diags);
     }
 }
 
 struct Cfg {
-    /// index -> list of successor indices
     successors: Vec<Vec<usize>>,
 }
 
 fn build_cfg(f: &Function) -> Cfg {
-    let sid_to_idx: HashMap<String, usize> = f
-        .statements
+    let sid_to_idx: HashMap<&str, usize> = f
+        .body
         .iter()
         .enumerate()
-        .map(|(i, s)| (s.sid.value.clone(), i))
+        .map(|(i, s)| (s.sid.as_str(), i))
         .collect();
 
-    let n = f.statements.len();
+    let n = f.body.len();
     let mut successors = vec![Vec::new(); n];
 
-    for (i, stmt) in f.statements.iter().enumerate() {
+    for (i, stmt) in f.body.iter().enumerate() {
         match &stmt.transfer {
             Transfer::Next(ref target) => {
-                if let Some(&ti) = sid_to_idx.get(&target.value) {
+                if let Some(&ti) = sid_to_idx.get(target.as_str()) {
                     successors[i].push(ti);
                 }
             }
-            Transfer::Branch(_, t, fl) => {
-                if let Some(&ti) = sid_to_idx.get(&t.value) {
+            Transfer::Branch {
+                true_target,
+                false_target,
+                ..
+            } => {
+                if let Some(&ti) = sid_to_idx.get(true_target.as_str()) {
                     successors[i].push(ti);
                 }
-                if let Some(&fi) = sid_to_idx.get(&fl.value) {
+                if let Some(&fi) = sid_to_idx.get(false_target.as_str()) {
                     successors[i].push(fi);
                 }
             }
-            Transfer::Switch(_, cases) => {
-                for c in cases {
-                    if let Some(&ci) = sid_to_idx.get(&c.target.value) {
+            Transfer::Switch { cases, .. } => {
+                for (_, target) in cases {
+                    if let Some(&ci) = sid_to_idx.get(target.as_str()) {
                         successors[i].push(ci);
                     }
                 }
             }
-            Transfer::Return => {
-                // Terminal node — no successors
-            }
+            Transfer::Return => {}
         }
     }
 
-    let _ = sid_to_idx; // used during construction
     Cfg { successors }
 }
 
-/// DFS traversal tracking held locks at each node.
-/// Detects E501 (lock without drop), E502 (drop without lock), E503 (double lock).
+fn is_lock_acquire(action: &str) -> bool {
+    action == "lock" || action == "read"
+}
+
+fn is_lock_release(action: &str) -> bool {
+    action == "drop"
+}
+
+/// E501, E502, E503: lock/drop pairing via worklist algorithm.
 fn check_lock_drop_pairing(
     f: &Function,
     cfg: &Cfg,
     lock_resources: &HashSet<&str>,
-    source: &str,
+    fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let n = f.statements.len();
+    let n = f.body.len();
     if n == 0 {
         return;
     }
 
-    // BFS/DFS with state: held_locks set at each node
-    // Use worklist algorithm: visited[node] = set of held-lock sets we've seen
     let mut visited: Vec<HashSet<BTreeSet<String>>> = vec![HashSet::new(); n];
     let mut worklist: Vec<(usize, BTreeSet<String>)> = vec![(0, BTreeSet::new())];
 
@@ -118,60 +124,59 @@ fn check_lock_drop_pairing(
         }
         visited[idx].insert(held.clone());
 
-        let stmt = &f.statements[idx];
-        if let Op::ResOp(ref res, ref action) = stmt.op {
-            let res_name = &res.value;
-            if lock_resources.contains(res_name.as_str()) {
-                match action {
-                    Action::Lock | Action::Read => {
-                        if held.contains(res_name) {
-                            diags.push(
-                                Diagnostic::error(
-                                    "E503",
-                                    format!(
-                                        "double lock on '{}' in function '{}' without prior drop",
-                                        res_name, f.name.value
-                                    ),
-                                )
-                                .with_span(stmt.span, source)
-                                .with_fix("add drop before re-locking"),
-                            );
-                        }
-                        held.insert(res_name.clone());
+        let stmt = &f.body[idx];
+        if let Op::ResOp {
+            ref resource,
+            ref action,
+            args: _,
+        } = stmt.op
+        {
+            if lock_resources.contains(resource.as_str()) {
+                if is_lock_acquire(action) {
+                    if held.contains(resource) {
+                        diags.push(
+                            Diagnostic::error(
+                                "E503",
+                                format!(
+                                    "double lock on '{resource}' in function '{}' without prior drop",
+                                    f.name
+                                ),
+                            )
+                            .with_path(format!("{fn_path}.body[{idx}].op"))
+                            .with_fix("add drop before re-locking"),
+                        );
                     }
-                    Action::Drop => {
-                        if !held.contains(res_name) {
-                            diags.push(
-                                Diagnostic::error(
-                                    "E502",
-                                    format!(
-                                        "drop without lock for '{}' in function '{}'",
-                                        res_name, f.name.value
-                                    ),
-                                )
-                                .with_span(stmt.span, source)
-                                .with_fix("add lock before drop, or remove the drop"),
-                            );
-                        }
-                        held.remove(res_name);
+                    held.insert(resource.clone());
+                } else if is_lock_release(action) {
+                    if !held.contains(resource) {
+                        diags.push(
+                            Diagnostic::error(
+                                "E502",
+                                format!(
+                                    "drop without lock for '{resource}' in function '{}'",
+                                    f.name
+                                ),
+                            )
+                            .with_path(format!("{fn_path}.body[{idx}].op"))
+                            .with_fix("add lock before drop, or remove the drop"),
+                        );
                     }
-                    _ => {}
+                    held.remove(resource);
                 }
             }
         }
 
-        // Check E501 at return: held locks not dropped
         if matches!(stmt.transfer, Transfer::Return) || matches!(stmt.op, Op::Return) {
             for lock in &held {
                 diags.push(
                     Diagnostic::error(
                         "E501",
                         format!(
-                            "lock '{}' not dropped on return path in function '{}'",
-                            lock, f.name.value
+                            "lock '{lock}' not dropped on return path in function '{}'",
+                            f.name
                         ),
                     )
-                    .with_span(stmt.span, source)
+                    .with_path(format!("{fn_path}.body[{idx}]"))
                     .with_fix("add drop() before return"),
                 );
             }
@@ -188,14 +193,14 @@ fn check_sync_lock_across_await(
     f: &Function,
     cfg: &Cfg,
     sync_locks: &HashSet<&str>,
-    source: &str,
+    fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
-    if f.kind != FnKind::Async || sync_locks.is_empty() {
+    if f.kind != "async" || sync_locks.is_empty() {
         return;
     }
 
-    let n = f.statements.len();
+    let n = f.body.len();
     if n == 0 {
         return;
     }
@@ -209,35 +214,34 @@ fn check_sync_lock_across_await(
         }
         visited[idx].insert(held.clone());
 
-        let stmt = &f.statements[idx];
+        let stmt = &f.body[idx];
 
-        // Track sync lock state
-        if let Op::ResOp(ref res, ref action) = stmt.op {
-            if sync_locks.contains(res.value.as_str()) {
-                match action {
-                    Action::Lock | Action::Read => {
-                        held.insert(res.value.clone());
-                    }
-                    Action::Drop => {
-                        held.remove(&res.value);
-                    }
-                    _ => {}
+        if let Op::ResOp {
+            ref resource,
+            ref action,
+            args: _,
+        } = stmt.op
+        {
+            if sync_locks.contains(resource.as_str()) {
+                if is_lock_acquire(action) {
+                    held.insert(resource.clone());
+                } else if is_lock_release(action) {
+                    held.remove(resource);
                 }
             }
         }
 
-        // Check if this is an await point with held sync locks
         if matches!(stmt.op, Op::Await(_)) && !held.is_empty() {
             for lock in &held {
                 diags.push(
                     Diagnostic::error(
                         "E504",
                         format!(
-                            "Sync-mode lock '{}' held across await point in async function '{}'",
-                            lock, f.name.value
+                            "Sync-mode lock '{lock}' held across await point in async function '{}'",
+                            f.name
                         ),
                     )
-                    .with_span(stmt.span, source)
+                    .with_path(format!("{fn_path}.body[{idx}].op"))
                     .with_fix("drop the lock before await and re-acquire after, or use Async-mode lock"),
                 );
             }
@@ -249,26 +253,25 @@ fn check_sync_lock_across_await(
     }
 }
 
-/// E505: Lock ordering violation — detect inconsistent lock acquisition order.
+/// E505: Lock ordering violation.
 fn check_lock_ordering(
     f: &Function,
     cfg: &Cfg,
     lock_resources: &HashSet<&str>,
-    source: &str,
+    fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let n = f.statements.len();
+    let n = f.body.len();
     if n == 0 {
         return;
     }
 
-    // Collect lock acquisition sequences on all paths
     let mut all_orders: Vec<Vec<String>> = Vec::new();
     let mut visited: HashSet<(usize, Vec<String>)> = HashSet::new();
     let mut stack: Vec<(usize, Vec<String>, BTreeSet<String>)> =
         vec![(0, Vec::new(), BTreeSet::new())];
 
-    let max_iterations = n * 100; // prevent combinatorial explosion
+    let max_iterations = n * 100;
     let mut iterations = 0;
 
     while let Some((idx, mut order, mut held)) = stack.pop() {
@@ -283,21 +286,21 @@ fn check_lock_ordering(
         }
         visited.insert(key);
 
-        let stmt = &f.statements[idx];
-        if let Op::ResOp(ref res, ref action) = stmt.op {
-            let name = &res.value;
-            if lock_resources.contains(name.as_str()) {
-                match action {
-                    Action::Lock | Action::Read => {
-                        if !held.contains(name) {
-                            order.push(name.clone());
-                            held.insert(name.clone());
-                        }
+        let stmt = &f.body[idx];
+        if let Op::ResOp {
+            ref resource,
+            ref action,
+            args: _,
+        } = stmt.op
+        {
+            if lock_resources.contains(resource.as_str()) {
+                if is_lock_acquire(action) {
+                    if !held.contains(resource) {
+                        order.push(resource.clone());
+                        held.insert(resource.clone());
                     }
-                    Action::Drop => {
-                        held.remove(name);
-                    }
-                    _ => {}
+                } else if is_lock_release(action) {
+                    held.remove(resource);
                 }
             }
         }
@@ -309,10 +312,8 @@ fn check_lock_ordering(
             continue;
         }
 
-        if cfg.successors[idx].is_empty() {
-            if order.len() >= 2 {
-                all_orders.push(order.clone());
-            }
+        if cfg.successors[idx].is_empty() && order.len() >= 2 {
+            all_orders.push(order.clone());
         }
 
         for &succ in &cfg.successors[idx] {
@@ -320,7 +321,6 @@ fn check_lock_ordering(
         }
     }
 
-    // Compare all lock orderings for conflicts
     let mut reported = HashSet::new();
     for i in 0..all_orders.len() {
         for j in (i + 1)..all_orders.len() {
@@ -335,12 +335,12 @@ fn check_lock_ordering(
                             "E505",
                             format!(
                                 "lock order violation in function '{}': path acquires [{}] but another acquires [{}]",
-                                f.name.value,
+                                f.name,
                                 all_orders[i].join(", "),
                                 all_orders[j].join(", "),
                             ),
                         )
-                        .with_span(f.span, source)
+                        .with_path(fn_path.to_string())
                         .with_fix("use a consistent lock acquisition order across all paths"),
                     );
                 }
@@ -355,10 +355,10 @@ fn check_var_access_without_lock(
     cfg: &Cfg,
     lock_resources: &HashSet<&str>,
     protection_map: &HashMap<String, String>,
-    source: &str,
+    fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let n = f.statements.len();
+    let n = f.body.len();
     if n == 0 {
         return;
     }
@@ -372,35 +372,34 @@ fn check_var_access_without_lock(
         }
         visited[idx].insert(held.clone());
 
-        let stmt = &f.statements[idx];
+        let stmt = &f.body[idx];
 
-        // Track lock state
-        if let Op::ResOp(ref res, ref action) = stmt.op {
-            if lock_resources.contains(res.value.as_str()) {
-                match action {
-                    Action::Lock | Action::Read => {
-                        held.insert(res.value.clone());
-                    }
-                    Action::Drop => {
-                        held.remove(&res.value);
-                    }
-                    _ => {}
+        if let Op::ResOp {
+            ref resource,
+            ref action,
+            args: _,
+        } = stmt.op
+        {
+            if lock_resources.contains(resource.as_str()) {
+                if is_lock_acquire(action) {
+                    held.insert(resource.clone());
+                } else if is_lock_release(action) {
+                    held.remove(resource);
                 }
             }
 
-            // Check Var read/write against protection map
-            if matches!(action, Action::Read | Action::Write(_)) {
-                if let Some(required_lock) = protection_map.get(&res.value) {
+            if action == "read" || action == "write" {
+                if let Some(required_lock) = protection_map.get(resource) {
                     if !held.contains(required_lock) {
                         diags.push(
                             Diagnostic::error(
                                 "E309",
                                 format!(
-                                    "access to protected Var '{}' without holding lock '{}' in function '{}'",
-                                    res.value, required_lock, f.name.value
+                                    "access to protected Var '{resource}' without holding lock '{required_lock}' in function '{}'",
+                                    f.name
                                 ),
                             )
-                            .with_span(stmt.span, source)
+                            .with_path(format!("{fn_path}.body[{idx}].op"))
                             .with_fix("acquire the lock before accessing this variable"),
                         );
                     }
@@ -415,13 +414,10 @@ fn check_var_access_without_lock(
 }
 
 fn has_order_conflict(a: &[String], b: &[String]) -> bool {
-    // Check if any pair of locks appears in opposite order
     for i in 0..a.len() {
         for j in (i + 1)..a.len() {
             let l1 = &a[i];
             let l2 = &a[j];
-            // In sequence `a`, l1 comes before l2
-            // Check if in `b`, l2 comes before l1
             let pos_b1 = b.iter().position(|x| x == l1);
             let pos_b2 = b.iter().position(|x| x == l2);
             if let (Some(p1), Some(p2)) = (pos_b1, pos_b2) {
