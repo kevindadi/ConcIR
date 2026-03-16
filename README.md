@@ -1,4 +1,4 @@
-# CEIR — CIR Validator
+# CIR Validator
 
 CIR (Concurrency Intermediate Representation) 并发中间表示的静态验证器。读取 CIR JSON 文件，执行 9 轮校验，输出结构化诊断报告。
 
