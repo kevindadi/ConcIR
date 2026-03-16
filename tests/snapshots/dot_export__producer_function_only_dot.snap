@@ -1,0 +1,39 @@
+---
+source: tests/dot_export.rs
+expression: dot
+---
+digraph "producer" {
+  rankdir=TB;
+  node [fontname="Courier", fontsize=10];
+  edge [fontname="Courier", fontsize=9];
+
+  subgraph cluster_producer {
+    label="producer (closure)";
+    style=rounded;
+    color=black;
+
+    producer_s10 [label="s10: lock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=red, penwidth=3];
+    producer_s11 [label="s11: read(count)", shape=diamond, style="filled", fillcolor="#ffffcc", color=black, penwidth=1];
+    producer_s12 [label="s12: write(count, count + 1)", shape=rect, style="filled", fillcolor="#f0f0f0", color=orange, penwidth=2];
+    producer_s13 [label="s13: notify(cv)", shape=rect, style="filled,dashed", fillcolor="#f0f0f0", color=purple, penwidth=2];
+    producer_s14 [label="s14: read(done)", shape=diamond, style="filled", fillcolor="#ffffcc", color=black, penwidth=1];
+    producer_s15 [label="s15: drop(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    producer_s16 [label="s16: drop(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    producer_s17 [label="s17: return", shape=ellipse, style="filled", fillcolor="#a0a0a0", color=black, penwidth=1];
+    producer_s18 [label="s18: wait(cv, mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=purple, penwidth=2];
+    producer_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
+
+    producer_s10 -> producer_s11;
+    producer_s11 -> producer_s12 [label="T", color=green];
+    producer_s11 -> producer_s13 [label="F", style=dashed, color=red];
+    producer_s12 -> producer_s13;
+    producer_s13 -> producer_s14;
+    producer_s14 -> producer_s15 [label="T", color=green];
+    producer_s14 -> producer_s16 [label="F", style=dashed, color=red];
+    producer_s15 -> producer_s17;
+    producer_s16 -> producer_s18;
+    producer_s17 -> producer_ret;
+    producer_s18 -> producer_s10 [color=blue, penwidth=2];
+  }
+
+}
