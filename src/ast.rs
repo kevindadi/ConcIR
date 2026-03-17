@@ -137,12 +137,14 @@ pub enum Op {
     Await(String),
     Call(String),
     Return,
+    Nop,
 }
 
 impl Serialize for Op {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
             Op::Return => serializer.serialize_str("return"),
+            Op::Nop => serializer.serialize_str("nop"),
             Op::ResOp {
                 resource,
                 action,
@@ -175,10 +177,10 @@ impl<'de> Deserialize<'de> for Op {
             }
 
             fn visit_str<E: de::Error>(self, v: &str) -> Result<Op, E> {
-                if v == "return" {
-                    Ok(Op::Return)
-                } else {
-                    Err(E::custom(format!("unknown op string: \"{v}\"")))
+                match v {
+                    "return" => Ok(Op::Return),
+                    "nop" => Ok(Op::Nop),
+                    _ => Err(E::custom(format!("unknown op string: \"{v}\""))),
                 }
             }
 

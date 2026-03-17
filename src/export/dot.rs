@@ -257,6 +257,7 @@ fn node_style(stmt: &Statement) -> NodeStyle {
             fillcolor: "#a0a0a0",
             ..Default::default()
         },
+        Op::Nop => NodeStyle::default(),
     }
 }
 
@@ -314,6 +315,7 @@ fn format_label_compact(stmt: &Statement) -> String {
         Op::Await(f) => format!("await({f})"),
         Op::Call(f) => format!("call({f})"),
         Op::Return => "return".to_string(),
+        Op::Nop => "nop".to_string(),
     };
     escape(&format!("{}: {}", stmt.sid, op_str))
 }
@@ -362,6 +364,7 @@ fn format_label_verbose(stmt: &Statement) -> String {
         Op::Await(f) => format!("await(\\\"{f}\\\")"),
         Op::Call(f) => format!("call(\\\"{f}\\\")"),
         Op::Return => "return".to_string(),
+        Op::Nop => "nop".to_string(),
     };
 
     let transfer_line = match &stmt.transfer {
