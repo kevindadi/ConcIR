@@ -4,13 +4,12 @@ use crate::ast::*;
 use crate::diagnostic::Diagnostic;
 
 /// E2xx: Type checking.
-pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
+pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let resource_types = build_resource_type_map(program);
-    check_init_values(program, source, diags);
-    check_branch_conditions(program, source, diags, &resource_types);
-    check_switch_variables(program, source, diags, &resource_types);
-    check_write_types(program, source, diags, &resource_types);
-    check_send_types(program, source, diags, &resource_types);
+    check_branch_conditions(program, diags);
+    check_switch_variables(program, diags, &resource_types);
+    check_write_types(program, diags, &resource_types);
+    check_send_types(program, diags, &resource_types);
 }
 
 pub(crate) enum ResType {
@@ -26,129 +25,108 @@ pub(crate) enum ResType {
 pub(crate) fn build_resource_type_map(program: &Program) -> HashMap<String, ResType> {
     let mut map = HashMap::new();
     for r in &program.resources {
-        let rt = match &r.kind {
-            ResourceKind::Var(VarType::Var(bt)) => ResType::Var(bt.clone()),
-            ResourceKind::Var(VarType::Atomic(bt)) => ResType::Atomic(bt.clone()),
-            ResourceKind::Sync(SyncType::Mutex(_)) => ResType::Mutex,
-            ResourceKind::Sync(SyncType::RwLock(_)) => ResType::RwLock,
-            ResourceKind::Sync(SyncType::Condvar(_)) => ResType::Condvar,
-            ResourceKind::Sync(SyncType::Semaphore(_, _)) => ResType::Semaphore,
-            ResourceKind::Sync(SyncType::Channel(_, bt)) => ResType::Channel(bt.clone()),
+        let rt = match (r.kind.as_str(), r.res_type.as_str()) {
+            ("var", "Var") => {
+                if let Some(ref bt) = r.base {
+                    ResType::Var(bt.clone())
+                } else {
+                    continue;
+                }
+            }
+            ("var", "Atomic") => {
+                if let Some(ref bt) = r.base {
+                    ResType::Atomic(bt.clone())
+                } else {
+                    continue;
+                }
+            }
+            ("sync", "Mutex") => ResType::Mutex,
+            ("sync", "RwLock") => ResType::RwLock,
+            ("sync", "Condvar") => ResType::Condvar,
+            ("sync", "Semaphore") => ResType::Semaphore,
+            ("sync", "Channel") => {
+                if let Some(ref bt) = r.base {
+                    ResType::Channel(bt.clone())
+                } else {
+                    continue;
+                }
+            }
+            _ => continue,
         };
-        map.insert(r.name.value.clone(), rt);
+        map.insert(r.name.clone(), rt);
     }
     map
 }
 
-fn check_init_values(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
-    for r in &program.resources {
-        if let ResourceKind::Var(vt) = &r.kind {
-            let expected = match vt {
-                VarType::Var(bt) | VarType::Atomic(bt) => bt,
-            };
-            let _ = expected;
-        }
-    }
-    let _ = (source, diags);
-}
-
-fn check_branch_conditions(
-    program: &Program,
-    source: &str,
-    diags: &mut Vec<Diagnostic>,
-    resource_types: &HashMap<String, ResType>,
-) {
-    for f in &program.functions {
-        for stmt in &f.statements {
-            if let Transfer::Branch(ref cond, _, _) = stmt.transfer {
-                // With the v0.2 grammar, cond_expr is always `expr cmp_op expr`,
-                // which always produces Bool. We only flag E201 when operands are
-                // structurally incomparable types (Struct, Array).
-                let lhs_type = infer_expr_resource_type(&cond.lhs, resource_types);
-                let rhs_type = infer_expr_resource_type(&cond.rhs, resource_types);
-
-                for bt in [&lhs_type, &rhs_type].into_iter().flatten() {
-                    if matches!(bt, BaseType::Struct(_) | BaseType::Array(_, _)) {
-                        diags.push(
-                            Diagnostic::error(
-                                "E201",
-                                format!(
-                                    "branch condition uses incomparable type {bt:?}"
-                                ),
-                            )
-                            .with_span(cond.span, source)
-                            .with_fix("use a comparable type (Int, Float, Bool, String, Enum)"),
-                        );
-                        break;
-                    }
+/// E201: branch condition must be a comparison expression producing Bool.
+/// In the JSON format, conditions are strings. We check for the presence of
+/// a comparison operator (==, !=, >, <, >=, <=).
+fn check_branch_conditions(program: &Program, diags: &mut Vec<Diagnostic>) {
+    for (fi, f) in program.functions.iter().enumerate() {
+        for (si, stmt) in f.body.iter().enumerate() {
+            if let Transfer::Branch { ref cond, .. } = stmt.transfer {
+                let has_cmp = cond.contains("==")
+                    || cond.contains("!=")
+                    || cond.contains(">=")
+                    || cond.contains("<=")
+                    || cond.contains('>')
+                    || cond.contains('<');
+                if !has_cmp {
+                    diags.push(
+                        Diagnostic::error(
+                            "E201",
+                            format!("branch condition \"{cond}\" is not a comparison expression"),
+                        )
+                        .with_path(format!("functions[{fi}].body[{si}].transfer[1]"))
+                        .with_fix("use a comparison operator: ==, !=, >, <, >=, <="),
+                    );
                 }
             }
         }
     }
 }
 
-/// Try to infer the base type of an expression by looking up identifiers
-/// in the resource type map.
-fn infer_expr_resource_type(
-    expr: &Expr,
-    resource_types: &HashMap<String, ResType>,
-) -> Option<BaseType> {
-    match expr {
-        Expr::Ident(id) => {
-            resource_types.get(&id.value).and_then(res_type_to_base)
-        }
-        Expr::Literal(lit) => lit.infer_base_type(),
-        Expr::BinOp(lhs, _, _) => infer_expr_resource_type(lhs, resource_types),
-        Expr::Paren(inner) | Expr::UnaryMinus(inner) => {
-            infer_expr_resource_type(inner, resource_types)
-        }
-    }
-}
-
+/// E202, E207: switch variable type and case label validation.
 fn check_switch_variables(
     program: &Program,
-    source: &str,
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    for f in &program.functions {
-        for stmt in &f.statements {
-            if let Transfer::Switch(ref var, ref cases) = stmt.transfer {
-                if let Some(rt) = resource_types.get(&var.value) {
+    for (fi, f) in program.functions.iter().enumerate() {
+        for (si, stmt) in f.body.iter().enumerate() {
+            if let Transfer::Switch { ref var, ref cases } = stmt.transfer {
+                if let Some(rt) = resource_types.get(var) {
                     let bt = res_type_to_base(rt);
                     match bt {
-                        Some(BaseType::Enum(_)) | Some(BaseType::Int) => {}
+                        Some(BaseType::Primitive(ref p)) if p == "Int" => {}
+                        Some(BaseType::Complex(ComplexBaseType::Enum(_))) => {}
                         Some(ref other) => {
                             diags.push(
                                 Diagnostic::error(
                                     "E202",
                                     format!(
-                                        "switch variable '{}' is of type {other:?}, expected Enum or Int",
-                                        var.value
+                                        "switch variable '{var}' is of type {other}, expected Enum or Int"
                                     ),
                                 )
-                                .with_span(var.span, source)
+                                .with_path(format!("functions[{fi}].body[{si}].transfer[1]"))
                                 .with_fix("use an Enum or Int typed resource, or use branch instead"),
                             );
                         }
                         None => {}
                     }
-                    if let Some(BaseType::Enum(ref variants)) = bt {
-                        for case in cases {
-                            if let Literal::Ident(ref label) = case.label {
-                                if !variants.contains(label) {
-                                    diags.push(
-                                        Diagnostic::error(
-                                            "E207",
-                                            format!(
-                                                "switch case label '{label}' is not a variant of enum '{}'",
-                                                var.value
-                                            ),
-                                        )
-                                        .with_span(case.target.span, source)
-                                        .with_fix("use a valid enum variant as the case label"),
-                                    );
-                                }
+                    if let Some(BaseType::Complex(ComplexBaseType::Enum(ref variants))) = bt {
+                        for (label, _) in cases {
+                            if !variants.contains(label) {
+                                diags.push(
+                                    Diagnostic::error(
+                                        "E207",
+                                        format!(
+                                            "switch case label '{label}' is not a variant of enum '{var}'"
+                                        ),
+                                    )
+                                    .with_path(format!("functions[{fi}].body[{si}].transfer[2]"))
+                                    .with_fix("use a valid enum variant as the case label"),
+                                );
                             }
                         }
                     }
@@ -158,34 +136,67 @@ fn check_switch_variables(
     }
 }
 
+/// E203, E204, E205: write/store/cas type checking (best-effort on literal values).
 fn check_write_types(
     program: &Program,
-    source: &str,
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    for f in &program.functions {
-        for stmt in &f.statements {
-            if let Op::ResOp(ref res, ref action) = stmt.op {
-                let rt = match resource_types.get(&res.value) {
+    for (fi, f) in program.functions.iter().enumerate() {
+        for (si, stmt) in f.body.iter().enumerate() {
+            if let Op::ResOp {
+                ref resource,
+                ref action,
+                ref args,
+            } = stmt.op
+            {
+                let rt = match resource_types.get(resource) {
                     Some(r) => r,
                     None => continue,
                 };
-                match action {
-                    Action::Write(expr) => {
-                        if let ResType::Var(ref expected) = rt {
-                            check_expr_type(diags, source, stmt.span, "E203", expr, expected);
+                match action.as_str() {
+                    "write" => {
+                        if let (ResType::Var(ref expected), Some(val)) = (rt, args.first()) {
+                            check_literal_type(
+                                diags,
+                                "E203",
+                                val,
+                                expected,
+                                &format!("functions[{fi}].body[{si}].op[3]"),
+                            );
                         }
                     }
-                    Action::Store(expr) => {
-                        if let ResType::Atomic(ref expected) = rt {
-                            check_expr_type(diags, source, stmt.span, "E204", expr, expected);
+                    "store" => {
+                        if let (ResType::Atomic(ref expected), Some(val)) = (rt, args.first()) {
+                            check_literal_type(
+                                diags,
+                                "E204",
+                                val,
+                                expected,
+                                &format!("functions[{fi}].body[{si}].op[3]"),
+                            );
                         }
                     }
-                    Action::Cas(e1, e2) => {
+                    "cas" => {
                         if let ResType::Atomic(ref expected) = rt {
-                            check_expr_type(diags, source, stmt.span, "E205", e1, expected);
-                            check_expr_type(diags, source, stmt.span, "E205", e2, expected);
+                            if let Some(val) = args.first() {
+                                check_literal_type(
+                                    diags,
+                                    "E205",
+                                    val,
+                                    expected,
+                                    &format!("functions[{fi}].body[{si}].op[3]"),
+                                );
+                            }
+                            if let Some(val) = args.get(1) {
+                                check_literal_type(
+                                    diags,
+                                    "E205",
+                                    val,
+                                    expected,
+                                    &format!("functions[{fi}].body[{si}].op[4]"),
+                                );
+                            }
                         }
                     }
                     _ => {}
@@ -195,47 +206,85 @@ fn check_write_types(
     }
 }
 
+/// E206: send type checking.
 fn check_send_types(
     program: &Program,
-    source: &str,
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    for f in &program.functions {
-        for stmt in &f.statements {
-            if let Op::ResOp(ref res, Action::Send(ref expr)) = stmt.op {
-                if let Some(ResType::Channel(ref expected)) = resource_types.get(&res.value) {
-                    check_expr_type(diags, source, stmt.span, "E206", expr, expected);
+    for (fi, f) in program.functions.iter().enumerate() {
+        for (si, stmt) in f.body.iter().enumerate() {
+            if let Op::ResOp {
+                ref resource,
+                ref action,
+                ref args,
+            } = stmt.op
+            {
+                if action == "send" {
+                    if let Some(ResType::Channel(ref expected)) = resource_types.get(resource) {
+                        if let Some(val) = args.first() {
+                            check_literal_type(
+                                diags,
+                                "E206",
+                                val,
+                                expected,
+                                &format!("functions[{fi}].body[{si}].op[3]"),
+                            );
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-fn check_expr_type(
+/// Best-effort type check: only flags mismatches when the value is a recognizable literal.
+fn check_literal_type(
     diags: &mut Vec<Diagnostic>,
-    source: &str,
-    span: crate::span::Span,
     code: &'static str,
-    expr: &Expr,
+    val: &str,
     expected: &BaseType,
+    path: &str,
 ) {
-    let inferred = expr.infer_base_type();
+    let inferred = infer_literal_type(val);
     if let Some(ref actual) = inferred {
-        if actual != expected {
-            diags.push(
-                Diagnostic::error(
-                    code,
-                    format!("type mismatch: expected {expected:?}, found {actual:?}"),
-                )
-                .with_span(span, source)
-                .with_fix("change the value to match the expected type"),
-            );
+        let expected_name = match expected {
+            BaseType::Primitive(p) => Some(p.as_str()),
+            _ => None,
+        };
+        let actual_name = match actual {
+            BaseType::Primitive(p) => Some(p.as_str()),
+            _ => None,
+        };
+        if let (Some(e), Some(a)) = (expected_name, actual_name) {
+            if e != a {
+                diags.push(
+                    Diagnostic::error(code, format!("type mismatch: expected {e}, found {a}"))
+                        .with_path(path.to_string())
+                        .with_fix("change the value to match the expected type"),
+                );
+            }
         }
     }
 }
 
-fn res_type_to_base(rt: &ResType) -> Option<BaseType> {
+fn infer_literal_type(val: &str) -> Option<BaseType> {
+    if val == "true" || val == "false" {
+        return Some(BaseType::Primitive("Bool".to_string()));
+    }
+    if val.parse::<i64>().is_ok() {
+        return Some(BaseType::Primitive("Int".to_string()));
+    }
+    if val.parse::<f64>().is_ok() && val.contains('.') {
+        return Some(BaseType::Primitive("Float".to_string()));
+    }
+    if val.starts_with('"') && val.ends_with('"') {
+        return Some(BaseType::Primitive("String".to_string()));
+    }
+    None
+}
+
+pub(crate) fn res_type_to_base(rt: &ResType) -> Option<BaseType> {
     match rt {
         ResType::Var(bt) | ResType::Atomic(bt) | ResType::Channel(bt) => Some(bt.clone()),
         _ => None,

@@ -4,76 +4,66 @@ use crate::ast::*;
 use crate::diagnostic::Diagnostic;
 
 /// E1xx: Name resolution checks.
-pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
-    let resource_names = check_duplicate_resources(program, source, diags);
-    let function_names = check_duplicate_functions(program, source, diags);
-    check_duplicate_sids(program, source, diags);
-    check_resource_references(program, source, diags, &resource_names);
-    check_function_references(program, source, diags, &function_names);
-    check_sid_references(program, source, diags);
-    check_entry(program, source, diags, &function_names);
+pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
+    let resource_names = check_duplicate_resources(program, diags);
+    let function_names = check_duplicate_functions(program, diags);
+    check_duplicate_sids(program, diags);
+    check_resource_references(program, diags, &resource_names);
+    check_function_references(program, diags, &function_names);
+    check_sid_references(program, diags);
+    check_entry(program, diags, &function_names);
 }
 
-fn check_duplicate_resources(
-    program: &Program,
-    source: &str,
-    diags: &mut Vec<Diagnostic>,
-) -> HashSet<String> {
+fn check_duplicate_resources(program: &Program, diags: &mut Vec<Diagnostic>) -> HashSet<String> {
     let mut seen = HashMap::new();
-    for r in &program.resources {
-        let name = &r.name.value;
-        if let Some(&first_span) = seen.get(name) {
+    for (i, r) in program.resources.iter().enumerate() {
+        if let Some(&first_idx) = seen.get(&r.name) {
             diags.push(
-                Diagnostic::error("E104", format!("duplicate resource name '{name}'"))
-                    .with_span(r.name.span, source)
+                Diagnostic::error("E104", format!("duplicate resource name '{}'", r.name))
+                    .with_path(format!("resources[{i}].name"))
                     .with_fix("remove the duplicate or rename one of them"),
             );
-            let _ = first_span; // first occurrence recorded
+            let _ = first_idx;
         } else {
-            seen.insert(name.clone(), r.name.span);
+            seen.insert(r.name.clone(), i);
         }
     }
     seen.into_keys().collect()
 }
 
-fn check_duplicate_functions(
-    program: &Program,
-    source: &str,
-    diags: &mut Vec<Diagnostic>,
-) -> HashSet<String> {
-    let mut seen = HashMap::new();
-    for f in &program.functions {
-        let name = &f.name.value;
-        if seen.contains_key(name) {
+fn check_duplicate_functions(program: &Program, diags: &mut Vec<Diagnostic>) -> HashSet<String> {
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    for (i, f) in program.functions.iter().enumerate() {
+        if seen.contains_key(&f.name) {
             diags.push(
-                Diagnostic::error("E105", format!("duplicate function name '{name}'"))
-                    .with_span(f.name.span, source)
+                Diagnostic::error("E105", format!("duplicate function name '{}'", f.name))
+                    .with_path(format!("functions[{i}].name"))
                     .with_fix("rename one of the functions"),
             );
         } else {
-            seen.insert(name.clone(), f.name.span);
+            seen.insert(f.name.clone(), i);
         }
     }
     for s in &program.fn_summaries {
-        seen.entry(s.name.value.clone()).or_insert(s.name.span);
+        seen.entry(s.name.clone()).or_insert(0);
     }
     seen.into_keys().collect()
 }
 
-fn check_duplicate_sids(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
-    for f in &program.functions {
+fn check_duplicate_sids(program: &Program, diags: &mut Vec<Diagnostic>) {
+    for (fi, f) in program.functions.iter().enumerate() {
         let mut seen = HashSet::new();
-        for stmt in &f.statements {
-            if !seen.insert(stmt.sid.value.clone()) {
+        for (si, stmt) in f.body.iter().enumerate() {
+            if !seen.insert(stmt.sid.clone()) {
                 diags.push(
                     Diagnostic::error(
                         "E106",
                         format!(
                             "duplicate statement id '{}' in function '{}'",
-                            stmt.sid.value, f.name.value
+                            stmt.sid, f.name
                         ),
                     )
-                    .with_span(stmt.sid.span, source)
+                    .with_path(format!("functions[{fi}].body[{si}].sid"))
                     .with_fix("assign a unique statement id"),
                 );
             }
@@ -83,38 +73,43 @@ fn check_duplicate_sids(program: &Program, source: &str, diags: &mut Vec<Diagnos
 
 fn check_resource_references(
     program: &Program,
-    source: &str,
     diags: &mut Vec<Diagnostic>,
     resources: &HashSet<String>,
 ) {
-    for f in &program.functions {
-        for stmt in &f.statements {
-            if let Op::ResOp(ref res, _) = stmt.op {
-                if !resources.contains(&res.value) {
+    for (fi, f) in program.functions.iter().enumerate() {
+        for (si, stmt) in f.body.iter().enumerate() {
+            if let Op::ResOp {
+                ref resource,
+                ref action,
+                ref args,
+            } = stmt.op
+            {
+                if !resources.contains(resource) {
                     diags.push(
                         Diagnostic::error(
                             "E101",
-                            format!("undefined resource '{}' referenced in res_op", res.value),
+                            format!("undefined resource '{resource}' referenced in res_op"),
                         )
-                        .with_span(res.span, source)
+                        .with_path(format!("functions[{fi}].body[{si}].op[1]"))
                         .with_fix("add this resource to the resources block"),
                     );
                 }
-            }
-            // Check condvar wait lock reference
-            if let Op::ResOp(_, Action::Wait(ref lock)) = stmt.op {
-                if !resources.contains(&lock.value) {
-                    diags.push(
-                        Diagnostic::error(
-                            "E101",
-                            format!(
-                                "undefined resource '{}' referenced in wait()",
-                                lock.value
-                            ),
-                        )
-                        .with_span(lock.span, source)
-                        .with_fix("add this resource to the resources block"),
-                    );
+                // Check wait lock reference
+                if action == "wait" {
+                    if let Some(lock_name) = args.first() {
+                        if !resources.contains(lock_name) {
+                            diags.push(
+                                Diagnostic::error(
+                                    "E101",
+                                    format!(
+                                        "undefined resource '{lock_name}' referenced in wait()"
+                                    ),
+                                )
+                                .with_path(format!("functions[{fi}].body[{si}].op[3]"))
+                                .with_fix("add this resource to the resources block"),
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -123,26 +118,19 @@ fn check_resource_references(
 
 fn check_function_references(
     program: &Program,
-    source: &str,
     diags: &mut Vec<Diagnostic>,
     functions: &HashSet<String>,
 ) {
-    for f in &program.functions {
-        for stmt in &f.statements {
-            let target = match &stmt.op {
-                Op::Spawn(t) | Op::SpawnAsync(t) | Op::Join(t) | Op::Await(t) | Op::Call(t) => {
-                    Some(t)
-                }
-                _ => None,
-            };
-            if let Some(t) = target {
-                if !functions.contains(&t.value) {
+    for (fi, f) in program.functions.iter().enumerate() {
+        for (si, stmt) in f.body.iter().enumerate() {
+            if let Some(target) = stmt.op.target_name() {
+                if !functions.contains(target) {
                     diags.push(
                         Diagnostic::error(
                             "E102",
-                            format!("undefined function '{}' referenced", t.value),
+                            format!("undefined function '{target}' referenced"),
                         )
-                        .with_span(t.span, source)
+                        .with_path(format!("functions[{fi}].body[{si}].op[1]"))
                         .with_fix("add a fn definition or fn_summary for this function"),
                     );
                 }
@@ -151,27 +139,19 @@ fn check_function_references(
     }
 }
 
-fn check_sid_references(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
-    for f in &program.functions {
-        let sids: HashSet<&str> = f.statements.iter().map(|s| s.sid.value.as_str()).collect();
-        for stmt in &f.statements {
-            let targets: Vec<&Spanned<String>> = match &stmt.transfer {
-                Transfer::Next(t) => vec![t],
-                Transfer::Branch(_, t, fl) => vec![t, fl],
-                Transfer::Switch(_, cases) => cases.iter().map(|c| &c.target).collect(),
-                Transfer::Return => vec![],
-            };
+fn check_sid_references(program: &Program, diags: &mut Vec<Diagnostic>) {
+    for (fi, f) in program.functions.iter().enumerate() {
+        let sids: HashSet<&str> = f.body.iter().map(|s| s.sid.as_str()).collect();
+        for (si, stmt) in f.body.iter().enumerate() {
+            let targets = stmt.transfer.target_sids();
             for t in targets {
-                if !sids.contains(t.value.as_str()) {
+                if !sids.contains(t) {
                     diags.push(
                         Diagnostic::error(
                             "E103",
-                            format!(
-                                "undefined statement id '{}' in function '{}'",
-                                t.value, f.name.value
-                            ),
+                            format!("undefined statement id '{t}' in function '{}'", f.name),
                         )
-                        .with_span(t.span, source)
+                        .with_path(format!("functions[{fi}].body[{si}].transfer"))
                         .with_fix("use an existing statement id from this function"),
                     );
                 }
@@ -180,19 +160,14 @@ fn check_sid_references(program: &Program, source: &str, diags: &mut Vec<Diagnos
     }
 }
 
-fn check_entry(
-    program: &Program,
-    source: &str,
-    diags: &mut Vec<Diagnostic>,
-    functions: &HashSet<String>,
-) {
-    if !functions.contains(&program.entry.value) {
+fn check_entry(program: &Program, diags: &mut Vec<Diagnostic>, functions: &HashSet<String>) {
+    if !functions.contains(&program.entry) {
         diags.push(
             Diagnostic::error(
                 "E107",
-                format!("entry function '{}' is not defined", program.entry.value),
+                format!("entry function '{}' is not defined", program.entry),
             )
-            .with_span(program.entry.span, source)
+            .with_path("entry".to_string())
             .with_fix("change entry to the name of a defined function"),
         );
     }

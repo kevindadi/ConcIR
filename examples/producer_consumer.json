@@ -1,0 +1,61 @@
+{
+  "program": "producer_consumer",
+  "resources": [
+    {"name": "mtx",    "kind": "sync", "type": "Mutex",   "mode": "Sync"},
+    {"name": "cv",     "kind": "sync", "type": "Condvar", "mode": "Sync"},
+    {"name": "buffer", "kind": "var",  "type": "Var",     "base": {"Array": {"elem": "Int", "len": 10}}, "init": []},
+    {"name": "count",  "kind": "var",  "type": "Var",     "base": "Int",  "init": 0},
+    {"name": "done",   "kind": "var",  "type": "Var",     "base": "Bool", "init": false}
+  ],
+  "protection": [
+    {"var": "buffer", "lock": "mtx"},
+    {"var": "count",  "lock": "mtx"},
+    {"var": "done",   "lock": "mtx"}
+  ],
+  "functions": [
+    {
+      "name": "main",
+      "kind": "normal",
+      "body": [
+        {"sid": "s1", "op": ["spawn", "producer"],  "transfer": ["next", "s2"]},
+        {"sid": "s2", "op": ["spawn", "consumer"],  "transfer": ["next", "s3"]},
+        {"sid": "s3", "op": ["join", "producer"],    "transfer": ["next", "s4"]},
+        {"sid": "s4", "op": ["join", "consumer"],    "transfer": ["next", "s5"]},
+        {"sid": "s5", "op": "return",                "transfer": "return"}
+      ]
+    },
+    {
+      "name": "producer",
+      "kind": "closure",
+      "body": [
+        {"sid": "s10", "op": ["res_op", "mtx", "lock"],              "transfer": ["next", "s11"]},
+        {"sid": "s11", "op": ["res_op", "count", "read"],            "transfer": ["branch", "count < 10", "s12", "s13"]},
+        {"sid": "s12", "op": ["res_op", "count", "write", "count + 1"], "transfer": ["next", "s13"]},
+        {"sid": "s13", "op": ["res_op", "cv", "notify"],             "transfer": ["next", "s14"]},
+        {"sid": "s14", "op": ["res_op", "done", "read"],             "transfer": ["branch", "done == true", "s15", "s16"]},
+        {"sid": "s15", "op": ["res_op", "mtx", "drop"],              "transfer": ["next", "s17"]},
+        {"sid": "s16", "op": ["res_op", "mtx", "drop"],              "transfer": ["next", "s18"]},
+        {"sid": "s17", "op": "return",                               "transfer": "return"},
+        {"sid": "s18", "op": ["res_op", "cv", "wait", "mtx"],        "transfer": ["next", "s10"]}
+      ]
+    },
+    {
+      "name": "consumer",
+      "kind": "closure",
+      "body": [
+        {"sid": "s20", "op": ["res_op", "mtx", "lock"],              "transfer": ["next", "s21"]},
+        {"sid": "s21", "op": ["res_op", "count", "read"],            "transfer": ["branch", "count > 0", "s22", "s24"]},
+        {"sid": "s22", "op": ["res_op", "buffer", "read"],           "transfer": ["next", "s23"]},
+        {"sid": "s23", "op": ["res_op", "count", "write", "count - 1"], "transfer": ["next", "s24"]},
+        {"sid": "s24", "op": ["res_op", "cv", "notify"],             "transfer": ["next", "s25"]},
+        {"sid": "s25", "op": ["res_op", "done", "read"],             "transfer": ["branch", "done == true", "s26", "s27"]},
+        {"sid": "s26", "op": ["res_op", "mtx", "drop"],              "transfer": ["next", "s28"]},
+        {"sid": "s27", "op": ["res_op", "mtx", "drop"],              "transfer": ["next", "s29"]},
+        {"sid": "s28", "op": "return",                               "transfer": "return"},
+        {"sid": "s29", "op": ["res_op", "cv", "wait", "mtx"],        "transfer": ["next", "s20"]}
+      ]
+    }
+  ],
+  "fn_summaries": [],
+  "entry": "main"
+}

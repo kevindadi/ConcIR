@@ -4,25 +4,24 @@ use crate::ast::*;
 use crate::diagnostic::Diagnostic;
 
 /// E4xx: Concurrency pairing checks.
-pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
-    // Collect all spawn/join/spawn_async/await across all functions
-    let mut spawns: HashMap<String, Vec<SpawnInfo>> = HashMap::new();
-    let mut joins: HashMap<String, Vec<SpawnInfo>> = HashMap::new();
-    let mut async_spawns: HashMap<String, Vec<SpawnInfo>> = HashMap::new();
-    let mut awaits: HashMap<String, Vec<SpawnInfo>> = HashMap::new();
+pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
+    let mut spawns: HashMap<String, Vec<OpInfo>> = HashMap::new();
+    let mut joins: HashMap<String, Vec<OpInfo>> = HashMap::new();
+    let mut async_spawns: HashMap<String, Vec<OpInfo>> = HashMap::new();
+    let mut awaits: HashMap<String, Vec<OpInfo>> = HashMap::new();
 
-    for f in &program.functions {
-        for stmt in &f.statements {
-            let info = SpawnInfo {
-                fn_kind: f.kind,
-                span: stmt.span,
-                fn_name: f.name.value.clone(),
+    for (fi, f) in program.functions.iter().enumerate() {
+        for (si, stmt) in f.body.iter().enumerate() {
+            let info = OpInfo {
+                fn_kind: f.kind.clone(),
+                fn_name: f.name.clone(),
+                path: format!("functions[{fi}].body[{si}].op"),
             };
             match &stmt.op {
-                Op::Spawn(t) => spawns.entry(t.value.clone()).or_default().push(info),
-                Op::Join(t) => joins.entry(t.value.clone()).or_default().push(info),
-                Op::SpawnAsync(t) => async_spawns.entry(t.value.clone()).or_default().push(info),
-                Op::Await(t) => awaits.entry(t.value.clone()).or_default().push(info),
+                Op::Spawn(t) => spawns.entry(t.clone()).or_default().push(info),
+                Op::Join(t) => joins.entry(t.clone()).or_default().push(info),
+                Op::SpawnAsync(t) => async_spawns.entry(t.clone()).or_default().push(info),
+                Op::Await(t) => awaits.entry(t.clone()).or_default().push(info),
                 _ => {}
             }
         }
@@ -37,7 +36,7 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
                         "E401",
                         format!("spawn('{name}') has no matching join('{name}')"),
                     )
-                    .with_span(info.span, source)
+                    .with_path(&info.path)
                     .with_fix("add join() or confirm this is fire-and-forget"),
                 );
             }
@@ -53,7 +52,7 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
                         "E402",
                         format!("join('{name}') has no matching spawn('{name}')"),
                     )
-                    .with_span(info.span, source)
+                    .with_path(&info.path)
                     .with_fix("add spawn() before join, or remove the join"),
                 );
             }
@@ -69,7 +68,7 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
                         "E403",
                         format!("spawn_async('{name}') has no matching await('{name}')"),
                     )
-                    .with_span(info.span, source)
+                    .with_path(&info.path)
                     .with_fix("add await() or change to spawn+join"),
                 );
             }
@@ -85,7 +84,7 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
                         "E404",
                         format!("await('{name}') has no matching spawn_async('{name}')"),
                     )
-                    .with_span(info.span, source)
+                    .with_path(&info.path)
                     .with_fix("add spawn_async() before await, or remove the await"),
                 );
             }
@@ -99,11 +98,9 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
                 diags.push(
                     Diagnostic::error(
                         "E405",
-                        format!(
-                            "spawn('{name}') is paired with await('{name}'); use join instead"
-                        ),
+                        format!("spawn('{name}') is paired with await('{name}'); use join instead"),
                     )
-                    .with_span(info.span, source)
+                    .with_path(&info.path)
                     .with_fix("change await() to join()"),
                 );
             }
@@ -121,7 +118,7 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
                             "spawn_async('{name}') is paired with join('{name}'); use await instead"
                         ),
                     )
-                    .with_span(info.span, source)
+                    .with_path(&info.path)
                     .with_fix("change join() to await()"),
                 );
             }
@@ -129,9 +126,9 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
     }
 
     // E407: join in async context
-    for (_name, infos) in &joins {
+    for infos in joins.values() {
         for info in infos {
-            if info.fn_kind == FnKind::Async {
+            if info.fn_kind == "async" {
                 diags.push(
                     Diagnostic::warning(
                         "E407",
@@ -140,7 +137,7 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
                             info.fn_name
                         ),
                     )
-                    .with_span(info.span, source)
+                    .with_path(&info.path)
                     .with_fix("use spawn_async + await, or use spawn_blocking"),
                 );
             }
@@ -148,18 +145,15 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
     }
 
     // E408: await in sync context
-    for (_name, infos) in &awaits {
+    for infos in awaits.values() {
         for info in infos {
-            if info.fn_kind == FnKind::Normal {
+            if info.fn_kind == "normal" {
                 diags.push(
                     Diagnostic::error(
                         "E408",
-                        format!(
-                            "await() in non-async function '{}'",
-                            info.fn_name
-                        ),
+                        format!("await() in non-async function '{}'", info.fn_name),
                     )
-                    .with_span(info.span, source)
+                    .with_path(&info.path)
                     .with_fix("change the function to async, or use join instead"),
                 );
             }
@@ -167,8 +161,8 @@ pub fn check(program: &Program, source: &str, diags: &mut Vec<Diagnostic>) {
     }
 }
 
-struct SpawnInfo {
-    fn_kind: FnKind,
-    span: crate::span::Span,
+struct OpInfo {
+    fn_kind: String,
     fn_name: String,
+    path: String,
 }

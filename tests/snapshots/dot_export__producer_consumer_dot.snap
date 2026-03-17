@@ -1,0 +1,111 @@
+---
+source: tests/dot_export.rs
+expression: dot
+---
+digraph "producer_consumer" {
+  rankdir=TB;
+  node [fontname="Courier", fontsize=10];
+  edge [fontname="Courier", fontsize=9];
+
+  subgraph cluster_resources {
+    label="Resources";
+    style=dashed;
+    color=gray;
+
+    res_mtx [label="mtx\n(Mutex)", shape=hexagon, style=filled, fillcolor="#ffe0e0"];
+    res_cv [label="cv\n(Condvar)", shape=triangle, style=filled, fillcolor="#f0e0ff"];
+    res_buffer [label="buffer\n(Var)", shape=rect, style=filled, fillcolor="#f0f0f0"];
+    res_count [label="count\n(Var)", shape=rect, style=filled, fillcolor="#f0f0f0"];
+    res_done [label="done\n(Var)", shape=rect, style=filled, fillcolor="#f0f0f0"];
+
+    res_buffer -> res_mtx [style=dotted, dir=both, color=gray50];
+    res_count -> res_mtx [style=dotted, dir=both, color=gray50];
+    res_done -> res_mtx [style=dotted, dir=both, color=gray50];
+  }
+
+  subgraph cluster_main {
+    label="main (normal)";
+    style=rounded;
+    color=black;
+
+    main_s1 [label="s1: spawn(producer)", shape=doubleoctagon, style="filled", fillcolor="#f0f0f0", color=black, penwidth=3];
+    main_s2 [label="s2: spawn(consumer)", shape=doubleoctagon, style="filled", fillcolor="#f0f0f0", color=black, penwidth=1];
+    main_s3 [label="s3: join(producer)", shape=doubleoctagon, style="filled,dashed", fillcolor="#f0f0f0", color=black, penwidth=1];
+    main_s4 [label="s4: join(consumer)", shape=doubleoctagon, style="filled,dashed", fillcolor="#f0f0f0", color=black, penwidth=1];
+    main_s5 [label="s5: return", shape=ellipse, style="filled", fillcolor="#a0a0a0", color=black, penwidth=1];
+    main_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
+
+    main_s1 -> main_s2;
+    main_s2 -> main_s3;
+    main_s3 -> main_s4;
+    main_s4 -> main_s5;
+    main_s5 -> main_ret;
+  }
+
+  subgraph cluster_producer {
+    label="producer (closure)";
+    style=rounded;
+    color=black;
+
+    producer_s10 [label="s10: lock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=red, penwidth=3];
+    producer_s11 [label="s11: read(count)", shape=diamond, style="filled", fillcolor="#ffffcc", color=black, penwidth=1];
+    producer_s12 [label="s12: write(count, count + 1)", shape=rect, style="filled", fillcolor="#f0f0f0", color=orange, penwidth=2];
+    producer_s13 [label="s13: notify(cv)", shape=rect, style="filled,dashed", fillcolor="#f0f0f0", color=purple, penwidth=2];
+    producer_s14 [label="s14: read(done)", shape=diamond, style="filled", fillcolor="#ffffcc", color=black, penwidth=1];
+    producer_s15 [label="s15: drop(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    producer_s16 [label="s16: drop(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    producer_s17 [label="s17: return", shape=ellipse, style="filled", fillcolor="#a0a0a0", color=black, penwidth=1];
+    producer_s18 [label="s18: wait(cv, mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=purple, penwidth=2];
+    producer_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
+
+    producer_s10 -> producer_s11;
+    producer_s11 -> producer_s12 [label="T", color=green];
+    producer_s11 -> producer_s13 [label="F", style=dashed, color=red];
+    producer_s12 -> producer_s13;
+    producer_s13 -> producer_s14;
+    producer_s14 -> producer_s15 [label="T", color=green];
+    producer_s14 -> producer_s16 [label="F", style=dashed, color=red];
+    producer_s15 -> producer_s17;
+    producer_s16 -> producer_s18;
+    producer_s17 -> producer_ret;
+    producer_s18 -> producer_s10 [color=blue, penwidth=2];
+  }
+
+  subgraph cluster_consumer {
+    label="consumer (closure)";
+    style=rounded;
+    color=black;
+
+    consumer_s20 [label="s20: lock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=red, penwidth=3];
+    consumer_s21 [label="s21: read(count)", shape=diamond, style="filled", fillcolor="#ffffcc", color=black, penwidth=1];
+    consumer_s22 [label="s22: read(buffer)", shape=rect, style="filled", fillcolor="#f0f0f0", color=blue, penwidth=2];
+    consumer_s23 [label="s23: write(count, count - 1)", shape=rect, style="filled", fillcolor="#f0f0f0", color=orange, penwidth=2];
+    consumer_s24 [label="s24: notify(cv)", shape=rect, style="filled,dashed", fillcolor="#f0f0f0", color=purple, penwidth=2];
+    consumer_s25 [label="s25: read(done)", shape=diamond, style="filled", fillcolor="#ffffcc", color=black, penwidth=1];
+    consumer_s26 [label="s26: drop(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    consumer_s27 [label="s27: drop(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    consumer_s28 [label="s28: return", shape=ellipse, style="filled", fillcolor="#a0a0a0", color=black, penwidth=1];
+    consumer_s29 [label="s29: wait(cv, mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=purple, penwidth=2];
+    consumer_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
+
+    consumer_s20 -> consumer_s21;
+    consumer_s21 -> consumer_s22 [label="T", color=green];
+    consumer_s21 -> consumer_s24 [label="F", style=dashed, color=red];
+    consumer_s22 -> consumer_s23;
+    consumer_s23 -> consumer_s24;
+    consumer_s24 -> consumer_s25;
+    consumer_s25 -> consumer_s26 [label="T", color=green];
+    consumer_s25 -> consumer_s27 [label="F", style=dashed, color=red];
+    consumer_s26 -> consumer_s28;
+    consumer_s27 -> consumer_s29;
+    consumer_s28 -> consumer_ret;
+    consumer_s29 -> consumer_s20 [color=blue, penwidth=2];
+  }
+
+  // Cross-function edges
+  main_s1 -> producer_s10 [style=dashed, color=blue, label="spawn"];
+  main_s2 -> consumer_s20 [style=dashed, color=blue, label="spawn"];
+  producer_ret -> main_s3 [style=dashed, color=purple, label="join"];
+  consumer_ret -> main_s4 [style=dashed, color=purple, label="join"];
+
+}
