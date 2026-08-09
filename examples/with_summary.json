@@ -1,7 +1,12 @@
 {
   "program": "with_summary",
   "resources": [
-    { "name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync" },
+    {
+      "name": "mtx",
+      "kind": "sync",
+      "type": "Mutex",
+      "mode": "Sync"
+    },
     {
       "name": "counter",
       "kind": "var",
@@ -18,17 +23,47 @@
     }
   ],
   "protection": [
-    { "var": "counter", "lock": "mtx" },
-    { "var": "threshold", "lock": "mtx" }
+    {
+      "var": "counter",
+      "lock": "mtx"
+    },
+    {
+      "var": "threshold",
+      "lock": "mtx"
+    }
   ],
   "functions": [
     {
       "name": "main",
       "kind": "normal",
       "body": [
-        { "sid": "s1", "op": ["spawn", "worker"], "transfer": ["next", "s2"] },
-        { "sid": "s2", "op": ["join", "worker"], "transfer": ["next", "s3"] },
-        { "sid": "s3", "op": "return", "transfer": "return" }
+        {
+          "sid": "s1",
+          "op": [
+            "spawn",
+            "worker"
+          ],
+          "transfer": [
+            "next",
+            "s2"
+          ]
+        },
+        {
+          "sid": "s2",
+          "op": [
+            "join",
+            "worker"
+          ],
+          "transfer": [
+            "next",
+            "s3"
+          ]
+        },
+        {
+          "sid": "s3",
+          "op": "return",
+          "transfer": "return"
+        }
       ]
     },
     {
@@ -37,42 +72,81 @@
       "body": [
         {
           "sid": "s10",
-          "op": ["res_op", "mtx", "lock"],
-          "transfer": ["next", "s11"]
+          "op": [
+            "res_op",
+            "mtx",
+            "lock"
+          ],
+          "transfer": [
+            "next",
+            "s11"
+          ]
         },
         {
           "sid": "s11",
-          "op": ["call", "validate"],
-          "transfer": ["next", "s12"]
+          "op": [
+            "call",
+            "validate"
+          ],
+          "transfer": [
+            "next",
+            "s12"
+          ]
         },
         {
           "sid": "s12",
-          "op": ["res_op", "counter", "write", "counter + 1"],
-          "transfer": ["next", "s13"]
+          "op": [
+            "res_op",
+            "counter",
+            "write",
+            "counter + 1"
+          ],
+          "transfer": [
+            "next",
+            "s13"
+          ]
         },
         {
           "sid": "s13",
-          "op": ["res_op", "mtx", "drop"],
-          "transfer": ["next", "s14"]
+          "op": [
+            "res_op",
+            "mtx",
+            "drop"
+          ],
+          "transfer": [
+            "next",
+            "s14"
+          ]
         },
-        { "sid": "s14", "op": "return", "transfer": "return" }
+        {
+          "sid": "s14",
+          "op": "return",
+          "transfer": "return"
+        }
       ]
-    }
-  ],
-  "fn_summaries": [
+    },
     {
       "name": "validate",
-      "reads": ["counter", "threshold"],
-      "writes": [],
-      "callees": ["helper_compare"],
-      "has_concurrency": false
+      "kind": "normal",
+      "body": [],
+      "effects": {
+        "reads": [
+          "counter",
+          "threshold"
+        ],
+        "writes": []
+      }
     },
     {
       "name": "helper_compare",
-      "reads": ["threshold"],
-      "writes": [],
-      "callees": [],
-      "has_concurrency": false
+      "kind": "normal",
+      "body": [],
+      "effects": {
+        "reads": [
+          "threshold"
+        ],
+        "writes": []
+      }
     }
   ],
   "entry": "main"

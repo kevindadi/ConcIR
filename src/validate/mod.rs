@@ -5,7 +5,6 @@ pub mod locks;
 pub mod names;
 pub mod protection;
 pub mod structure;
-pub mod summary;
 pub mod types;
 
 use crate::ast::Program;
@@ -23,7 +22,6 @@ pub fn validate(program: &Program) -> ValidationReport {
     concurrency::check(program, &mut diags);
     locks::check(program, &mut diags);
     control::check(program, &mut diags);
-    summary::check(program, &mut diags);
 
     let valid = !diags.iter().any(|d| d.severity == Severity::Error);
 

@@ -203,15 +203,6 @@ fn check_functions(program: &Program, diags: &mut Vec<Diagnostic>) {
             );
         }
 
-        // E004: body must not be empty
-        if f.body.is_empty() {
-            diags.push(
-                Diagnostic::error("E004", format!("function '{}' has empty body", f.name))
-                    .with_path(format!("{fn_path}.body"))
-                    .with_fix("add at least one statement (e.g. a return statement)"),
-            );
-        }
-
         // E005: sid format
         for (si, stmt) in f.body.iter().enumerate() {
             if !is_valid_sid(&stmt.sid) {

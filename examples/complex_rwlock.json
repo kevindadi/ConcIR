@@ -1,15 +1,38 @@
 {
   "program": "complex_rwlock",
   "resources": [
-    { "name": "rw", "kind": "sync", "type": "RwLock", "mode": "Sync" },
-    { "name": "cv", "kind": "sync", "type": "Condvar", "mode": "Sync" },
-    { "name": "aux_mtx", "kind": "sync", "type": "Mutex", "mode": "Sync" },
+    {
+      "name": "rw",
+      "kind": "sync",
+      "type": "RwLock",
+      "mode": "Sync"
+    },
+    {
+      "name": "cv",
+      "kind": "sync",
+      "type": "Condvar",
+      "mode": "Sync"
+    },
+    {
+      "name": "aux_mtx",
+      "kind": "sync",
+      "type": "Mutex",
+      "mode": "Sync"
+    },
     {
       "name": "shared_map",
       "kind": "var",
       "type": "Var",
-      "base": { "Struct": { "size": "Int", "ready": "Bool" } },
-      "init": { "size": 0, "ready": false }
+      "base": {
+        "Struct": {
+          "size": "Int",
+          "ready": "Bool"
+        }
+      },
+      "init": {
+        "size": 0,
+        "ready": false
+      }
     },
     {
       "name": "error_flag",
@@ -19,17 +42,66 @@
       "init": false
     }
   ],
-  "protection": [{ "var": "shared_map", "lock": "rw" }],
+  "protection": [
+    {
+      "var": "shared_map",
+      "lock": "rw"
+    }
+  ],
   "functions": [
     {
       "name": "main",
       "kind": "normal",
       "body": [
-        { "sid": "s1", "op": ["spawn", "writer"], "transfer": ["next", "s2"] },
-        { "sid": "s2", "op": ["spawn", "reader"], "transfer": ["next", "s3"] },
-        { "sid": "s3", "op": ["join", "writer"], "transfer": ["next", "s4"] },
-        { "sid": "s4", "op": ["join", "reader"], "transfer": ["next", "s5"] },
-        { "sid": "s5", "op": "return", "transfer": "return" }
+        {
+          "sid": "s1",
+          "op": [
+            "spawn",
+            "writer"
+          ],
+          "transfer": [
+            "next",
+            "s2"
+          ]
+        },
+        {
+          "sid": "s2",
+          "op": [
+            "spawn",
+            "reader"
+          ],
+          "transfer": [
+            "next",
+            "s3"
+          ]
+        },
+        {
+          "sid": "s3",
+          "op": [
+            "join",
+            "writer"
+          ],
+          "transfer": [
+            "next",
+            "s4"
+          ]
+        },
+        {
+          "sid": "s4",
+          "op": [
+            "join",
+            "reader"
+          ],
+          "transfer": [
+            "next",
+            "s5"
+          ]
+        },
+        {
+          "sid": "s5",
+          "op": "return",
+          "transfer": "return"
+        }
       ]
     },
     {
@@ -38,40 +110,93 @@
       "body": [
         {
           "sid": "s10",
-          "op": ["call", "prepare_data"],
-          "transfer": ["next", "s11"]
+          "op": [
+            "call",
+            "prepare_data"
+          ],
+          "transfer": [
+            "next",
+            "s11"
+          ]
         },
         {
           "sid": "s11",
-          "op": ["res_op", "rw", "lock"],
-          "transfer": ["next", "s12"]
+          "op": [
+            "res_op",
+            "rw",
+            "lock"
+          ],
+          "transfer": [
+            "next",
+            "s12"
+          ]
         },
         {
           "sid": "s12",
-          "op": ["res_op", "shared_map", "write", "{100, true}"],
-          "transfer": ["next", "s13"]
+          "op": [
+            "res_op",
+            "shared_map",
+            "write",
+            "{100, true}"
+          ],
+          "transfer": [
+            "next",
+            "s13"
+          ]
         },
         {
           "sid": "s13",
-          "op": ["res_op", "rw", "drop"],
-          "transfer": ["next", "s14"]
+          "op": [
+            "res_op",
+            "rw",
+            "drop"
+          ],
+          "transfer": [
+            "next",
+            "s14"
+          ]
         },
         {
           "sid": "s14",
-          "op": ["res_op", "aux_mtx", "lock"],
-          "transfer": ["next", "s15"]
+          "op": [
+            "res_op",
+            "aux_mtx",
+            "lock"
+          ],
+          "transfer": [
+            "next",
+            "s15"
+          ]
         },
         {
           "sid": "s15",
-          "op": ["res_op", "cv", "notify_all"],
-          "transfer": ["next", "s16"]
+          "op": [
+            "res_op",
+            "cv",
+            "notify_all"
+          ],
+          "transfer": [
+            "next",
+            "s16"
+          ]
         },
         {
           "sid": "s16",
-          "op": ["res_op", "aux_mtx", "drop"],
-          "transfer": ["next", "s17"]
+          "op": [
+            "res_op",
+            "aux_mtx",
+            "drop"
+          ],
+          "transfer": [
+            "next",
+            "s17"
+          ]
         },
-        { "sid": "s17", "op": "return", "transfer": "return" }
+        {
+          "sid": "s17",
+          "op": "return",
+          "transfer": "return"
+        }
       ]
     },
     {
@@ -80,70 +205,140 @@
       "body": [
         {
           "sid": "s20",
-          "op": ["res_op", "aux_mtx", "lock"],
-          "transfer": ["next", "s21"]
+          "op": [
+            "res_op",
+            "aux_mtx",
+            "lock"
+          ],
+          "transfer": [
+            "next",
+            "s21"
+          ]
         },
         {
           "sid": "s21",
-          "op": ["res_op", "cv", "wait", "aux_mtx"],
-          "transfer": ["next", "s22"]
+          "op": [
+            "res_op",
+            "cv",
+            "wait",
+            "aux_mtx"
+          ],
+          "transfer": [
+            "next",
+            "s22"
+          ]
         },
         {
           "sid": "s22",
-          "op": ["res_op", "aux_mtx", "drop"],
-          "transfer": ["next", "s23"]
+          "op": [
+            "res_op",
+            "aux_mtx",
+            "drop"
+          ],
+          "transfer": [
+            "next",
+            "s23"
+          ]
         },
         {
           "sid": "s23",
-          "op": ["res_op", "rw", "read"],
-          "transfer": ["next", "s24"]
+          "op": [
+            "res_op",
+            "rw",
+            "read"
+          ],
+          "transfer": [
+            "next",
+            "s24"
+          ]
         },
         {
           "sid": "s24",
-          "op": ["res_op", "shared_map", "read"],
-          "transfer": ["next", "s25"]
+          "op": [
+            "res_op",
+            "shared_map",
+            "read"
+          ],
+          "transfer": [
+            "next",
+            "s25"
+          ]
         },
         {
           "sid": "s25",
-          "op": ["call", "process_data"],
-          "transfer": ["next", "s26"]
+          "op": [
+            "call",
+            "process_data"
+          ],
+          "transfer": [
+            "next",
+            "s26"
+          ]
         },
         {
           "sid": "s26",
-          "op": ["res_op", "rw", "drop"],
-          "transfer": ["next", "s27"]
+          "op": [
+            "res_op",
+            "rw",
+            "drop"
+          ],
+          "transfer": [
+            "next",
+            "s27"
+          ]
         },
         {
           "sid": "s27",
-          "op": ["res_op", "error_flag", "load"],
-          "transfer": ["branch", "error_flag == true", "s28", "s29"]
+          "op": [
+            "res_op",
+            "error_flag",
+            "load"
+          ],
+          "transfer": [
+            "branch",
+            "error_flag == true",
+            "s28",
+            "s29"
+          ]
         },
-        { "sid": "s28", "op": "return", "transfer": "return" },
-        { "sid": "s29", "op": "return", "transfer": "return" }
+        {
+          "sid": "s28",
+          "op": "return",
+          "transfer": "return"
+        },
+        {
+          "sid": "s29",
+          "op": "return",
+          "transfer": "return"
+        }
       ]
-    }
-  ],
-  "fn_summaries": [
+    },
     {
       "name": "prepare_data",
-      "reads": [],
-      "writes": [],
-      "callees": [],
-      "has_concurrency": false
+      "kind": "normal",
+      "body": []
     },
     {
       "name": "process_data",
-      "reads": ["shared_map"],
-      "writes": [],
-      "callees": ["validate_entry"],
-      "has_concurrency": false
+      "kind": "normal",
+      "body": [],
+      "effects": {
+        "reads": [
+          "shared_map"
+        ],
+        "writes": []
+      }
     },
     {
       "name": "validate_entry",
-      "reads": ["shared_map"],
-      "writes": [],
-      "callees": [],
-      "has_concurrency": false
+      "kind": "normal",
+      "body": [],
+      "effects": {
+        "reads": [
+          "shared_map"
+        ],
+        "writes": []
+      }
     }
   ],
   "entry": "main"

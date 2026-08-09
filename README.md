@@ -32,7 +32,6 @@ If there are errors, `valid` is `false`, `diagnostics` contains all diagnostic i
   "resources": [ ... ],
   "protection": [ ... ],
   "functions": [ ... ],
-  "fn_summaries": [ ... ],
   "entry": "<entry function name>",
   "goals": [ ... ]
 }
@@ -44,7 +43,6 @@ If there are errors, `valid` is `false`, `diagnostics` contains all diagnostic i
 | `resources`    | array  |   yes    | Shared resource declarations                                                           |
 | `protection`   | array  |   yes    | Protection mapping (may be empty)                                                      |
 | `functions`    | array  |   yes    | Function definitions; must include at least the entry function                         |
-| `fn_summaries` | array  |    no    | Summaries for unmodeled functions                                                      |
 | `entry`        | string |   yes    | Entry function name                                                                    |
 | `goals`        | array  |    no    | Reachability and variable postcondition goals; defaults to an empty array when omitted |
 
@@ -110,6 +108,25 @@ Each `Var` may appear at most once. `Atomic` resources do not appear in protecti
 
 `kind` values: `"normal"` / `"async"` / `"closure"`
 
+**Body-less ("nobody") functions**: an empty `body` array marks a function with no
+control flow and no callsites. When it is referenced by `spawn`/`join`/`call`, the
+translator models it as a trivial skeleton (entry → single transition → return).
+Optionally attach an `effects` object to hint the data footprint for codegen:
+
+```json
+{
+  "name": "compute",
+  "kind": "normal",
+  "body": [],
+  "effects": { "reads": ["counter"], "writes": ["result"] }
+}
+```
+
+`effects` carries `reads`/`writes` (both default to `[]`). The write values are
+modeled as unknown in the CVN. Functions referenced only by `call` resolve after
+the (optional modular) merge step, so calling a bodied function — including one
+with synchronization operations — is legitimate.
+
 ### Operation (op)
 
 | Format                                      | Description                                    |
@@ -151,20 +168,6 @@ Each `Var` may appear at most once. `Atomic` resources do not appear in protecti
 | `["switch", "<variable>", {"<label>": "<sid>", ...}]`    | Multi-way branch                    |
 | `"return"`                                               | Function end (string, not an array) |
 
-### FnSummary
-
-```json
-{
-  "name": "validate",
-  "reads": ["counter"],
-  "writes": [],
-  "callees": ["helper"],
-  "has_concurrency": false
-}
-```
-
-All five fields are required. `reads` and `writes` must refer to declared resources; `callees` must refer to a function definition or another summary; `has_concurrency` indicates whether the summary and its call chain include concurrency operations.
-
 ### BusinessGoal
 
 ```json
@@ -182,14 +185,14 @@ All five fields are required. `reads` and `writes` must refer to declared resour
 
 ## Validation Pipeline
 
-The validator runs 9 passes in a fixed order; each pass emits diagnostics independently:
+The validator runs 8 passes in a fixed order; each pass emits diagnostics independently:
 
 ```
 structure  →  names  →  types  →  compat  →  protection
     E0xx       E1xx      E2xx     E3xx        E7xx
 
-→  concurrency  →  locks  →  control  →  summary
-       E4xx        E5xx      E6xx        E8xx
+→  concurrency  →  locks  →  control
+       E4xx        E5xx      E6xx
 ```
 
 ---
@@ -206,7 +209,6 @@ Supplemental structural checks after successful JSON deserialization.
 | ---- | --------------------- | :------: | ------------------------------------------------------------------------------------------ |
 | E000 | JsonParseError        |  error   | JSON syntax error or invalid top-level structure; deserialization failed                   |
 | E001 | MissingField          |  error   | Resource declaration missing a field required by its type (e.g. Semaphore missing `count`) |
-| E004 | EmptyBody             |  error   | Function body is an empty array                                                            |
 | E005 | InvalidSidFormat      |  error   | sid format is not `"s"` + digits (e.g. `"s1"`, `"s10"`)                                    |
 | E008 | InvalidKind           |  error   | Resource `kind` is not `"sync"` / `"var"`, or sync `type` value is illegal                 |
 | E009 | InvalidMode           |  error   | `mode` is not `"Sync"` / `"Async"`                                                         |
@@ -218,10 +220,10 @@ Supplemental structural checks after successful JSON deserialization.
 | Code | Name              | Severity | Description                                                                                      |
 | ---- | ----------------- | :------: | ------------------------------------------------------------------------------------------------ |
 | E101 | UndefinedResource |  error   | Resource name referenced in an op is not in resources                                            |
-| E102 | UndefinedFunction |  error   | Function name referenced by spawn/call/join/await has neither an fn definition nor an fn_summary |
+| E102 | UndefinedFunction |  error   | Function name referenced by spawn/call/join/await has no fn definition |
 | E103 | UndefinedSid      |  error   | Transfer target sid is not in the current function body                                          |
 | E104 | DuplicateResource |  error   | Duplicate resource name in resources                                                             |
-| E105 | DuplicateFunction |  error   | Duplicate function name in functions / fn_summaries                                              |
+| E105 | DuplicateFunction |  error   | Duplicate function name in functions                                    |
 | E106 | DuplicateSid      |  error   | Duplicate sid within the same function body                                                      |
 | E107 | UndefinedEntry    |  error   | Entry function name does not exist in functions                                                  |
 
@@ -284,8 +286,6 @@ Supplemental structural checks after successful JSON deserialization.
 | E406 | AsyncSpawnPairedWithJoin |  error   | spawn_async paired with join (should be await)  |
 | E407 | JoinInAsyncContext       | warning  | join in an async function may block the runtime |
 | E408 | AwaitInSyncContext       |  error   | await used in a normal function                 |
-| E409 | CallToBodiedSyncFunction |  error   | `call` targets a bodied function whose body contains synchronization operations (`res_op`/`spawn`/`join`/`call`/…). Calls are translated as one atomic transition, so the callee's locking behavior would be silently dropped from the model — a cross-function lock chain that deadlocks in real code would go unreported. Inline the callee or replace its body with a `fn_summary`. |
-| E410 | CallToBodiedPureFunction | warning  | `call` targets a bodied function (pure computation). The body is not executed by the model; declare a `fn_summary` to document its reads/writes. |
 
 ### E5xx — Lock safety
 
@@ -316,15 +316,6 @@ Supplemental structural checks after successful JSON deserialization.
 | E703 | AtomicInProtection     |  error   | Atomic resource appears in protection                 |
 | E704 | VarWithoutProtection   | warning  | Var resource does not appear in protection            |
 | E705 | DuplicateProtection    |  error   | same Var appears more than once in protection         |
-
-### E8xx — FnSummary
-
-| Code | Name                      | Severity | Description                                         |
-| ---- | ------------------------- | :------: | --------------------------------------------------- |
-| E801 | SummaryResourceNotExist   |  error   | resource name in reads/writes is not in resources   |
-| E802 | SummaryCalleeNotExist     |  error   | function name in callees has no definition          |
-| E803 | SummaryConflictWithBody   |  error   | same function has both an fn body and an fn_summary |
-| E804 | SummaryMissingConcurrency |  error   | has_concurrency=false but a callee has concurrency  |
 
 ---
 
@@ -361,7 +352,7 @@ src/
   ast.rs               IR type definitions (Program, Resource, Op, Transfer, etc.)
   diagnostic.rs        Diagnostic types (Diagnostic, ValidationReport)
   validate/
-    mod.rs             Validation entry: chains the 9 passes
+    mod.rs             Validation entry: chains the 8 passes
     structure.rs       E0xx  Structural validity
     names.rs           E1xx  Name resolution
     types.rs           E2xx  Type checking
@@ -370,11 +361,10 @@ src/
     concurrency.rs     E4xx  Concurrency pairing
     locks.rs           E5xx  Lock safety (includes E309)
     control.rs         E6xx  Control flow
-    summary.rs         E8xx  FnSummary consistency
 examples/
   producer_consumer.json    Producer–consumer
   async_workers.json        Async tasks + semaphore + Channel
-  with_summary.json         FnSummary call chain
+  with_summary.json         Body-less function call chain
   state_machine.json        State machine + Switch
   complex_rwlock.json       RwLock + Condvar combined example
 ```

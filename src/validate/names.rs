@@ -44,9 +44,6 @@ fn check_duplicate_functions(program: &Program, diags: &mut Vec<Diagnostic>) -> 
             seen.insert(f.name.clone(), i);
         }
     }
-    for s in &program.fn_summaries {
-        seen.entry(s.name.clone()).or_insert(0);
-    }
     seen.into_keys().collect()
 }
 
@@ -131,7 +128,7 @@ fn check_function_references(
                             format!("undefined function '{target}' referenced"),
                         )
                         .with_path(format!("functions[{fi}].body[{si}].op[1]"))
-                        .with_fix("add a fn definition or fn_summary for this function"),
+                        .with_fix("add a fn definition for this function"),
                     );
                 }
             }

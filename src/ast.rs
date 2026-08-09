@@ -26,8 +26,6 @@ pub struct Program {
     pub resources: Vec<Resource>,
     pub protection: Vec<Protection>,
     pub functions: Vec<Function>,
-    #[serde(default)]
-    pub fn_summaries: Vec<FnSummary>,
     pub entry: String,
     #[serde(default)]
     pub goals: Vec<BusinessGoal>,
@@ -132,7 +130,29 @@ pub struct Protection {
 pub struct Function {
     pub name: String,
     pub kind: String,
+    /// Statement body. An empty body marks a "nobody" function: it contains no
+    /// control flow and no callsites, so it is modeled as a trivial skeleton
+    /// (entry → single transition → return) when it is referenced by a
+    /// `spawn`/`join`/`call`. Optional [`Function::effects`] attach
+    /// computation hints (reads/writes) to that single transition.
+    #[serde(default)]
     pub body: Vec<Statement>,
+    /// Optional computation hint for a body-less ("nobody") function. Reads and
+    /// writes are annotated on the single transition that bridges the
+    /// function's entry and return places, so codegen still sees the data
+    /// footprint without modeling internal control flow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effects: Option<FunctionEffects>,
+}
+
+/// Data-footprint hint for a body-less function.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct FunctionEffects {
+    #[serde(default)]
+    pub reads: Vec<String>,
+    #[serde(default)]
+    pub writes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -396,18 +416,6 @@ fn reject_extra_elements<'de, A: SeqAccess<'de>>(
         )));
     }
     Ok(())
-}
-
-// ──────────────────── FnSummary ────────────────────
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct FnSummary {
-    pub name: String,
-    pub reads: Vec<String>,
-    pub writes: Vec<String>,
-    pub callees: Vec<String>,
-    pub has_concurrency: bool,
 }
 
 // ──────────────────── Helpers ────────────────────

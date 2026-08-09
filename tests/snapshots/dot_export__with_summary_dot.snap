@@ -1,5 +1,5 @@
 ---
-source: tests/dot_export.rs
+source: cir/tests/dot_export.rs
 expression: dot
 ---
 digraph "with_summary" {
@@ -52,6 +52,24 @@ digraph "with_summary" {
     worker_s12 -> worker_s13;
     worker_s13 -> worker_s14;
     worker_s14 -> worker_ret;
+  }
+
+  subgraph cluster_validate {
+    label="validate (normal)";
+    style=rounded;
+    color=black;
+
+    validate_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
+
+  }
+
+  subgraph cluster_helper_compare {
+    label="helper_compare (normal)";
+    style=rounded;
+    color=black;
+
+    helper_compare_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
+
   }
 
   // Cross-function edges
