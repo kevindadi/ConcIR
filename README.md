@@ -108,6 +108,10 @@ Each `Var` may appear at most once. `Atomic` resources do not appear in protecti
 
 `kind` values: `"normal"` / `"async"` / `"closure"`
 
+The optional `module` field records the source fragment when the program was
+assembled from modular ConcIR parts; it is used for cross-module repair
+attribution and is absent for single-fragment programs.
+
 **Body-less ("nobody") functions**: an empty `body` array marks a function with no
 control flow and no callsites. When it is referenced by `spawn`/`join`/`call`, the
 translator models it as a trivial skeleton (entry → single transition → return).
