@@ -1,12 +1,8 @@
 # ConcIR Syntax
 
-ConcIR (Concurrency Intermediate Representation) is a statement-level,
-verification-oriented concurrency model. This document is the canonical
-grammar reference; the executable definition is `src/ast.rs` plus
-`src/validate/`.
+ConcIR (Concurrency Intermediate Representation) is a statement-level, verification-oriented concurrency model. This document is the canonical grammar reference; the executable definition is `src/ast.rs` plus `src/validate/`.
 
-See [`error_codes.md`](error_codes.md) for the validation error reference and
-[`todo.md`](todo.md) for the roadmap.
+See [`error_codes.md`](error_codes.md) for the validation error reference and [`todo.md`](todo.md) for the roadmap.
 
 ## Top-level structure
 
@@ -21,14 +17,14 @@ See [`error_codes.md`](error_codes.md) for the validation error reference and
 }
 ```
 
-| Field          | Type   | Required | Description                                                                            |
-| -------------- | ------ | :------: | -------------------------------------------------------------------------------------- |
-| `program`      | string |   yes    | Program name                                                                           |
-| `resources`    | array  |   yes    | Shared resource declarations                                                           |
-| `protection`   | array  |   yes    | Protection mapping (may be empty)                                                      |
-| `functions`    | array  |   yes    | Function definitions; must include at least the entry function                         |
-| `entry`        | string |   yes    | Entry function name                                                                    |
-| `goals`        | array  |    no    | Reachability and variable postcondition goals; defaults to an empty array when omitted |
+| Field        | Type   | Required | Description                                                                            |
+| ------------ | ------ | :------: | -------------------------------------------------------------------------------------- |
+| `program`    | string |   yes    | Program name                                                                           |
+| `resources`  | array  |   yes    | Shared resource declarations                                                           |
+| `protection` | array  |   yes    | Protection mapping (may be empty)                                                      |
+| `functions`  | array  |   yes    | Function definitions; must include at least the entry function                         |
+| `entry`      | string |   yes    | Entry function name                                                                    |
+| `goals`      | array  |    no    | Reachability and variable postcondition goals; defaults to an empty array when omitted |
 
 ## Resource
 
@@ -95,17 +91,11 @@ Each `Var` may appear at most once. `Atomic` resources do not appear in protecti
 
 `kind` values: `"normal"` / `"async"` / `"closure"`
 
-The optional `module` field records the source fragment when the program was
-assembled from modular ConcIR parts; it is used for cross-module repair
-attribution and is absent for single-fragment programs.
+The optional `module` field records the source fragment when the program was assembled from modular ConcIR parts; it is used for cross-module repair attribution and is absent for single-fragment programs.
 
 ### Body-less ("nobody") functions
 
-An empty `body` array marks a function with no control flow and no callsites.
-It is a codegen placeholder, not a call-chain element. When spawned, the
-translator models it as a trivial skeleton (entry → single transition →
-return); a `call` to one is an atomic pass-through. Optionally attach an
-`effects` object to hint the data footprint for codegen:
+An empty `body` array marks a function with no control flow and no callsites. It is a codegen placeholder, not a call-chain element. When spawned, the translator models it as a trivial skeleton (entry → single transition → return); a `call` to one is an atomic pass-through. Optionally attach an `effects` object to hint the data footprint for codegen:
 
 ```json
 {
@@ -132,8 +122,7 @@ modeled as unknown in the CVN.
 | `"return"`                                  | Function return (string, not an array)         |
 | `"nop"`                                     | No-op; useful as an explicit control-flow node |
 
-`call` targets are resolved after merge, so any defined function may be called —
-body-less or bodied, including one with synchronization operations.
+`call` targets are resolved after merge, so any defined function may be called — body-less or bodied, including one with synchronization operations.
 
 ### `res_op` action list
 
@@ -174,13 +163,7 @@ body-less or bodied, including one with synchronization operations.
 }
 ```
 
-`desc`, `marking`, and `variables` may be omitted. Keys in `marking` may be: a
-declared resource name; a control location of the form `function.sid`; or a raw
-CVN place id starting with `cp_`, `rp_`, `wp_`, or `ra_`. Do not use display
-forms such as `cp(worker, ret)` or `rp(mtx)`. Goal token counts mean the minimum
-number that must be reached; for Channel/Condvar resources that start empty, use
-0 for an emptiness check. `variables` uses CVN variable names and JSON scalar
-values.
+`desc`, `marking`, and `variables` may be omitted. Keys in `marking` may be: a declared resource name; a control location of the form `function.sid`; or a raw CVN place id starting with `cp_`, `rp_`, `wp_`, or `ra_`. Do not use display forms such as `cp(worker, ret)` or `rp(mtx)`. Goal token counts mean the minimum number that must be reached; for Channel/Condvar resources that start empty, use 0 for an emptiness check. `variables` uses CVN variable names and JSON scalar values.
 
 ## Validation pipeline
 
@@ -196,12 +179,9 @@ structure  →  names  →  types  →  compat  →  protection
 
 ## `wait` semantics
 
-ConcIR semantics of `wait(cv, lock_name)`: release the associated lock, block
-until woken, then re-acquire the lock.
+ConcIR semantics of `wait(cv, lock_name)`: release the associated lock, block until woken, then re-acquire the lock.
 
-Therefore, in lock-safety analysis, the net effect of `wait` is that lock state
-is unchanged (release followed immediately by re-acquire). When modeling a
-condvar wait loop, write it as:
+Therefore, in lock-safety analysis, the net effect of `wait` is that lock state is unchanged (release followed immediately by re-acquire). When modeling a condvar wait loop, write it as:
 
 ```
 s1: lock(mtx)            -- acquire lock

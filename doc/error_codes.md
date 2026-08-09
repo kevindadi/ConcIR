@@ -1,10 +1,8 @@
 # ConcIR Error Code Reference
 
-The validator emits structured diagnostics. All errors are located by JSON path,
-e.g. `functions[1].body[3].op`.
+The validator emits structured diagnostics. All errors are located by JSON path, e.g. `functions[1].body[3].op`.
 
-See [`syntax.md`](syntax.md) for the grammar and [`todo.md`](todo.md) for the
-roadmap.
+See [`syntax.md`](syntax.md) for the grammar and [`todo.md`](todo.md) for the roadmap.
 
 ## E0xx — Structural errors
 
@@ -22,15 +20,15 @@ Supplemental structural checks after successful JSON deserialization.
 
 ## E1xx — Name resolution
 
-| Code | Name              | Severity | Description                                                                                      |
-| ---- | ----------------- | :------: | ------------------------------------------------------------------------------------------------ |
-| E101 | UndefinedResource |  error   | Resource name referenced in an op is not in resources                                            |
-| E102 | UndefinedFunction |  error   | Function name referenced by spawn/call/join/await has no fn definition                           |
-| E103 | UndefinedSid      |  error   | Transfer target sid is not in the current function body                                          |
-| E104 | DuplicateResource |  error   | Duplicate resource name in resources                                                             |
-| E105 | DuplicateFunction |  error   | Duplicate function name in functions                                                             |
-| E106 | DuplicateSid      |  error   | Duplicate sid within the same function body                                                      |
-| E107 | UndefinedEntry    |  error   | Entry function name does not exist in functions                                                  |
+| Code | Name              | Severity | Description                                                            |
+| ---- | ----------------- | :------: | ---------------------------------------------------------------------- |
+| E101 | UndefinedResource |  error   | Resource name referenced in an op is not in resources                  |
+| E102 | UndefinedFunction |  error   | Function name referenced by spawn/call/join/await has no fn definition |
+| E103 | UndefinedSid      |  error   | Transfer target sid is not in the current function body                |
+| E104 | DuplicateResource |  error   | Duplicate resource name in resources                                   |
+| E105 | DuplicateFunction |  error   | Duplicate function name in functions                                   |
+| E106 | DuplicateSid      |  error   | Duplicate sid within the same function body                            |
+| E107 | UndefinedEntry    |  error   | Entry function name does not exist in functions                        |
 
 ## E2xx — Type errors
 
