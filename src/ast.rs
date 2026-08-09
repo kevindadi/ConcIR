@@ -130,6 +130,11 @@ pub struct Protection {
 pub struct Function {
     pub name: String,
     pub kind: String,
+    /// Source module when the program was assembled from modular ConcIR
+    /// fragments. Used for cross-module repair attribution; absent for
+    /// single-fragment programs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub module: Option<String>,
     /// Statement body. An empty body marks a "nobody" function: it contains no
     /// control flow and no callsites, so it is modeled as a trivial skeleton
     /// (entry → single transition → return) when it is referenced by a

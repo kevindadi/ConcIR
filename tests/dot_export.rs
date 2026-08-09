@@ -12,6 +12,7 @@ fn make_linear_function() -> Function {
         name: "linear".into(),
         kind: "normal".into(),
         effects: None,
+        module: None,
         body: vec![
             Statement {
                 sid: "s1".into(),
@@ -54,6 +55,7 @@ fn make_branch_function() -> Function {
         name: "branching".into(),
         kind: "normal".into(),
         effects: None,
+        module: None,
         body: vec![
             Statement {
                 sid: "s1".into(),
@@ -100,6 +102,7 @@ fn make_loop_function() -> Function {
         name: "looping".into(),
         kind: "closure".into(),
         effects: None,
+        module: None,
         body: vec![
             Statement {
                 sid: "s1".into(),
