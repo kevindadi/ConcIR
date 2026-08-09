@@ -19,10 +19,11 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                     None => continue,
                 };
                 let op_path = format!("functions[{fi}].body[{si}].op");
+                check_action_shape(diags, &op_path, action, args);
                 check_action_compat(diags, &op_path, resource, rt, action);
 
                 // E304: wait(lock_name) — lock_name must be Mutex or RwLock
-                if action == "wait" {
+                if action == "wait" && args.len() == 1 {
                     if let Some(lock_name) = args.first() {
                         if let Some(lock_rt) = rt_map.get(lock_name.as_str()) {
                             if !matches!(lock_rt, ResType::Mutex | ResType::RwLock) {
@@ -44,6 +45,48 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                 }
             }
         }
+    }
+}
+
+/// E310/E311: `res_op` action names and argument arity are part of the CIR
+/// contract. Keeping this check in validation prevents the translator from
+/// silently treating malformed operations as unknown transitions.
+fn check_action_shape(
+    diags: &mut Vec<Diagnostic>,
+    path: &str,
+    action: &str,
+    args: &[String],
+) {
+    let expected = match action {
+        "lock" | "drop" | "read" | "notify" | "notify_all" | "acquire" | "release"
+        | "recv" | "load" => Some(0),
+        "write" | "store" | "send" => Some(1),
+        "wait" => Some(1),
+        "cas" => Some(2),
+        _ => None,
+    };
+
+    let Some(expected) = expected else {
+        diags.push(
+            Diagnostic::error("E310", format!("unknown res_op action '{action}'"))
+                .with_path(format!("{path}[2]"))
+                .with_fix("use one of the canonical CIR actions"),
+        );
+        return;
+    };
+
+    if args.len() != expected {
+        diags.push(
+            Diagnostic::error(
+                "E311",
+                format!(
+                    "action '{action}' expects {expected} argument(s), found {}",
+                    args.len()
+                ),
+            )
+            .with_path(path.to_string())
+            .with_fix(format!("provide exactly {expected} argument(s) after '{action}'")),
+        );
     }
 }
 

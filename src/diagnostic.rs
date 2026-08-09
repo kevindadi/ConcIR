@@ -18,7 +18,7 @@ pub struct Diagnostic {
     pub fix_hint: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ValidationReport {
     pub valid: bool,
     pub diagnostics: Vec<Diagnostic>,

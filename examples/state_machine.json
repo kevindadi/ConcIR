@@ -1,52 +1,108 @@
 {
   "program": "state_machine",
   "resources": [
-    {"name": "mtx",   "kind": "sync", "type": "Mutex",   "mode": "Sync"},
-    {"name": "cv",    "kind": "sync", "type": "Condvar", "mode": "Sync"},
-    {"name": "state", "kind": "var",  "type": "Var",     "base": {"Enum": ["Init", "Running", "Paused", "Stopped"]}, "init": "Init"}
+    { "name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync" },
+    { "name": "cv", "kind": "sync", "type": "Condvar", "mode": "Sync" },
+    {
+      "name": "state",
+      "kind": "var",
+      "type": "Var",
+      "base": { "Enum": ["Init", "Running", "Paused", "Stopped"] },
+      "init": "Init"
+    }
   ],
-  "protection": [
-    {"var": "state", "lock": "mtx"}
-  ],
+  "protection": [{ "var": "state", "lock": "mtx" }],
   "functions": [
     {
       "name": "main",
       "kind": "normal",
       "body": [
-        {"sid": "s1", "op": ["spawn", "controller"],  "transfer": ["next", "s2"]},
-        {"sid": "s2", "op": ["spawn", "worker"],      "transfer": ["next", "s3"]},
-        {"sid": "s3", "op": ["join", "controller"],   "transfer": ["next", "s4"]},
-        {"sid": "s4", "op": ["join", "worker"],       "transfer": ["next", "s5"]},
-        {"sid": "s5", "op": "return",                 "transfer": "return"}
+        {
+          "sid": "s1",
+          "op": ["spawn", "controller"],
+          "transfer": ["next", "s2"]
+        },
+        { "sid": "s2", "op": ["spawn", "worker"], "transfer": ["next", "s3"] },
+        {
+          "sid": "s3",
+          "op": ["join", "controller"],
+          "transfer": ["next", "s4"]
+        },
+        { "sid": "s4", "op": ["join", "worker"], "transfer": ["next", "s5"] },
+        { "sid": "s5", "op": "return", "transfer": "return" }
       ]
     },
     {
       "name": "controller",
       "kind": "closure",
       "body": [
-        {"sid": "s10", "op": ["res_op", "mtx", "lock"],                "transfer": ["next", "s11"]},
-        {"sid": "s11", "op": ["res_op", "state", "write", "Running"],  "transfer": ["next", "s12"]},
-        {"sid": "s12", "op": ["res_op", "cv", "notify_all"],           "transfer": ["next", "s13"]},
-        {"sid": "s13", "op": ["res_op", "mtx", "drop"],                "transfer": ["next", "s14"]},
-        {"sid": "s14", "op": "return",                                 "transfer": "return"}
+        {
+          "sid": "s10",
+          "op": ["res_op", "mtx", "lock"],
+          "transfer": ["next", "s11"]
+        },
+        {
+          "sid": "s11",
+          "op": ["res_op", "state", "write", "Running"],
+          "transfer": ["next", "s12"]
+        },
+        {
+          "sid": "s12",
+          "op": ["res_op", "cv", "notify_all"],
+          "transfer": ["next", "s13"]
+        },
+        {
+          "sid": "s13",
+          "op": ["res_op", "mtx", "drop"],
+          "transfer": ["next", "s14"]
+        },
+        { "sid": "s14", "op": "return", "transfer": "return" }
       ]
     },
     {
       "name": "worker",
       "kind": "closure",
       "body": [
-        {"sid": "s20", "op": ["res_op", "mtx", "lock"],           "transfer": ["next", "s21"]},
-        {"sid": "s21", "op": ["res_op", "state", "read"],         "transfer": ["switch", "state", {
-          "Init":    "s22",
-          "Running": "s23",
-          "Paused":  "s24",
-          "Stopped": "s25"
-        }]},
-        {"sid": "s22", "op": ["res_op", "cv", "wait", "mtx"],     "transfer": ["next", "s21"]},
-        {"sid": "s23", "op": ["res_op", "mtx", "drop"],           "transfer": ["next", "s26"]},
-        {"sid": "s24", "op": ["res_op", "cv", "wait", "mtx"],     "transfer": ["next", "s21"]},
-        {"sid": "s25", "op": ["res_op", "mtx", "drop"],           "transfer": ["next", "s26"]},
-        {"sid": "s26", "op": "return",                            "transfer": "return"}
+        {
+          "sid": "s20",
+          "op": ["res_op", "mtx", "lock"],
+          "transfer": ["next", "s21"]
+        },
+        {
+          "sid": "s21",
+          "op": ["res_op", "state", "read"],
+          "transfer": [
+            "switch",
+            "state",
+            {
+              "Init": "s22",
+              "Running": "s23",
+              "Paused": "s24",
+              "Stopped": "s25"
+            }
+          ]
+        },
+        {
+          "sid": "s22",
+          "op": ["res_op", "cv", "wait", "mtx"],
+          "transfer": ["next", "s21"]
+        },
+        {
+          "sid": "s23",
+          "op": ["res_op", "mtx", "drop"],
+          "transfer": ["next", "s26"]
+        },
+        {
+          "sid": "s24",
+          "op": ["res_op", "cv", "wait", "mtx"],
+          "transfer": ["next", "s21"]
+        },
+        {
+          "sid": "s25",
+          "op": ["res_op", "mtx", "drop"],
+          "transfer": ["next", "s26"]
+        },
+        { "sid": "s26", "op": "return", "transfer": "return" }
       ]
     }
   ],

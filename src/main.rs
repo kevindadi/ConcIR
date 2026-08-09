@@ -2,14 +2,14 @@ use std::env;
 use std::fs;
 use std::process;
 
-use ceir::ast::Program;
-use ceir::diagnostic::{Diagnostic, ValidationReport};
-use ceir::validate;
+use cir::ast::Program;
+use cir::diagnostic::{Diagnostic, ValidationReport};
+use cir::validate;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("usage: ceir <file.json>");
+        eprintln!("usage: cir <file.json>");
         process::exit(2);
     }
 

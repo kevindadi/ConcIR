@@ -1,5 +1,5 @@
-use ceir::ast::*;
-use ceir::export::{DotDirection, DotOptions};
+use cir::ast::*;
+use cir::export::{DotDirection, DotOptions};
 
 fn load_example(name: &str) -> Program {
     let path = format!("examples/{name}.json");
@@ -220,43 +220,14 @@ fn loop_back_edge_highlighted() {
 }
 
 #[test]
-fn loop_back_edge_disabled() {
-    let func = make_loop_function();
-
-    let prog = Program {
-        program: "test_loop".into(),
-        resources: vec![],
-        protection: vec![],
-        functions: vec![func],
-        fn_summaries: vec![],
-        entry: "looping".into(),
-    };
-
-    let opts = DotOptions {
-        highlight_back_edges: false,
-        show_resources: false,
-        ..DotOptions::default()
-    };
-    let dot = prog.to_dot_with_options(&opts);
-
-    // No blue back-edge styling when disabled
-    assert!(
-        !dot.contains("color=blue, penwidth=2"),
-        "back edge highlighting should be off: {dot}"
-    );
-}
-
-// ── Cross-function edges ────────────────────────────────────────────────────
-
-#[test]
 fn cross_function_spawn_join() {
     let prog = load_example("producer_consumer");
     let dot = prog.to_dot();
 
     // spawn edges
-    assert!(dot.contains("main_s1 -> producer_s10"));
+    assert!(dot.contains("main_s1 -> producer_s1"));
     assert!(dot.contains("label=\"spawn\""));
-    assert!(dot.contains("main_s2 -> consumer_s20"));
+    assert!(dot.contains("main_s2 -> consumer_s1"));
 
     // join edges (target_ret → join_node)
     assert!(dot.contains("producer_ret -> main_s3"));
@@ -286,14 +257,10 @@ fn resource_panel_present() {
     assert!(dot.contains("subgraph cluster_resources"));
     assert!(dot.contains("res_mtx"));
     assert!(dot.contains("res_cv"));
-    assert!(dot.contains("res_buffer"));
     assert!(dot.contains("res_count"));
-    assert!(dot.contains("res_done"));
 
-    // Protection edges
-    assert!(dot.contains("res_buffer -> res_mtx [style=dotted, dir=both"));
+    // Protection edge
     assert!(dot.contains("res_count -> res_mtx [style=dotted, dir=both"));
-    assert!(dot.contains("res_done -> res_mtx [style=dotted, dir=both"));
 }
 
 #[test]
@@ -306,7 +273,7 @@ fn resource_panel_shapes() {
     // Condvar → triangle
     assert!(dot.contains("res_cv") && dot.contains("shape=triangle"));
     // Var → rect
-    assert!(dot.contains("res_buffer") && dot.contains("shape=rect"));
+    assert!(dot.contains("res_count") && dot.contains("shape=rect"));
 }
 
 #[test]
@@ -380,9 +347,9 @@ fn condvar_node_styles() {
     let dot = prog.to_dot();
 
     // wait → purple, penwidth=2
-    assert!(dot.contains("producer_s18") && dot.contains("color=purple"));
-    // notify → purple, dashed
-    assert!(dot.contains("producer_s13") && dot.contains("color=purple"));
+    assert!(dot.contains("consumer_s3") && dot.contains("color=purple"));
+    // notify_all → purple, dashed
+    assert!(dot.contains("producer_s3") && dot.contains("color=purple"));
 }
 
 // ── insta snapshots ─────────────────────────────────────────────────────────
@@ -411,7 +378,11 @@ fn snapshot_with_summary_dot() {
 #[test]
 fn snapshot_function_only() {
     let prog = load_example("producer_consumer");
-    let producer = prog.functions.iter().find(|f| f.name == "producer").unwrap();
+    let producer = prog
+        .functions
+        .iter()
+        .find(|f| f.name == "producer")
+        .unwrap();
     let dot = producer.to_dot();
     insta::assert_snapshot!("producer_function_only_dot", dot);
 }

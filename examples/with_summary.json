@@ -1,33 +1,61 @@
 {
   "program": "with_summary",
   "resources": [
-    {"name": "mtx",       "kind": "sync", "type": "Mutex", "mode": "Sync"},
-    {"name": "counter",   "kind": "var",  "type": "Var",   "base": "Int", "init": 0},
-    {"name": "threshold", "kind": "var",  "type": "Var",   "base": "Int", "init": 100}
+    { "name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync" },
+    {
+      "name": "counter",
+      "kind": "var",
+      "type": "Var",
+      "base": "Int",
+      "init": 0
+    },
+    {
+      "name": "threshold",
+      "kind": "var",
+      "type": "Var",
+      "base": "Int",
+      "init": 100
+    }
   ],
   "protection": [
-    {"var": "counter",   "lock": "mtx"},
-    {"var": "threshold", "lock": "mtx"}
+    { "var": "counter", "lock": "mtx" },
+    { "var": "threshold", "lock": "mtx" }
   ],
   "functions": [
     {
       "name": "main",
       "kind": "normal",
       "body": [
-        {"sid": "s1", "op": ["spawn", "worker"],  "transfer": ["next", "s2"]},
-        {"sid": "s2", "op": ["join", "worker"],   "transfer": ["next", "s3"]},
-        {"sid": "s3", "op": "return",             "transfer": "return"}
+        { "sid": "s1", "op": ["spawn", "worker"], "transfer": ["next", "s2"] },
+        { "sid": "s2", "op": ["join", "worker"], "transfer": ["next", "s3"] },
+        { "sid": "s3", "op": "return", "transfer": "return" }
       ]
     },
     {
       "name": "worker",
       "kind": "closure",
       "body": [
-        {"sid": "s10", "op": ["res_op", "mtx", "lock"],                     "transfer": ["next", "s11"]},
-        {"sid": "s11", "op": ["call", "validate"],                          "transfer": ["next", "s12"]},
-        {"sid": "s12", "op": ["res_op", "counter", "write", "counter + 1"], "transfer": ["next", "s13"]},
-        {"sid": "s13", "op": ["res_op", "mtx", "drop"],                     "transfer": ["next", "s14"]},
-        {"sid": "s14", "op": "return",                                      "transfer": "return"}
+        {
+          "sid": "s10",
+          "op": ["res_op", "mtx", "lock"],
+          "transfer": ["next", "s11"]
+        },
+        {
+          "sid": "s11",
+          "op": ["call", "validate"],
+          "transfer": ["next", "s12"]
+        },
+        {
+          "sid": "s12",
+          "op": ["res_op", "counter", "write", "counter + 1"],
+          "transfer": ["next", "s13"]
+        },
+        {
+          "sid": "s13",
+          "op": ["res_op", "mtx", "drop"],
+          "transfer": ["next", "s14"]
+        },
+        { "sid": "s14", "op": "return", "transfer": "return" }
       ]
     }
   ],
