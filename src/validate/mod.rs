@@ -1,6 +1,7 @@
 pub mod compat;
 pub mod concurrency;
 pub mod control;
+pub mod dataflow;
 pub mod locks;
 pub mod names;
 pub mod protection;
@@ -22,6 +23,7 @@ pub fn validate(program: &Program) -> ValidationReport {
     concurrency::check(program, &mut diags);
     locks::check(program, &mut diags);
     control::check(program, &mut diags);
+    dataflow::check(program, &mut diags);
 
     let valid = !diags.iter().any(|d| d.severity == Severity::Error);
 

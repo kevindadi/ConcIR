@@ -111,7 +111,7 @@ fn check_return_paths(
 ) {
     for (i, succs) in successors.iter().enumerate().take(n) {
         let stmt = &f.body[i];
-        let is_return = matches!(stmt.op, Op::Return) || matches!(stmt.transfer, Transfer::Return);
+        let is_return = matches!(stmt.op, Op::Return(_)) || matches!(stmt.transfer, Transfer::Return);
         let has_no_successors = succs.is_empty();
 
         if has_no_successors && !is_return {
@@ -219,7 +219,7 @@ fn check_infinite_loop(
         let has_exit = scc.iter().any(|&idx| {
             successors[idx].iter().any(|s| !scc_set.contains(s))
                 || matches!(f.body[idx].transfer, Transfer::Return)
-                || matches!(f.body[idx].op, Op::Return)
+                || matches!(f.body[idx].op, Op::Return(_))
         });
 
         if has_exit {

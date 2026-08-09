@@ -88,11 +88,49 @@ Each `Var` may appear at most once. `Atomic` resources do not appear in protecti
   ]
 }
 ```
-
 `kind` values: `"normal"` / `"async"` / `"closure"`
 
-The optional `module` field records the source fragment when the program was assembled from modular ConcIR parts; it is used for cross-module repair attribution and is absent for single-fragment programs.
+The optional `module` field records the source fragment when the program was
+assembled from modular ConcIR parts; it is used for cross-module repair
+attribution and is absent for single-fragment programs.
 
+### Typed data flow (params / returns)
+
+Functions may declare typed parameters and an optional return value. Each
+carries a `modeled` flag implementing the **projection principle**: only
+`modeled: true` values enter the CVN variable store; unmodeled values are
+codegen-only placeholders and are never materialized in the net.
+
+```json
+{
+  "name": "process",
+  "kind": "normal",
+  "params": [
+    { "name": "budget", "type": "Int", "modeled": true },
+    { "name": "label", "type": "String", "modeled": false }
+  ],
+  "returns": { "name": "ok", "type": "Bool", "modeled": true },
+  "body": [ ... ]
+}
+```
+
+- Modeled params become variables named `p_{fn}_{param}`, bound at `call`
+  sites and readable in the function's guards / expressions.
+- A modeled return becomes a variable named `r_{fn}_{ret}`, written by
+  `["return", <expr>]` and captured into a caller Var via the call's out-var.
+- A parameter referenced by any expression must be `modeled: true`
+  (otherwise validation error E912). Unmodeled params are never referenced by
+  the body.
+
+At a `call` site the extra elements after the callee name are interpreted from
+the callee's signature: when the callee models a return, the first extra
+element is the capture out-var (`""` = no capture) followed by the arguments;
+otherwise all extras are arguments. The out-var must be a writable Var/Atomic
+resource (E921); the argument count must match the modeled parameters (E920).
+
+```json
+{ "sid": "s1", "op": ["call", "process", "ok_flag", "budget", "10"], "transfer": ["next", "s2"] }
+```
 ### Body-less ("nobody") functions
 
 An empty `body` array marks a function with no control flow and no callsites. It is a codegen placeholder, not a call-chain element. When spawned, the translator models it as a trivial skeleton (entry → single transition → return); a `call` to one is an atomic pass-through. Optionally attach an `effects` object to hint the data footprint for codegen:
@@ -118,9 +156,10 @@ modeled as unknown in the CVN.
 | `["spawn_async", "<function name>"]`        | Create an async task                           |
 | `["join", "<function name>"]`               | Wait for a thread                              |
 | `["await", "<function name>"]`              | Wait for an async task                         |
-| `["call", "<function name>"]`               | Synchronous call                               |
-| `"return"`                                  | Function return (string, not an array)         |
-| `"nop"`                                     | No-op; useful as an explicit control-flow node |
+| `["call", "<function name>", ...]`  | Synchronous call; optional out-var + argument expressions (see typed data flow) |
+| `["return", "<expr>"]`              | Function return with an optional value expression (binds a modeled `returns`) |
+| `"return"`                          | Function return (string, without a value)                          |
+| `"nop"`                             | No-op; useful as an explicit control-flow node |
 
 `call` targets are resolved after merge, so any defined function may be called — body-less or bodied, including one with synchronization operations.
 

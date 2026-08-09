@@ -166,7 +166,7 @@ fn check_lock_drop_pairing(
             }
         }
 
-        if matches!(stmt.transfer, Transfer::Return) || matches!(stmt.op, Op::Return) {
+        if matches!(stmt.transfer, Transfer::Return) || matches!(stmt.op, Op::Return(_)) {
             for lock in &held {
                 diags.push(
                     Diagnostic::error(
@@ -305,7 +305,7 @@ fn check_lock_ordering(
             }
         }
 
-        if matches!(stmt.transfer, Transfer::Return) || matches!(stmt.op, Op::Return) {
+        if matches!(stmt.transfer, Transfer::Return) || matches!(stmt.op, Op::Return(_)) {
             if order.len() >= 2 {
                 all_orders.push(order.clone());
             }

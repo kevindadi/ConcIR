@@ -13,6 +13,8 @@ fn make_linear_function() -> Function {
         kind: "normal".into(),
         effects: None,
         module: None,
+        params: vec![],
+        returns: None,
         body: vec![
             Statement {
                 sid: "s1".into(),
@@ -43,7 +45,7 @@ fn make_linear_function() -> Function {
             },
             Statement {
                 sid: "s4".into(),
-                op: Op::Return,
+                op: Op::Return(None),
                 transfer: Transfer::Return,
             },
         ],
@@ -56,6 +58,8 @@ fn make_branch_function() -> Function {
         kind: "normal".into(),
         effects: None,
         module: None,
+        params: vec![],
+        returns: None,
         body: vec![
             Statement {
                 sid: "s1".into(),
@@ -90,7 +94,7 @@ fn make_branch_function() -> Function {
             },
             Statement {
                 sid: "s4".into(),
-                op: Op::Return,
+                op: Op::Return(None),
                 transfer: Transfer::Return,
             },
         ],
@@ -103,6 +107,8 @@ fn make_loop_function() -> Function {
         kind: "closure".into(),
         effects: None,
         module: None,
+        params: vec![],
+        returns: None,
         body: vec![
             Statement {
                 sid: "s1".into(),
@@ -128,7 +134,7 @@ fn make_loop_function() -> Function {
             },
             Statement {
                 sid: "s3".into(),
-                op: Op::Return,
+                op: Op::Return(None),
                 transfer: Transfer::Return,
             },
         ],

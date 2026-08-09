@@ -247,12 +247,12 @@ fn node_style(stmt: &Statement) -> NodeStyle {
             style: "filled,dashed".to_string(),
             ..Default::default()
         },
-        Op::Call(_) => NodeStyle {
+        Op::Call { .. } => NodeStyle {
             shape: "rect",
             style: "filled,rounded".to_string(),
             ..Default::default()
         },
-        Op::Return => NodeStyle {
+        Op::Return(_) => NodeStyle {
             shape: "ellipse",
             fillcolor: "#a0a0a0",
             ..Default::default()
@@ -313,8 +313,8 @@ fn format_label_compact(stmt: &Statement) -> String {
         Op::SpawnAsync(f) => format!("spawn_async({f})"),
         Op::Join(f) => format!("join({f})"),
         Op::Await(f) => format!("await({f})"),
-        Op::Call(f) => format!("call({f})"),
-        Op::Return => "return".to_string(),
+        Op::Call { target: f, .. } => format!("call({f})"),
+        Op::Return(_) => "return".to_string(),
         Op::Nop => "nop".to_string(),
     };
     escape(&format!("{}: {}", stmt.sid, op_str))
@@ -362,8 +362,8 @@ fn format_label_verbose(stmt: &Statement) -> String {
         Op::SpawnAsync(f) => format!("spawn_async(\\\"{f}\\\")"),
         Op::Join(f) => format!("join(\\\"{f}\\\")"),
         Op::Await(f) => format!("await(\\\"{f}\\\")"),
-        Op::Call(f) => format!("call(\\\"{f}\\\")"),
-        Op::Return => "return".to_string(),
+        Op::Call { target: f, .. } => format!("call(\\\"{f}\\\")"),
+        Op::Return(_) => "return".to_string(),
         Op::Nop => "nop".to_string(),
     };
 
@@ -504,7 +504,7 @@ fn write_cross_function_edges(out: &mut String, functions: &[Function]) {
                     )
                     .unwrap();
                 }
-                Op::Call(target) => {
+                Op::Call { target, .. } => {
                     if let Some(first) = first_sids.get(target.as_str()) {
                         writeln!(
                             out,

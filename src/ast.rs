@@ -125,6 +125,20 @@ pub struct Protection {
 
 // ──────────────────── Function ────────────────────
 
+/// A typed data-flow declaration: a function parameter, local, or return
+/// value. `modeled` controls whether the value is materialized in the CVN
+/// variable store (see `doc/syntax.md`). Unmodeled values are codegen-only
+/// placeholders and never enter the net.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ParamDecl {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub param_type: BaseType,
+    #[serde(default)]
+    pub modeled: bool,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Function {
@@ -135,6 +149,14 @@ pub struct Function {
     /// single-fragment programs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub module: Option<String>,
+    /// Typed parameters, bound at `call` sites (modeled ones) or carried for
+    /// codegen only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<ParamDecl>,
+    /// Optional typed return value, produced by `["return", <expr>]` and
+    /// captured by a caller's `call` out-var (modeled ones).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returns: Option<ParamDecl>,
     /// Statement body. An empty body marks a "nobody" function: it contains no
     /// control flow and no callsites, so it is modeled as a trivial skeleton
     /// (entry → single transition → return) when it is referenced by a
@@ -181,15 +203,24 @@ pub enum Op {
     SpawnAsync(String),
     Join(String),
     Await(String),
-    Call(String),
-    Return,
+    /// Synchronous call. `extras` holds the raw extra array elements after the
+    /// callee name; validation interprets them as (optional out-var, then
+    /// arguments) based on the callee's signature.
+    Call {
+        target: String,
+        extras: Vec<String>,
+    },
+    /// Function return, optionally carrying a value expression that binds a
+    /// modeled `returns` declaration: `"return"` or `["return", "<expr>"]`.
+    Return(Option<String>),
     Nop,
 }
 
 impl Serialize for Op {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
-            Op::Return => serializer.serialize_str("return"),
+            Op::Return(None) => serializer.serialize_str("return"),
+            Op::Return(Some(value)) => ("return", value).serialize(serializer),
             Op::Nop => serializer.serialize_str("nop"),
             Op::ResOp {
                 resource,
@@ -206,7 +237,11 @@ impl Serialize for Op {
             Op::SpawnAsync(f) => ("spawn_async", f).serialize(serializer),
             Op::Join(f) => ("join", f).serialize(serializer),
             Op::Await(f) => ("await", f).serialize(serializer),
-            Op::Call(f) => ("call", f).serialize(serializer),
+            Op::Call { target, extras } => {
+                let mut v: Vec<&str> = vec!["call", target];
+                v.extend(extras.iter().map(String::as_str));
+                v.serialize(serializer)
+            }
         }
     }
 }
@@ -224,7 +259,7 @@ impl<'de> Deserialize<'de> for Op {
 
             fn visit_str<E: de::Error>(self, v: &str) -> Result<Op, E> {
                 match v {
-                    "return" => Ok(Op::Return),
+                    "return" => Ok(Op::Return(None)),
                     "nop" => Ok(Op::Nop),
                     _ => Err(E::custom(format!("unknown op string: \"{v}\""))),
                 }
@@ -282,11 +317,19 @@ impl<'de> Deserialize<'de> for Op {
                         Ok(Op::Await(name))
                     }
                     "call" => {
-                        let name: String = seq
+                        let target: String = seq
                             .next_element()?
                             .ok_or_else(|| de::Error::invalid_length(1, &"function name"))?;
-                        reject_extra_elements(&mut seq, "call")?;
-                        Ok(Op::Call(name))
+                        let mut extras = Vec::new();
+                        while let Some(a) = seq.next_element::<String>()? {
+                            extras.push(a);
+                        }
+                        Ok(Op::Call { target, extras })
+                    }
+                    "return" => {
+                        let value: Option<String> = seq.next_element()?;
+                        reject_extra_elements(&mut seq, "return")?;
+                        Ok(Op::Return(value))
                     }
                     other => Err(de::Error::custom(format!("unknown op type: \"{other}\""))),
                 }
@@ -428,7 +471,8 @@ fn reject_extra_elements<'de, A: SeqAccess<'de>>(
 impl Op {
     pub fn target_name(&self) -> Option<&str> {
         match self {
-            Op::Spawn(n) | Op::SpawnAsync(n) | Op::Join(n) | Op::Await(n) | Op::Call(n) => Some(n),
+            Op::Spawn(n) | Op::SpawnAsync(n) | Op::Join(n) | Op::Await(n) => Some(n),
+            Op::Call { target, .. } => Some(target),
             _ => None,
         }
     }
