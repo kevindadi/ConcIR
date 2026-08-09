@@ -284,6 +284,8 @@ Supplemental structural checks after successful JSON deserialization.
 | E406 | AsyncSpawnPairedWithJoin |  error   | spawn_async paired with join (should be await)  |
 | E407 | JoinInAsyncContext       | warning  | join in an async function may block the runtime |
 | E408 | AwaitInSyncContext       |  error   | await used in a normal function                 |
+| E409 | CallToBodiedSyncFunction |  error   | `call` targets a bodied function whose body contains synchronization operations (`res_op`/`spawn`/`join`/`call`/…). Calls are translated as one atomic transition, so the callee's locking behavior would be silently dropped from the model — a cross-function lock chain that deadlocks in real code would go unreported. Inline the callee or replace its body with a `fn_summary`. |
+| E410 | CallToBodiedPureFunction | warning  | `call` targets a bodied function (pure computation). The body is not executed by the model; declare a `fn_summary` to document its reads/writes. |
 
 ### E5xx — Lock safety
 
