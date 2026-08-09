@@ -10,7 +10,7 @@ pub mod types;
 use crate::ast::Program;
 use crate::diagnostic::{Severity, ValidationReport};
 
-/// Run all validation passes on a parsed CIR program, returning the full report.
+/// Run all validation passes on a parsed ConcIR program, returning the full report.
 pub fn validate(program: &Program) -> ValidationReport {
     let mut diags = Vec::new();
 

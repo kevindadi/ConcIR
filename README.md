@@ -1,6 +1,6 @@
-# CIR Validator
+# ConcIR Validator
 
-Static validator for CIR (Concurrency Intermediate Representation). Reads a CIR JSON file, runs 9 validation passes, and emits a structured diagnostic report.
+Static validator for ConcIR (Concurrency Intermediate Representation). Reads a ConcIR JSON file, runs 9 validation passes, and emits a structured diagnostic report.
 
 ## Quick Start
 
@@ -22,7 +22,7 @@ If there are errors, `valid` is `false`, `diagnostics` contains all diagnostic i
 
 ---
 
-## CIR JSON Format Specification
+## ConcIR JSON Format Specification
 
 ### Top-level structure
 
@@ -64,7 +64,7 @@ If there are errors, `valid` is `false`, `diagnostics` contains all diagnostic i
 | Semaphore | required | required |    —     |
 | Channel   | required |    —     | required |
 
-Channel currently has no capacity field; the translator abstracts it as a resource that starts empty, where `send` produces one message token and `recv` consumes one message token. Capacity, message contents, and FIFO ordering are not modeled in the current CIR/CVN semantics.
+Channel currently has no capacity field; the translator abstracts it as a resource that starts empty, where `send` produces one message token and `recv` consumes one message token. Capacity, message contents, and FIFO ordering are not modeled in the current ConcIR/CVN semantics.
 
 **Shared variables** (`kind: "var"`):
 
@@ -252,8 +252,8 @@ Supplemental structural checks after successful JSON deserialization.
 | E307 | LoadOnNonAtomic       |  error   | load/store/cas on a non-Atomic resource                              |
 | E308 | ReadWriteOnNonVar     |  error   | read (value) / write on a non-Var resource                           |
 | E309 | VarAccessWithoutLock  |  error   | read/write of a protected Var without holding the corresponding lock |
-| E310 | UnknownResourceAction |  error   | `res_op` uses an action not in the CIR contract                      |
-| E311 | ResourceActionArity   |  error   | `res_op` action argument count does not match the CIR contract       |
+| E310 | UnknownResourceAction |  error   | `res_op` uses an action not in the ConcIR contract                      |
+| E311 | ResourceActionArity   |  error   | `res_op` action argument count does not match the ConcIR contract       |
 
 **Operation–resource compatibility matrix**:
 
@@ -373,7 +373,7 @@ examples/
 
 ## wait semantics
 
-CIR semantics of `wait(cv, lock_name)`: release the associated lock, block until woken, then re-acquire the lock.
+ConcIR semantics of `wait(cv, lock_name)`: release the associated lock, block until woken, then re-acquire the lock.
 
 Therefore, in lock-safety analysis, the net effect of `wait` is that lock state is unchanged (release followed immediately by re-acquire). When modeling a condvar wait loop, write it as:
 

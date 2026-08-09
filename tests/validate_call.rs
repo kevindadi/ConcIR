@@ -3,8 +3,8 @@
 //! with synchronization operations) are legitimate. No E409/E410 diagnostics
 //! are emitted; only the standard name-resolution checks (E102) apply.
 
-use cir::ast::Program;
-use cir::validate::validate;
+use concir::ast::Program;
+use concir::validate::validate;
 
 fn program_with_callee_body(callee_body: &str) -> Program {
     let json = format!(
@@ -30,7 +30,7 @@ fn program_with_callee_body(callee_body: &str) -> Program {
         "entry": "main"
     }}"#
     );
-    serde_json::from_str(&json).expect("test CIR must parse")
+    serde_json::from_str(&json).expect("test ConcIR must parse")
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn call_to_bodyless_function_is_valid() {
         ],
         "entry": "main"
     }"#;
-    let program: Program = serde_json::from_str(json).expect("test CIR must parse");
+    let program: Program = serde_json::from_str(json).expect("test ConcIR must parse");
 
     let report = validate(&program);
 
@@ -104,7 +104,7 @@ fn call_to_undefined_function_is_an_error() {
         ],
         "entry": "main"
     }"#;
-    let program: Program = serde_json::from_str(json).expect("test CIR must parse");
+    let program: Program = serde_json::from_str(json).expect("test ConcIR must parse");
 
     let report = validate(&program);
 

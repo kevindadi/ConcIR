@@ -48,7 +48,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     }
 }
 
-/// E310/E311: `res_op` action names and argument arity are part of the CIR
+/// E310/E311: `res_op` action names and argument arity are part of the ConcIR
 /// contract. Keeping this check in validation prevents the translator from
 /// silently treating malformed operations as unknown transitions.
 fn check_action_shape(
@@ -70,7 +70,7 @@ fn check_action_shape(
         diags.push(
             Diagnostic::error("E310", format!("unknown res_op action '{action}'"))
                 .with_path(format!("{path}[2]"))
-                .with_fix("use one of the canonical CIR actions"),
+                .with_fix("use one of the canonical ConcIR actions"),
         );
         return;
     };

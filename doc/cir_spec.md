@@ -1,6 +1,6 @@
-# CIR Specification Reference
+# ConcIR Specification Reference
 
-This file is the short index for the canonical CIR schema. The executable definition is `src/ast.rs` plus `src/validate/`; the complete JSON reference and examples are maintained in [`../README.md`](../README.md). LLM prompts must follow the same contract.
+This file is the short index for the canonical ConcIR schema. The executable definition is `src/ast.rs` plus `src/validate/`; the complete JSON reference and examples are maintained in [`../README.md`](../README.md). LLM prompts must follow the same contract.
 
 ## Canonical shape
 ```json
@@ -28,4 +28,4 @@ Required top-level fields are `program`, `resources`, `protection`, `functions`,
 
 ## Scope boundary
 
-Channel capacity, message payload identity/FIFO order, dynamic thread identities, function parameters and return values, cancellation/timeouts, memory ordering, fairness, exceptions, I/O, and arbitrary data-structure mutation are outside the current CIR contract. The representation is intended for finite-state control-flow and synchronization verification, not as a general-purpose concurrent language.
+Channel capacity, message payload identity/FIFO order, dynamic thread identities, function parameters and return values, cancellation/timeouts, memory ordering, fairness, exceptions, I/O, and arbitrary data-structure mutation are outside the current ConcIR contract. The representation is intended for finite-state control-flow and synchronization verification, not as a general-purpose concurrent language.

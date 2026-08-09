@@ -1,5 +1,5 @@
-use cir::ast::*;
-use cir::export::{DotDirection, DotOptions};
+use concir::ast::*;
+use concir::export::{DotDirection, DotOptions};
 
 fn load_example(name: &str) -> Program {
     let path = format!("examples/{name}.json");

@@ -2,9 +2,9 @@ use std::env;
 use std::fs;
 use std::process;
 
-use cir::ast::Program;
-use cir::diagnostic::{Diagnostic, ValidationReport};
-use cir::validate;
+use concir::ast::Program;
+use concir::diagnostic::{Diagnostic, ValidationReport};
+use concir::validate;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
