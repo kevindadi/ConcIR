@@ -210,3 +210,91 @@ fn param_colliding_with_resource_is_e910() {
         report.diagnostics
     );
 }
+
+#[test]
+fn bounded_int_resource_is_valid() {
+    let report = validate_json(
+        r#"{
+            "program": "p",
+            "resources": [{"name": "count", "kind": "var", "type": "Var", "base": {"Int": [0, 10]}, "init": 3}],
+            "protection": [],
+            "functions": [
+                {
+                    "name": "main", "kind": "normal",
+                    "body": [
+                        {"sid": "s1", "op": ["res_op", "count", "write", "5"], "transfer": ["next", "s2"]},
+                        {"sid": "s2", "op": "return", "transfer": "return"}
+                    ]
+                }
+            ],
+            "entry": "main"
+        }"#,
+    );
+    assert!(report.valid, "got: {:?}", report.diagnostics);
+}
+
+#[test]
+fn bounded_int_init_out_of_range_is_e208() {
+    let report = validate_json(
+        r#"{
+            "program": "p",
+            "resources": [{"name": "count", "kind": "var", "type": "Var", "base": {"Int": [0, 10]}, "init": 42}],
+            "protection": [],
+            "functions": [
+                {
+                    "name": "main", "kind": "normal",
+                    "body": [
+                        {"sid": "s1", "op": "return", "transfer": "return"}
+                    ]
+                }
+            ],
+            "entry": "main"
+        }"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E208"),
+        "expected E208, got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn bounded_int_write_literal_out_of_range_is_e203() {
+    let report = validate_json(
+        r#"{
+            "program": "p",
+            "resources": [{"name": "count", "kind": "var", "type": "Var", "base": {"Int": [0, 10]}, "init": 0}],
+            "protection": [],
+            "functions": [
+                {
+                    "name": "main", "kind": "normal",
+                    "body": [
+                        {"sid": "s1", "op": ["res_op", "count", "write", "11"], "transfer": ["next", "s2"]},
+                        {"sid": "s2", "op": "return", "transfer": "return"}
+                    ]
+                }
+            ],
+            "entry": "main"
+        }"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E203"),
+        "expected E203, got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn bounded_int_lo_gt_hi_is_a_parse_error() {
+    let json = r#"{
+        "program": "p",
+        "resources": [{"name": "count", "kind": "var", "type": "Var", "base": {"Int": [10, 0]}, "init": 0}],
+        "protection": [],
+        "functions": [],
+        "entry": "main"
+    }"#;
+    let result: Result<Program, _> = serde_json::from_str(json);
+    assert!(result.is_err(), "lo > hi must be rejected at parse");
+}

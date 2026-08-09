@@ -99,6 +99,7 @@ fn check_switch_variables(
                     let bt = res_type_to_base(rt);
                     match bt {
                         Some(BaseType::Primitive(ref p)) if p == "Int" => {}
+                        Some(BaseType::Complex(ComplexBaseType::BoundedInt { .. })) => {}
                         Some(BaseType::Complex(ComplexBaseType::Enum(_))) => {}
                         Some(ref other) => {
                             diags.push(
@@ -262,6 +263,24 @@ fn check_literal_type(
                     Diagnostic::error(code, format!("type mismatch: expected {e}, found {a}"))
                         .with_path(path.to_string())
                         .with_fix("change the value to match the expected type"),
+                );
+            }
+        }
+    }
+
+    // Bounded Int: the value must lie within the declared domain.
+    if let BaseType::Complex(ComplexBaseType::BoundedInt { lo, hi }) = expected {
+        if let Ok(v) = val.trim().parse::<i64>() {
+            if v < *lo || v > *hi {
+                diags.push(
+                    Diagnostic::error(
+                        code,
+                        format!(
+                            "value {v} is outside the declared Int range {lo}..={hi}"
+                        ),
+                    )
+                    .with_path(path.to_string())
+                    .with_fix(format!("use a value between {lo} and {hi}")),
                 );
             }
         }

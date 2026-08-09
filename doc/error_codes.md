@@ -42,6 +42,9 @@ Supplemental structural checks after successful JSON deserialization.
 | E206 | SendTypeMismatch        |  error   | send value type does not match the Channel's base                                     |
 | E207 | SwitchCaseLabelMismatch |  error   | switch case label is not a valid variant of the target Enum                           |
 
+E203/E204/E205 also fire when a literal value is outside a bounded `Int`
+domain (e.g. writing `11` to an `Int{[0,10]}` variable).
+
 ## E3xx — Resource–operation compatibility
 
 | Code | Name                  | Severity | Description                                                          |

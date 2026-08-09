@@ -62,11 +62,18 @@ not modeled in the current ConcIR/CVN semantics.
 | ------------------------------------ | ------------------ | ------------ |
 | `"Bool"`                             | Boolean            | `true`       |
 | `"Int"`                              | Integer            | `0`          |
+| `{"Int": [lo, hi]}`                  | Bounded Int `[lo, hi]` | `3`       |
 | `"Float"`                            | Floating-point     | `3.14`       |
 | `"String"`                           | String             | `""`         |
 | `{"Enum": ["A","B"]}`                | Enum               | `"A"`        |
 | `{"Struct": {"x":"Int"}}`            | Struct             | `{"x": 0}`   |
 | `{"Array": {"elem":"Int","len":10}}` | Fixed-length array | `[]`         |
+
+**Bounded Int**: `{"Int": [lo, hi]}` restricts a variable's value domain. In the
+CVN a variable update leaving the domain disables its transition, so counter
+loops terminate at the bound and the state space stays finite. `init` values and
+literal write/store/cas values outside `[lo, hi]` are validation errors (E208 /
+E203 / E204 / E205).
 
 ## Protection
 

@@ -59,11 +59,68 @@ pub struct ArrayDef {
     pub len: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ComplexBaseType {
     Enum(Vec<String>),
     Struct(BTreeMap<String, BaseType>),
     Array(Box<ArrayDef>),
+    /// Bounded Int value domain `[lo, hi]`, serialized as `{"Int": [lo, hi]}`.
+    /// Keeps counter loops decidable (updates leaving the domain disable the
+    /// transition in the CVN).
+    BoundedInt { lo: i64, hi: i64 },
+}
+
+impl Serialize for ComplexBaseType {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            ComplexBaseType::Enum(variants) => ("Enum", variants).serialize(serializer),
+            ComplexBaseType::Struct(fields) => ("Struct", fields).serialize(serializer),
+            ComplexBaseType::Array(def) => ("Array", def).serialize(serializer),
+            ComplexBaseType::BoundedInt { lo, hi } => {
+                ("Int", (lo, hi)).serialize(serializer)
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ComplexBaseType {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let object = value.as_object().ok_or_else(|| {
+            de::Error::custom("complex base type must be a single-key object")
+        })?;
+        if object.len() != 1 {
+            return Err(de::Error::custom("complex base type must have exactly one key"));
+        }
+        let (key, val) = object.iter().next().unwrap();
+        match key.as_str() {
+            "Enum" => serde_json::from_value(val.clone())
+                .map(ComplexBaseType::Enum)
+                .map_err(de::Error::custom),
+            "Struct" => serde_json::from_value(val.clone())
+                .map(ComplexBaseType::Struct)
+                .map_err(de::Error::custom),
+            "Array" => serde_json::from_value(val.clone())
+                .map(ComplexBaseType::Array)
+                .map_err(de::Error::custom),
+            "Int" => {
+                let bounds: Vec<i64> = serde_json::from_value(val.clone())
+                    .map_err(de::Error::custom)?;
+                if bounds.len() != 2 || bounds[0] > bounds[1] {
+                    return Err(de::Error::custom(
+                        "bounded Int must be [lo, hi] with lo <= hi",
+                    ));
+                }
+                Ok(ComplexBaseType::BoundedInt {
+                    lo: bounds[0],
+                    hi: bounds[1],
+                })
+            }
+            other => Err(de::Error::custom(format!(
+                "unknown complex base type key: \"{other}\""
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -109,6 +166,9 @@ impl fmt::Display for BaseType {
             }
             BaseType::Complex(ComplexBaseType::Array(ref def)) => {
                 write!(f, "Array<{}, {}>", def.elem, def.len)
+            }
+            BaseType::Complex(ComplexBaseType::BoundedInt { lo, hi }) => {
+                write!(f, "Int{{{lo}..={hi}}}")
             }
         }
     }

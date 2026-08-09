@@ -170,6 +170,10 @@ fn check_init_type_match(
         }
         BaseType::Complex(ComplexBaseType::Struct(_)) => !init.is_object(),
         BaseType::Complex(ComplexBaseType::Array(_)) => !init.is_array(),
+        BaseType::Complex(ComplexBaseType::BoundedInt { lo, hi }) => match init.as_i64() {
+            Some(v) => v < *lo || v > *hi,
+            None => true,
+        },
     };
 
     if mismatch {
