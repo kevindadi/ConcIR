@@ -26,6 +26,56 @@ See [`error_codes.md`](error_codes.md) for the validation error reference and [`
 | `entry`      | string |   yes    | Entry function name                                                                    |
 | `goals`      | array  |    no    | Reachability and variable postcondition goals; defaults to an empty array when omitted |
 
+## Module
+
+A `Module` is an independently authored fragment with the same payload as a
+`Program`. ConcIR concatenates a list of modules into one `Program` before
+validation. Cross-module `call`/`spawn` targets resolve after concatenation;
+each function in the assembled program carries `module` equal to its source
+[`Module.name`](#module).
+
+```json
+{
+  "name": "producer",
+  "provides": ["producer"],
+  "requires": [],
+  "resources": [
+    {"name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync"}
+  ],
+  "protection": [],
+  "functions": [
+    {
+      "name": "producer",
+      "kind": "closure",
+      "body": [
+        { "sid": "s1", "op": ["res_op", "mtx", "lock"], "transfer": ["next", "s2"] },
+        { "sid": "s2", "op": ["res_op", "mtx", "drop"], "transfer": ["next", "s3"] },
+        { "sid": "s3", "op": "return", "transfer": "return" }
+      ]
+    }
+  ]
+}
+```
+
+| Field        | Type   | Required | Description                                                                 |
+| ------------ | ------ | :------: | --------------------------------------------------------------------------- |
+| `name`       | string |   yes    | Module identity; stamped onto each function as `Function.module` after concat |
+| `provides`   | array  |    no    | Function names this module exports; defaults to `[]`                        |
+| `requires`   | array  |    no    | Function names used here but defined in another module; defaults to `[]`    |
+| `resources`  | array  |    no    | Shared resource declarations; defaults to `[]`                              |
+| `protection` | array  |    no    | Protection mapping; defaults to `[]`                                        |
+| `functions`  | array  |    no    | Function definitions; defaults to `[]`                                      |
+| `entry`      | string |    no    | Entry function when this module owns the program entry                      |
+| `goals`      | array  |    no    | Reachability goals contributed by this module; defaults to `[]`             |
+
+Shared resources may be declared in the owning module and only referenced in
+others, or redeclared in every module that uses them. `provides` / `requires`
+are interface annotations for later schema-level checks; they are not enforced
+yet.
+
+The assembled `Program` remains the validator input. Concatenation lives in
+ConcIR and is not part of this grammar snapshot.
+
 ## Resource
 
 **Synchronization primitives** (`kind: "sync"`):
@@ -97,9 +147,9 @@ Each `Var` may appear at most once. `Atomic` resources do not appear in protecti
 ```
 `kind` values: `"normal"` / `"async"` / `"closure"`
 
-The optional `module` field records the source fragment when the program was
-assembled from modular ConcIR parts; it is used for cross-module repair
-attribution and is absent for single-fragment programs.
+The optional `module` field records the source [`Module.name`](#module) when
+the program was concatenated from modular fragments; it is used for
+cross-module repair attribution and is absent for single-fragment programs.
 
 ### Typed data flow (params / returns)
 
@@ -168,7 +218,7 @@ modeled as unknown in the CVN.
 | `"return"`                          | Function return (string, without a value)                          |
 | `"nop"`                             | No-op; useful as an explicit control-flow node |
 
-`call` targets are resolved after merge, so any defined function may be called — body-less or bodied, including one with synchronization operations.
+`call` targets are resolved after modules are concatenated into a `Program`, so any defined function may be called — body-less or bodied, including one with synchronization operations.
 
 ### `res_op` action list
 

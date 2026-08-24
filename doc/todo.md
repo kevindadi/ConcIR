@@ -28,8 +28,9 @@ Status legend: `[x]` done · `[ ]` planned · `[~]` in progress
 
 ## Modular generation
 
-- `[x]` `merge` assembles modular fragments into one Program (unique function names and goal ids, consistent shared resources, single entry owner); module provenance surfaced in downstream bug reports
-- `[ ] ` Schema-level module validation — the `module` field is an annotation; a native module declaration (provides/requires, shared-resource contracts) would let the validator catch interface drift before merge
+- `[x]` Native `Module` declaration (same payload as `Program`, plus `name` / `provides` / `requires`)
+- `[ ]` Concatenate `Module` fragments into one `Program` (unique function names and goal ids, consistent shared resources, single entry owner); stamp `Function.module`
+- `[ ]` Schema-level module validation — `provides`/`requires` and shared-resource contracts, so the validator can catch interface drift before concatenation
 
 ## Validation & diagnostics
 

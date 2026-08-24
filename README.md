@@ -29,7 +29,7 @@ items, and the process exits with exit code 1.
 
 | Document                         | Contents                                                        |
 | -------------------------------- | --------------------------------------------------------------- |
-| [`doc/syntax.md`](doc/syntax.md) | ConcIR grammar: top-level shape, resources, functions, ops, transfers, goals, validation pipeline, `wait` semantics |
+| [`doc/syntax.md`](doc/syntax.md) | ConcIR grammar: top-level shape, modules, resources, functions, ops, transfers, goals, validation pipeline, `wait` semantics |
 | [`doc/error_codes.md`](doc/error_codes.md) | Validation error reference (E0xx–E7xx) and diagnostic output format |
 | [`doc/todo.md`](doc/todo.md)     | Roadmap: modeling scope, call semantics, modular generation     |
 
@@ -39,7 +39,7 @@ items, and the process exits with exit code 1.
 src/
   main.rs              Entry: read JSON → deserialize → validate → emit report
   lib.rs               Module declarations
-  ast.rs               IR type definitions (Program, Resource, Op, Transfer, etc.)
+  ast.rs               IR type definitions (Program, Module, Resource, Op, Transfer, etc.)
   diagnostic.rs        Diagnostic types (Diagnostic, ValidationReport)
   validate/
     mod.rs             Validation entry: chains the 8 passes

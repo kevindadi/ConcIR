@@ -31,6 +31,37 @@ pub struct Program {
     pub goals: Vec<BusinessGoal>,
 }
 
+/// A modular ConcIR fragment.
+///
+/// A [`Module`] is the same payload as [`Program`] (resources, protection,
+/// functions, optional entry, optional goals), identified by [`Module::name`].
+/// Independently authored modules are later concatenated inside ConcIR into a
+/// single [`Program`]. Cross-module `call`/`spawn` targets resolve after that
+/// concatenation; [`Function::module`] records the source fragment.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Module {
+    pub name: String,
+    /// Function names this module exports for other modules to `call`/`spawn`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provides: Vec<String>,
+    /// Function names this module uses but does not define.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires: Vec<String>,
+    #[serde(default)]
+    pub resources: Vec<Resource>,
+    #[serde(default)]
+    pub protection: Vec<Protection>,
+    #[serde(default)]
+    pub functions: Vec<Function>,
+    /// Entry function when this module owns the program entry. Absent on
+    /// non-entry modules.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub goals: Vec<BusinessGoal>,
+}
+
 // ──────────────────── Resources ────────────────────
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -204,8 +235,8 @@ pub struct ParamDecl {
 pub struct Function {
     pub name: String,
     pub kind: String,
-    /// Source module when the program was assembled from modular ConcIR
-    /// fragments. Used for cross-module repair attribution; absent for
+    /// Source [`Module::name`] after modules are concatenated into a
+    /// [`Program`]. Used for cross-module repair attribution; absent for
     /// single-fragment programs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub module: Option<String>,
