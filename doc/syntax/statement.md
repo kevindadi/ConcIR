@@ -86,9 +86,6 @@ May block in the CVN.
 The in-flight messages live in the Channel resource's `capacity` slots.
 See [Resource](resource.md) and [`select` guards](#select).
 
-`condvar_wait` lock release / re-acquire is described under
-[Wait semantics](wait.md).
-
 ## Threads and calls
 
 Unstructured `spawn` / `join` pair on **handles**. A `scope` statement
@@ -163,4 +160,4 @@ unless:
 The translator, at codegen, must map that async guard to `tokio::sync::Notify`,
 a `watch` channel, or a timeout race — not to `std::sync::Condvar::wait`.
 A sync wait loop uses `condvar_wait` as a **statement** plus a `branch`
-back-edge, not `select`. See [Wait semantics](wait.md).
+back-edge, not `select`.

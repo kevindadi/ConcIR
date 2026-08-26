@@ -22,4 +22,3 @@ The formal grammar is [`ebnf.md`](../ebnf.md). See
 | [Function](function.md) | `kind` / `form`, params / returns / locals |
 | [Statement](statement.md) | CFG node: data, sync, threads, calls, control ops |
 | [Validation](validation.md) | Nine-pass pipeline |
-| [Wait semantics](wait.md) | `condvar_wait` lock release / re-acquire |
