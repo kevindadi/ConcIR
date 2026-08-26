@@ -7,8 +7,9 @@ The downstream `cir2cvn` translator builds a CVN (Concurrency Verification Net)
 from a validated program for state-space exploration.
 
 ConcIR is language-neutral. A program is a set of modules; names are ConcIR
-FQNs (`module::entity`), not backend crate paths. Function bodies follow
-compiler IR: basic blocks with statements, then a call or a terminator.
+FQNs (`module::entity`), not backend crate paths. Function bodies are a
+flattened CFG: each basic block is a list of statements followed by exactly
+one terminator (`goto` / `branch` / `switch` / `return` / `select`).
 
 ## Quick Start
 
@@ -33,7 +34,7 @@ items, and the process exits with exit code 1.
 
 | Document                         | Contents                                                        |
 | -------------------------------- | --------------------------------------------------------------- |
-| [`doc/syntax.md`](doc/syntax.md) | Grammar: FQN rules, modules, basic blocks, statements, calls, terminators, validation pipeline |
+| [`doc/syntax.md`](doc/syntax.md) | Grammar: FQN rules, modules, flattened CFG (statements + terminator), validation pipeline |
 | [`doc/error_codes.md`](doc/error_codes.md) | Validation error reference (E0xx–E9xx) and diagnostic output format |
 | [`doc/todo.md`](doc/todo.md)     | Roadmap: modeling scope, call semantics, modular generation     |
 
@@ -43,7 +44,7 @@ items, and the process exits with exit code 1.
 src/
   main.rs              Entry: read JSON → deserialize → validate → emit report
   lib.rs               Module declarations
-  ast.rs               IR types (Program, Module, Block, Stmt, Call, Terminator)
+  ast.rs               IR types (Program, Module, Block, Stmt, Terminator)
   fqn.rs               Identifier and FQN rules
   diagnostic.rs        Diagnostic types (Diagnostic, ValidationReport)
   validate/

@@ -15,12 +15,13 @@ fn fn_named<'a>(prog: &'a Program, name: &str) -> &'a Function {
         .unwrap()
 }
 
-fn call_block(sid: &str, call: Call) -> Block {
+fn stmt_goto(sid: &str, stmt: Stmt, target: &str) -> Block {
     Block {
         sid: sid.into(),
-        statements: vec![],
-        call: Some(call),
-        terminator: None,
+        statements: vec![stmt],
+        terminator: Terminator::Goto {
+            target: target.into(),
+        },
     }
 }
 
@@ -28,8 +29,7 @@ fn data_block(sid: &str, statements: Vec<Stmt>, terminator: Terminator) -> Block
     Block {
         sid: sid.into(),
         statements,
-        call: None,
-        terminator: Some(terminator),
+        terminator,
     }
 }
 
@@ -46,12 +46,12 @@ fn make_linear_function() -> Function {
         returns: None,
         locals: vec![],
         body: vec![
-            call_block(
+            stmt_goto(
                 "s1",
-                Call::MutexLock {
+                Stmt::MutexLock {
                     resource: "mtx".into(),
-                    target: "s2".into(),
                 },
+                "s2",
             ),
             data_block(
                 "s2",
@@ -63,12 +63,12 @@ fn make_linear_function() -> Function {
                     target: "s3".into(),
                 },
             ),
-            call_block(
+            stmt_goto(
                 "s3",
-                Call::MutexUnlock {
+                Stmt::MutexUnlock {
                     resource: "mtx".into(),
-                    target: "s4".into(),
                 },
+                "s4",
             ),
             ret_block("s4"),
         ],

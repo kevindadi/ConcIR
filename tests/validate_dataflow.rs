@@ -32,14 +32,14 @@ fn modeled_param_referenced_in_guard_is_valid() {
         r#"[{"name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync"}]"#,
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "call": {"kind": "call", "func": "worker", "args": ["n"], "target": "s2"}},
+                {"sid": "s1", "statements": [{"kind": "call", "func": "worker", "args": ["n"]}], "terminator": {"kind": "goto", "target": "s2"}},
                 {"sid": "s2", "terminator": {"kind": "return"}}
             ]},
             {"name": "worker", "kind": "normal",
              "params": [{"name": "n", "type": "Int", "modeled": true}],
              "body": [
-                {"sid": "s1", "call": {"kind": "mutex_lock", "resource": "mtx", "target": "s2"}},
-                {"sid": "s2", "call": {"kind": "mutex_unlock", "resource": "mtx", "target": "s3"}},
+                {"sid": "s1", "statements": [{"kind": "mutex_lock", "resource": "mtx"}], "terminator": {"kind": "goto", "target": "s2"}},
+                {"sid": "s2", "statements": [{"kind": "mutex_unlock", "resource": "mtx"}], "terminator": {"kind": "goto", "target": "s3"}},
                 {"sid": "s3", "terminator": {"kind": "return"}}
              ]}
         ]"#,
@@ -53,7 +53,7 @@ fn unmodeled_param_referenced_in_body_is_e912() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "call": {"kind": "call", "func": "worker", "args": [], "target": "s2"}},
+                {"sid": "s1", "statements": [{"kind": "call", "func": "worker", "args": []}], "terminator": {"kind": "goto", "target": "s2"}},
                 {"sid": "s2", "terminator": {"kind": "return"}}
             ]},
             {"name": "worker", "kind": "normal",
@@ -67,7 +67,11 @@ fn unmodeled_param_referenced_in_body_is_e912() {
         ]"#,
     );
     assert!(!report.valid);
-    assert!(codes(&report).contains(&"E912"), "got: {:?}", report.diagnostics);
+    assert!(
+        codes(&report).contains(&"E912"),
+        "got: {:?}",
+        report.diagnostics
+    );
 }
 
 #[test]
@@ -76,7 +80,7 @@ fn call_argument_arity_mismatch_is_e920() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "call": {"kind": "call", "func": "worker", "args": ["a", "b"], "target": "s2"}},
+                {"sid": "s1", "statements": [{"kind": "call", "func": "worker", "args": ["a", "b"]}], "terminator": {"kind": "goto", "target": "s2"}},
                 {"sid": "s2", "terminator": {"kind": "return"}}
             ]},
             {"name": "worker", "kind": "normal",
@@ -85,7 +89,11 @@ fn call_argument_arity_mismatch_is_e920() {
         ]"#,
     );
     assert!(!report.valid);
-    assert!(codes(&report).contains(&"E920"), "got: {:?}", report.diagnostics);
+    assert!(
+        codes(&report).contains(&"E920"),
+        "got: {:?}",
+        report.diagnostics
+    );
 }
 
 #[test]
@@ -96,7 +104,7 @@ fn call_capture_into_non_var_resource_is_e921() {
             {"name": "main", "kind": "normal",
              "params": [{"name": "x", "type": "Int", "modeled": true}],
              "body": [
-                {"sid": "s1", "call": {"kind": "call", "func": "worker", "args": ["x"], "dst": "mtx", "target": "s2"}},
+                {"sid": "s1", "statements": [{"kind": "call", "func": "worker", "args": ["x"], "dst": "mtx"}], "terminator": {"kind": "goto", "target": "s2"}},
                 {"sid": "s2", "terminator": {"kind": "return"}}
              ]},
             {"name": "worker", "kind": "normal",
@@ -106,7 +114,11 @@ fn call_capture_into_non_var_resource_is_e921() {
         ]"#,
     );
     assert!(!report.valid);
-    assert!(codes(&report).contains(&"E921"), "got: {:?}", report.diagnostics);
+    assert!(
+        codes(&report).contains(&"E921"),
+        "got: {:?}",
+        report.diagnostics
+    );
 }
 
 #[test]
@@ -115,7 +127,7 @@ fn modeled_return_with_bare_return_is_e913_warning() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "call": {"kind": "call", "func": "worker", "args": [], "target": "s2"}},
+                {"sid": "s1", "statements": [{"kind": "call", "func": "worker", "args": []}], "terminator": {"kind": "goto", "target": "s2"}},
                 {"sid": "s2", "terminator": {"kind": "return"}}
             ]},
             {"name": "worker", "kind": "normal",
@@ -124,7 +136,11 @@ fn modeled_return_with_bare_return_is_e913_warning() {
         ]"#,
     );
     assert!(report.valid, "warning only, got: {:?}", report.diagnostics);
-    assert!(codes(&report).contains(&"E913"), "got: {:?}", report.diagnostics);
+    assert!(
+        codes(&report).contains(&"E913"),
+        "got: {:?}",
+        report.diagnostics
+    );
 }
 
 #[test]
@@ -136,7 +152,11 @@ fn param_colliding_with_resource_is_e910() {
             "body": [{"sid": "s1", "terminator": {"kind": "return"}}]}]"#,
     );
     assert!(!report.valid);
-    assert!(codes(&report).contains(&"E910"), "got: {:?}", report.diagnostics);
+    assert!(
+        codes(&report).contains(&"E910"),
+        "got: {:?}",
+        report.diagnostics
+    );
 }
 
 #[test]
@@ -161,7 +181,11 @@ fn bounded_int_init_out_of_range_is_e208() {
         ]}]"#,
     );
     assert!(!report.valid);
-    assert!(codes(&report).contains(&"E208"), "got: {:?}", report.diagnostics);
+    assert!(
+        codes(&report).contains(&"E208"),
+        "got: {:?}",
+        report.diagnostics
+    );
 }
 
 #[test]
@@ -175,7 +199,11 @@ fn bounded_int_write_literal_out_of_range_is_e203() {
         ]}]"#,
     );
     assert!(!report.valid);
-    assert!(codes(&report).contains(&"E203"), "got: {:?}", report.diagnostics);
+    assert!(
+        codes(&report).contains(&"E203"),
+        "got: {:?}",
+        report.diagnostics
+    );
 }
 
 #[test]

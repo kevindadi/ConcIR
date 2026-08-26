@@ -7,123 +7,181 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let rt_map = build_resource_type_map(program);
 
     program.walk_blocks(|mi, fi, si, _, _, block| {
-        if let Some(call) = &block.call {
-            let path = format!("{}.call", Program::block_path(mi, fi, si));
-            match call {
-                Call::MutexLock { resource, .. } | Call::MutexUnlock { resource, .. } => {
-                    check_rt(
-                        &rt_map,
-                        diags,
-                        &path,
-                        resource,
-                        |rt| matches!(rt, ResType::Mutex),
-                        "E301",
-                        "mutex_lock/unlock requires a Mutex",
-                    );
-                }
-                Call::RwLockRead { resource, .. }
-                | Call::RwLockWrite { resource, .. }
-                | Call::RwLockUnlock { resource, .. } => {
-                    check_rt(
-                        &rt_map,
-                        diags,
-                        &path,
-                        resource,
-                        |rt| matches!(rt, ResType::RwLock),
-                        "E302",
-                        "rwlock_* requires an RwLock",
-                    );
-                }
-                Call::CondvarWait { condvar, lock, .. } => {
-                    check_rt(
-                        &rt_map,
-                        diags,
-                        &path,
-                        condvar,
-                        |rt| matches!(rt, ResType::Condvar),
-                        "E303",
-                        "condvar_wait requires a Condvar",
-                    );
-                    if let Some(lock_rt) = rt_map.get(lock) {
-                        if !matches!(lock_rt, ResType::Mutex | ResType::RwLock) {
-                            diags.push(
-                                Diagnostic::error(
-                                    "E304",
-                                    format!("wait lock '{lock}' is not a Mutex or RwLock"),
-                                )
-                                .with_path(path.clone())
-                                .with_fix("specify a Mutex or RwLock as the wait lock"),
-                            );
+        let stmt_path = format!("{}.statements", Program::block_path(mi, fi, si));
+        for stmt in &block.statements {
+            check_stmt(&rt_map, diags, &stmt_path, stmt);
+        }
+        if let Terminator::Select { branches, .. } = &block.terminator {
+            let path = format!("{}.terminator", Program::block_path(mi, fi, si));
+            for branch in branches {
+                match &branch.guard {
+                    SelectGuard::ChannelRecv { channel, .. } => {
+                        check_rt(
+                            &rt_map,
+                            diags,
+                            &path,
+                            channel,
+                            |rt| matches!(rt, ResType::Channel(_)),
+                            "E306",
+                            "channel_recv requires a Channel",
+                        );
+                    }
+                    SelectGuard::CondvarWait { condvar, lock } => {
+                        check_rt(
+                            &rt_map,
+                            diags,
+                            &path,
+                            condvar,
+                            |rt| matches!(rt, ResType::Condvar),
+                            "E303",
+                            "condvar_wait requires a Condvar",
+                        );
+                        if let Some(lock_rt) = rt_map.get(lock) {
+                            if !matches!(lock_rt, ResType::Mutex | ResType::RwLock) {
+                                diags.push(
+                                    Diagnostic::error(
+                                        "E304",
+                                        format!("wait lock '{lock}' is not a Mutex or RwLock"),
+                                    )
+                                    .with_path(path.clone())
+                                    .with_fix("specify a Mutex or RwLock as the wait lock"),
+                                );
+                            }
                         }
                     }
-                }
-                Call::CondvarNotify { condvar, .. } | Call::CondvarNotifyAll { condvar, .. } => {
-                    check_rt(
-                        &rt_map,
-                        diags,
-                        &path,
-                        condvar,
-                        |rt| matches!(rt, ResType::Condvar),
-                        "E303",
-                        "condvar_notify requires a Condvar",
-                    );
-                }
-                Call::SemaphoreAcquire { resource, .. }
-                | Call::SemaphoreRelease { resource, .. } => {
-                    check_rt(
-                        &rt_map,
-                        diags,
-                        &path,
-                        resource,
-                        |rt| matches!(rt, ResType::Semaphore),
-                        "E305",
-                        "semaphore_* requires a Semaphore",
-                    );
-                }
-                Call::ChannelSend { channel, .. } | Call::ChannelRecv { channel, .. } => {
-                    check_rt(
-                        &rt_map,
-                        diags,
-                        &path,
-                        channel,
-                        |rt| matches!(rt, ResType::Channel(_)),
-                        "E306",
-                        "channel_send/recv requires a Channel",
-                    );
-                }
-                Call::AtomicLoad { resource, .. }
-                | Call::AtomicStore { resource, .. }
-                | Call::AtomicCas { resource, .. } => {
-                    check_rt(
-                        &rt_map,
-                        diags,
-                        &path,
-                        resource,
-                        |rt| matches!(rt, ResType::Atomic(_)),
-                        "E307",
-                        "atomic_* requires an Atomic",
-                    );
-                }
-                _ => {}
-            }
-        }
-        for stmt in &block.statements {
-            if let Stmt::ReadShared { resource, .. } | Stmt::WriteShared { resource, .. } = stmt {
-                if let Some(rt) = rt_map.get(resource) {
-                    if !matches!(rt, ResType::Var(_)) {
-                        diags.push(
-                            Diagnostic::error(
-                                "E308",
-                                format!("cannot read/write non-Var resource '{resource}'"),
-                            )
-                            .with_path(format!("{}.statements", Program::block_path(mi, fi, si)))
-                            .with_fix("use a Var-typed resource"),
+                    SelectGuard::SemaphoreAcquire { resource } => {
+                        check_rt(
+                            &rt_map,
+                            diags,
+                            &path,
+                            resource,
+                            |rt| matches!(rt, ResType::Semaphore),
+                            "E305",
+                            "semaphore_* requires a Semaphore",
                         );
                     }
                 }
             }
         }
     });
+}
+
+fn check_stmt(
+    rt_map: &std::collections::HashMap<String, ResType>,
+    diags: &mut Vec<Diagnostic>,
+    path: &str,
+    stmt: &Stmt,
+) {
+    match stmt {
+        Stmt::MutexLock { resource } | Stmt::MutexUnlock { resource } => {
+            check_rt(
+                rt_map,
+                diags,
+                path,
+                resource,
+                |rt| matches!(rt, ResType::Mutex),
+                "E301",
+                "mutex_lock/unlock requires a Mutex",
+            );
+        }
+        Stmt::RwLockRead { resource }
+        | Stmt::RwLockWrite { resource }
+        | Stmt::RwLockUnlock { resource } => {
+            check_rt(
+                rt_map,
+                diags,
+                path,
+                resource,
+                |rt| matches!(rt, ResType::RwLock),
+                "E302",
+                "rwlock_* requires an RwLock",
+            );
+        }
+        Stmt::CondvarWait { condvar, lock } => {
+            check_rt(
+                rt_map,
+                diags,
+                path,
+                condvar,
+                |rt| matches!(rt, ResType::Condvar),
+                "E303",
+                "condvar_wait requires a Condvar",
+            );
+            if let Some(lock_rt) = rt_map.get(lock) {
+                if !matches!(lock_rt, ResType::Mutex | ResType::RwLock) {
+                    diags.push(
+                        Diagnostic::error(
+                            "E304",
+                            format!("wait lock '{lock}' is not a Mutex or RwLock"),
+                        )
+                        .with_path(path.to_string())
+                        .with_fix("specify a Mutex or RwLock as the wait lock"),
+                    );
+                }
+            }
+        }
+        Stmt::CondvarNotify { condvar } | Stmt::CondvarNotifyAll { condvar } => {
+            check_rt(
+                rt_map,
+                diags,
+                path,
+                condvar,
+                |rt| matches!(rt, ResType::Condvar),
+                "E303",
+                "condvar_notify requires a Condvar",
+            );
+        }
+        Stmt::SemaphoreAcquire { resource, .. } | Stmt::SemaphoreRelease { resource, .. } => {
+            check_rt(
+                rt_map,
+                diags,
+                path,
+                resource,
+                |rt| matches!(rt, ResType::Semaphore),
+                "E305",
+                "semaphore_* requires a Semaphore",
+            );
+        }
+        Stmt::ChannelSend { channel, .. } | Stmt::ChannelRecv { channel, .. } => {
+            check_rt(
+                rt_map,
+                diags,
+                path,
+                channel,
+                |rt| matches!(rt, ResType::Channel(_)),
+                "E306",
+                "channel_send/recv requires a Channel",
+            );
+        }
+        Stmt::AtomicLoad { resource, .. }
+        | Stmt::AtomicStore { resource, .. }
+        | Stmt::AtomicCas { resource, .. } => {
+            check_rt(
+                rt_map,
+                diags,
+                path,
+                resource,
+                |rt| matches!(rt, ResType::Atomic(_)),
+                "E307",
+                "atomic_* requires an Atomic",
+            );
+        }
+        Stmt::ReadShared { resource, .. } | Stmt::WriteShared { resource, .. } => {
+            if let Some(rt) = rt_map.get(resource) {
+                if !matches!(rt, ResType::Var(_)) {
+                    diags.push(
+                        Diagnostic::error(
+                            "E308",
+                            format!("cannot read/write non-Var resource '{resource}'"),
+                        )
+                        .with_path(path.to_string())
+                        .with_fix("use a Var-typed resource"),
+                    );
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 fn check_rt(

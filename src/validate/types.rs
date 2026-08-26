@@ -82,7 +82,10 @@ fn check_branch_conditions(program: &Program, diags: &mut Vec<Diagnostic>) {
                     "E201",
                     format!("branch condition \"{cond}\" is not a comparison expression"),
                 )
-                .with_path(format!("{}.terminator.cond", Program::block_path(mi, fi, si)))
+                .with_path(format!(
+                    "{}.terminator.cond",
+                    Program::block_path(mi, fi, si)
+                ))
                 .with_fix("use a comparison operator: ==, !=, >, <, >=, <="),
             );
         }
@@ -149,30 +152,54 @@ fn check_write_types(
     program.walk_blocks(|mi, fi, si, _, _, block| {
         let path = Program::block_path(mi, fi, si);
         for stmt in &block.statements {
-            if let Stmt::WriteShared { resource, expr } = stmt {
-                if let Some(ResType::Var(expected)) = resource_types.get(resource) {
-                    check_literal_type(diags, "E203", expr, expected, &format!("{path}.statements"));
+            match stmt {
+                Stmt::WriteShared { resource, expr } => {
+                    if let Some(ResType::Var(expected)) = resource_types.get(resource) {
+                        check_literal_type(
+                            diags,
+                            "E203",
+                            expr,
+                            expected,
+                            &format!("{path}.statements"),
+                        );
+                    }
                 }
-            }
-        }
-        match &block.call {
-            Some(Call::AtomicStore { resource, value, .. }) => {
-                if let Some(ResType::Atomic(expected)) = resource_types.get(resource) {
-                    check_literal_type(diags, "E204", value, expected, &format!("{path}.call"));
+                Stmt::AtomicStore { resource, value } => {
+                    if let Some(ResType::Atomic(expected)) = resource_types.get(resource) {
+                        check_literal_type(
+                            diags,
+                            "E204",
+                            value,
+                            expected,
+                            &format!("{path}.statements"),
+                        );
+                    }
                 }
-            }
-            Some(Call::AtomicCas {
-                resource,
-                expected,
-                desired,
-                ..
-            }) => {
-                if let Some(ResType::Atomic(ty)) = resource_types.get(resource) {
-                    check_literal_type(diags, "E205", expected, ty, &format!("{path}.call"));
-                    check_literal_type(diags, "E205", desired, ty, &format!("{path}.call"));
+                Stmt::AtomicCas {
+                    resource,
+                    expected,
+                    desired,
+                    ..
+                } => {
+                    if let Some(ResType::Atomic(ty)) = resource_types.get(resource) {
+                        check_literal_type(
+                            diags,
+                            "E205",
+                            expected,
+                            ty,
+                            &format!("{path}.statements"),
+                        );
+                        check_literal_type(
+                            diags,
+                            "E205",
+                            desired,
+                            ty,
+                            &format!("{path}.statements"),
+                        );
+                    }
                 }
+                _ => {}
             }
-            _ => {}
         }
     });
 }
@@ -184,15 +211,17 @@ fn check_send_types(
     resource_types: &HashMap<String, ResType>,
 ) {
     program.walk_blocks(|mi, fi, si, _, _, block| {
-        if let Some(Call::ChannelSend { channel, value, .. }) = &block.call {
-            if let Some(ResType::Channel(expected)) = resource_types.get(channel) {
-                check_literal_type(
-                    diags,
-                    "E206",
-                    value,
-                    expected,
-                    &format!("{}.call", Program::block_path(mi, fi, si)),
-                );
+        for stmt in &block.statements {
+            if let Stmt::ChannelSend { channel, value } = stmt {
+                if let Some(ResType::Channel(expected)) = resource_types.get(channel) {
+                    check_literal_type(
+                        diags,
+                        "E206",
+                        value,
+                        expected,
+                        &format!("{}.statements", Program::block_path(mi, fi, si)),
+                    );
+                }
             }
         }
     });
@@ -234,9 +263,7 @@ fn check_literal_type(
                 diags.push(
                     Diagnostic::error(
                         code,
-                        format!(
-                            "value {v} is outside the declared Int range {lo}..={hi}"
-                        ),
+                        format!("value {v} is outside the declared Int range {lo}..={hi}"),
                     )
                     .with_path(path.to_string())
                     .with_fix(format!("use a value between {lo} and {hi}")),

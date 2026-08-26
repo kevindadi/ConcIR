@@ -27,12 +27,12 @@ fn call_to_sync_bodied_function_is_valid() {
         r#"[{"name": "m1", "kind": "sync", "type": "Mutex", "mode": "Sync"}]"#,
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "call": {"kind": "call", "func": "helper", "args": [], "target": "s2"}},
+                {"sid": "s1", "statements": [{"kind": "call", "func": "helper", "args": []}], "terminator": {"kind": "goto", "target": "s2"}},
                 {"sid": "s2", "terminator": {"kind": "return"}}
             ]},
             {"name": "helper", "kind": "normal", "body": [
-                {"sid": "s1", "call": {"kind": "mutex_lock", "resource": "m1", "target": "s2"}},
-                {"sid": "s2", "call": {"kind": "mutex_unlock", "resource": "m1", "target": "s3"}},
+                {"sid": "s1", "statements": [{"kind": "mutex_lock", "resource": "m1"}], "terminator": {"kind": "goto", "target": "s2"}},
+                {"sid": "s2", "statements": [{"kind": "mutex_unlock", "resource": "m1"}], "terminator": {"kind": "goto", "target": "s3"}},
                 {"sid": "s3", "terminator": {"kind": "return"}}
             ]}
         ]"#,
@@ -47,7 +47,7 @@ fn call_to_bodyless_function_is_valid() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "call": {"kind": "call", "func": "compute", "args": [], "target": "s2"}},
+                {"sid": "s1", "statements": [{"kind": "call", "func": "compute", "args": []}], "terminator": {"kind": "goto", "target": "s2"}},
                 {"sid": "s2", "terminator": {"kind": "return"}}
             ]},
             {"name": "compute", "kind": "normal", "body": [],
@@ -64,7 +64,7 @@ fn call_to_undefined_function_is_an_error() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "call": {"kind": "call", "func": "missing", "args": [], "target": "s2"}},
+                {"sid": "s1", "statements": [{"kind": "call", "func": "missing", "args": []}], "terminator": {"kind": "goto", "target": "s2"}},
                 {"sid": "s2", "terminator": {"kind": "return"}}
             ]}
         ]"#,

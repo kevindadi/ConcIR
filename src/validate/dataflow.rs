@@ -94,7 +94,7 @@ fn check_return_decl(f: &Function, mi: usize, fi: usize, diags: &mut Vec<Diagnos
     let bare_returns = f
         .body
         .iter()
-        .filter(|b| matches!(&b.terminator, Some(Terminator::Return { value: None })))
+        .filter(|b| matches!(&b.terminator, Terminator::Return { value: None }))
         .count();
     if bare_returns > 0 {
         diags.push(
@@ -121,53 +121,50 @@ fn check_call_sites(
     diags: &mut Vec<Diagnostic>,
 ) {
     for (si, block) in f.body.iter().enumerate() {
-        let Some(Call::Func {
-            func,
-            args,
-            dst,
-            ..
-        }) = &block.call
-        else {
-            continue;
-        };
-        let Some(callee) = callees.get(func) else {
-            continue;
-        };
+        for stmt in &block.statements {
+            let Stmt::Func { func, args, dst } = stmt else {
+                continue;
+            };
+            let Some(callee) = callees.get(func) else {
+                continue;
+            };
 
-        let modeled_params: Vec<&ParamDecl> = callee.params.iter().filter(|p| p.modeled).collect();
-        let path = format!("{}.call", Program::block_path(mi, fi, si));
+            let modeled_params: Vec<&ParamDecl> =
+                callee.params.iter().filter(|p| p.modeled).collect();
+            let path = format!("{}.statements", Program::block_path(mi, fi, si));
 
-        if args.len() != modeled_params.len() {
-            diags.push(
-                Diagnostic::error(
-                    "E920",
-                    format!(
+            if args.len() != modeled_params.len() {
+                diags.push(
+                    Diagnostic::error(
+                        "E920",
+                        format!(
                         "call('{func}') expects {} argument(s) for its modeled parameters, got {}",
                         modeled_params.len(),
                         args.len()
                     ),
-                )
-                .with_path(path.clone())
-                .with_fix(
-                    "supply one argument per modeled parameter, or mark unused parameters \
+                    )
+                    .with_path(path.clone())
+                    .with_fix(
+                        "supply one argument per modeled parameter, or mark unused parameters \
                      \"modeled\": false",
-                ),
-            );
-        }
+                    ),
+                );
+            }
 
-        if let Some(out_name) = dst {
-            if !var_resources.contains(out_name) {
-                diags.push(
-                    Diagnostic::error(
-                        "E921",
-                        format!(
+            if let Some(out_name) = dst {
+                if !var_resources.contains(out_name) {
+                    diags.push(
+                        Diagnostic::error(
+                            "E921",
+                            format!(
                             "call('{func}') captures its return into '{out_name}', which is not \
                              a writable Var/Atomic resource"
                         ),
-                    )
-                    .with_path(path.clone())
-                    .with_fix("capture into a declared Var or Atomic resource"),
-                );
+                        )
+                        .with_path(path.clone())
+                        .with_fix("capture into a declared Var or Atomic resource"),
+                    );
+                }
             }
         }
     }
@@ -179,28 +176,24 @@ fn param_referenced_in_body(f: &Function, param: &str) -> bool {
         for s in &b.statements {
             match s {
                 Stmt::AssignLocal { expr, .. } | Stmt::WriteShared { expr, .. } => texts.push(expr),
+                Stmt::AtomicStore { value, .. } | Stmt::ChannelSend { value, .. } => {
+                    texts.push(value);
+                }
+                Stmt::AtomicCas {
+                    expected, desired, ..
+                } => {
+                    texts.push(expected);
+                    texts.push(desired);
+                }
+                Stmt::Func { args, .. }
+                | Stmt::Spawn { args, .. }
+                | Stmt::AsyncCall { args, .. } => {
+                    texts.extend(args.iter().map(String::as_str));
+                }
                 _ => {}
             }
         }
-        match &b.call {
-            Some(Call::ChannelSend { value, .. } | Call::AtomicStore { value, .. }) => {
-                texts.push(value);
-            }
-            Some(Call::AtomicCas {
-                expected, desired, ..
-            }) => {
-                texts.push(expected);
-                texts.push(desired);
-            }
-            Some(Call::Func { args, .. }) | Some(Call::Spawn { args, .. }) => {
-                texts.extend(args.iter().map(String::as_str));
-            }
-            _ => {}
-        }
-        if let Some(Terminator::Return {
-            value: Some(value),
-        }) = &b.terminator
-        {
+        if let Terminator::Return { value: Some(value) } = &b.terminator {
             texts.push(value);
         }
         if let Some(cond) = b.branch_cond() {

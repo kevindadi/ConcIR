@@ -190,7 +190,7 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
     program.walk_blocks(|mi, fi, si, m, _, block| {
         let path = Program::block_path(mi, fi, si);
         for stmt in &block.statements {
-            if let Some((resource, _)) = stmt.shared_var_access() {
+            if let Some(resource) = stmt.resource_name() {
                 if !resource_defined(program, &m.name, resource) {
                     diags.push(
                         Diagnostic::error("E101", format!("undefined resource '{resource}'"))
@@ -199,27 +199,41 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
                     );
                 }
             }
-        }
-        if let Some(call) = &block.call {
-            if let Some(resource) = call.resource_name() {
-                if !resource_defined(program, &m.name, resource) {
-                    diags.push(
-                        Diagnostic::error("E101", format!("undefined resource '{resource}'"))
-                            .with_path(format!("{path}.call"))
-                            .with_fix("declare the resource or import it via requires"),
-                    );
-                }
-            }
-            if let Call::CondvarWait { lock, .. } = call {
+            if let Stmt::CondvarWait { lock, .. } = stmt {
                 if !resource_defined(program, &m.name, lock) {
                     diags.push(
                         Diagnostic::error(
                             "E101",
                             format!("undefined resource '{lock}' referenced in condvar_wait"),
                         )
-                        .with_path(format!("{path}.call.lock"))
+                        .with_path(format!("{path}.statements"))
                         .with_fix("declare this lock resource"),
                     );
+                }
+            }
+        }
+        if let Terminator::Select { branches, .. } = &block.terminator {
+            for branch in branches {
+                if let Some(resource) = branch.guard.resource_name() {
+                    if !resource_defined(program, &m.name, resource) {
+                        diags.push(
+                            Diagnostic::error("E101", format!("undefined resource '{resource}'"))
+                                .with_path(format!("{path}.terminator"))
+                                .with_fix("declare the resource or import it via requires"),
+                        );
+                    }
+                }
+                if let SelectGuard::CondvarWait { lock, .. } = &branch.guard {
+                    if !resource_defined(program, &m.name, lock) {
+                        diags.push(
+                            Diagnostic::error(
+                                "E101",
+                                format!("undefined resource '{lock}' referenced in condvar_wait"),
+                            )
+                            .with_path(format!("{path}.terminator"))
+                            .with_fix("declare this lock resource"),
+                        );
+                    }
                 }
             }
         }
@@ -228,34 +242,34 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
 
 fn check_function_references(program: &Program, diags: &mut Vec<Diagnostic>) {
     program.walk_blocks(|mi, fi, si, m, _, block| {
-        let Some(call) = &block.call else {
-            return;
-        };
-        let Some(func) = call.callee_func() else {
-            return;
-        };
-        if program.lookup_function(&m.name, func).is_none() {
-            diags.push(
-                Diagnostic::error("E102", format!("undefined function '{func}' referenced"))
-                    .with_path(format!("{}.call", Program::block_path(mi, fi, si)))
-                    .with_fix("define the function or import it via requires"),
-            );
-        }
-        if is_fqn(func) {
-            let required: HashSet<&str> = m.requires.functions.iter().map(String::as_str).collect();
-            if split_fqn(func).map(|(mod_name, _)| mod_name) != Some(m.name.as_str())
-                && !required.contains(func)
-            {
+        for stmt in &block.statements {
+            let Some(func) = stmt.callee_func() else {
+                continue;
+            };
+            if program.lookup_function(&m.name, func).is_none() {
                 diags.push(
-                    Diagnostic::error(
-                        "E108",
-                        format!(
-                            "cross-module reference '{func}' is not listed in requires.functions"
-                        ),
-                    )
-                    .with_path(format!("{}.call", Program::block_path(mi, fi, si)))
-                    .with_fix("add this FQN to the module's requires.functions"),
+                    Diagnostic::error("E102", format!("undefined function '{func}' referenced"))
+                        .with_path(format!("{}.statements", Program::block_path(mi, fi, si)))
+                        .with_fix("define the function or import it via requires"),
                 );
+            }
+            if is_fqn(func) {
+                let required: HashSet<&str> =
+                    m.requires.functions.iter().map(String::as_str).collect();
+                if split_fqn(func).map(|(mod_name, _)| mod_name) != Some(m.name.as_str())
+                    && !required.contains(func)
+                {
+                    diags.push(
+                        Diagnostic::error(
+                            "E108",
+                            format!(
+                                "cross-module reference '{func}' is not listed in requires.functions"
+                            ),
+                        )
+                        .with_path(format!("{}.statements", Program::block_path(mi, fi, si)))
+                        .with_fix("add this FQN to the module's requires.functions"),
+                    );
+                }
             }
         }
     });

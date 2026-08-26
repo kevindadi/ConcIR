@@ -1,4 +1,4 @@
-//! Module + FQN + Block/Call/Terminator grammar.
+//! Module + FQN + Block/Stmt/Terminator grammar.
 
 use concir::ast::{Block, Function, Module, Program, Terminator};
 use concir::fqn;
@@ -17,8 +17,10 @@ fn sample_module_json() -> &'static str {
                 "name": "producer",
                 "kind": "closure",
                 "body": [
-                    {"sid": "s1", "call": {"kind": "mutex_lock", "resource": "mtx", "target": "s2"}},
-                    {"sid": "s2", "call": {"kind": "mutex_unlock", "resource": "mtx", "target": "s3"}},
+                    {"sid": "s1", "statements": [{"kind": "mutex_lock", "resource": "mtx"}],
+                     "terminator": {"kind": "goto", "target": "s2"}},
+                    {"sid": "s2", "statements": [{"kind": "mutex_unlock", "resource": "mtx"}],
+                     "terminator": {"kind": "goto", "target": "s3"}},
                     {"sid": "s3", "terminator": {"kind": "return"}}
                 ]
             }
@@ -34,7 +36,7 @@ fn module_deserializes() {
     assert_eq!(module.functions[0].body.len(), 3);
     assert!(matches!(
         module.functions[0].body[2].terminator,
-        Some(Terminator::Return { value: None })
+        Terminator::Return { value: None }
     ));
 }
 
@@ -58,12 +60,19 @@ fn program_uses_modules_and_fqn_entry() {
 }
 
 #[test]
-fn block_rejects_both_call_and_terminator() {
+fn block_rejects_call_field() {
     let json = r#"{
         "sid": "s1",
         "call": {"kind": "mutex_lock", "resource": "m", "target": "s2"},
         "terminator": {"kind": "return"}
     }"#;
+    let result: Result<Block, _> = serde_json::from_str(json);
+    assert!(result.is_err());
+}
+
+#[test]
+fn block_requires_terminator() {
+    let json = r#"{"sid": "s1", "statements": [{"kind": "nop"}]}"#;
     let result: Result<Block, _> = serde_json::from_str(json);
     assert!(result.is_err());
 }
@@ -79,7 +88,7 @@ fn return_lives_only_on_terminator() {
     )
     .unwrap();
     assert!(f.body[0].is_return());
-    assert!(f.body[0].call.is_none());
+    assert!(f.body[0].statements.is_empty());
 }
 
 #[test]

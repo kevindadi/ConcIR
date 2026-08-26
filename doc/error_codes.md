@@ -89,6 +89,7 @@ Pairing is by **handle**, not by function name.
 | E406 | AsyncSpawnPairedWithJoin |  error   | async_call handle reused as join (should be await) |
 | E407 | JoinInAsyncContext       | warning  | join in an async function may block the runtime |
 | E408 | AwaitInSyncContext       |  error   | await used in a normal function                 |
+| E409 | CondvarWaitNotSelectable |  error   | `condvar_wait` as a `select` guard in a non-async function, or on a Sync-mode Condvar. Sync `Condvar::wait` cannot enter `select!`; async guards are codegen'd as Notify/watch/timeout race. |
 
 ## E5xx — Lock safety
 

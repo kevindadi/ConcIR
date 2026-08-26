@@ -107,8 +107,8 @@ fn check_lock_drop_pairing(
         visited[idx].insert(held.clone());
 
         let stmt = &f.body[idx];
-        if let Some(call) = &stmt.call {
-            if let Some(resource) = call.is_lock_acquire() {
+        for s in &stmt.statements {
+            if let Some(resource) = s.is_lock_acquire() {
                 if lock_resources.contains(resource) {
                     if held.contains(resource) {
                         diags.push(
@@ -119,13 +119,13 @@ fn check_lock_drop_pairing(
                                     f.name
                                 ),
                             )
-                            .with_path(format!("{fn_path}.body[{idx}].call"))
+                            .with_path(format!("{fn_path}.body[{idx}].statements"))
                             .with_fix("unlock before re-locking"),
                         );
                     }
                     held.insert(resource.to_string());
                 }
-            } else if let Some(resource) = call.is_lock_release() {
+            } else if let Some(resource) = s.is_lock_release() {
                 if lock_resources.contains(resource) {
                     if !held.contains(resource) {
                         diags.push(
@@ -136,7 +136,7 @@ fn check_lock_drop_pairing(
                                     f.name
                                 ),
                             )
-                            .with_path(format!("{fn_path}.body[{idx}].call"))
+                            .with_path(format!("{fn_path}.body[{idx}].statements"))
                             .with_fix("lock before unlock, or remove the unlock"),
                         );
                     }
@@ -195,37 +195,31 @@ fn check_sync_lock_across_await(
 
         let stmt = &f.body[idx];
 
-        if let Some(call) = &stmt.call {
-            if let Some(resource) = call.is_lock_acquire() {
+        for s in &stmt.statements {
+            if let Some(resource) = s.is_lock_acquire() {
                 if sync_locks.contains(resource) {
                     held.insert(resource.to_string());
                 }
-            } else if let Some(resource) = call.is_lock_release() {
+            } else if let Some(resource) = s.is_lock_release() {
                 if sync_locks.contains(resource) {
                     held.remove(resource);
                 }
             }
-        }
 
-        if stmt
-            .call
-            .as_ref()
-            .map(|c| c.is_await_like())
-            .unwrap_or(false)
-            && !held.is_empty()
-        {
-            for lock in &held {
-                diags.push(
-                    Diagnostic::error(
-                        "E504",
-                        format!(
-                            "Sync-mode lock '{lock}' held across await point in async function '{}'",
-                            f.name
-                        ),
-                    )
-                    .with_path(format!("{fn_path}.body[{idx}].op"))
-                    .with_fix("drop the lock before await and re-acquire after, or use Async-mode lock"),
-                );
+            if s.is_await_like() && !held.is_empty() {
+                for lock in &held {
+                    diags.push(
+                        Diagnostic::error(
+                            "E504",
+                            format!(
+                                "Sync-mode lock '{lock}' held across await point in async function '{}'",
+                                f.name
+                            ),
+                        )
+                        .with_path(format!("{fn_path}.body[{idx}].statements"))
+                        .with_fix("unlock before await and re-acquire after, or use Async-mode lock"),
+                    );
+                }
             }
         }
 
@@ -269,13 +263,13 @@ fn check_lock_ordering(
         visited.insert(key);
 
         let stmt = &f.body[idx];
-        if let Some(call) = &stmt.call {
-            if let Some(resource) = call.is_lock_acquire() {
+        for s in &stmt.statements {
+            if let Some(resource) = s.is_lock_acquire() {
                 if lock_resources.contains(resource) && !held.contains(resource) {
                     order.push(resource.to_string());
                     held.insert(resource.to_string());
                 }
-            } else if let Some(resource) = call.is_lock_release() {
+            } else if let Some(resource) = s.is_lock_release() {
                 if lock_resources.contains(resource) {
                     held.remove(resource);
                 }
@@ -351,18 +345,6 @@ fn check_var_access_without_lock(
 
         let stmt = &f.body[idx];
 
-        if let Some(call) = &stmt.call {
-            if let Some(resource) = call.is_lock_acquire() {
-                if lock_resources.contains(resource) {
-                    held.insert(resource.to_string());
-                }
-            } else if let Some(resource) = call.is_lock_release() {
-                if lock_resources.contains(resource) {
-                    held.remove(resource);
-                }
-            }
-        }
-
         for s in &stmt.statements {
             if let Some((resource, _)) = s.shared_var_access() {
                 if let Some(required_lock) = protection_map.get(resource) {
@@ -379,6 +361,15 @@ fn check_var_access_without_lock(
                             .with_fix("acquire the lock before accessing this variable"),
                         );
                     }
+                }
+            }
+            if let Some(resource) = s.is_lock_acquire() {
+                if lock_resources.contains(resource) {
+                    held.insert(resource.to_string());
+                }
+            } else if let Some(resource) = s.is_lock_release() {
+                if lock_resources.contains(resource) {
+                    held.remove(resource);
                 }
             }
         }

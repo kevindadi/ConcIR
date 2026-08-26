@@ -113,9 +113,9 @@ fn check_return_paths(
 /// E603: branch with same true/false targets
 fn check_branch_targets_same(f: &Function, fn_path: &str, diags: &mut Vec<Diagnostic>) {
     for (si, block) in f.body.iter().enumerate() {
-        if let Some(Terminator::Branch {
+        if let Terminator::Branch {
             then, else_target, ..
-        }) = &block.terminator
+        } = &block.terminator
         {
             if then == else_target {
                 diags.push(
@@ -203,18 +203,8 @@ fn check_infinite_loop(
 
         let has_blocking = scc.iter().any(|&idx| {
             let block = &f.body[idx];
-            matches!(
-                &block.call,
-                Some(
-                    Call::Await { .. }
-                        | Call::Join { .. }
-                        | Call::JoinAll { .. }
-                        | Call::ChannelRecv { .. }
-                        | Call::SemaphoreAcquire { .. }
-                        | Call::CondvarWait { .. }
-                        | Call::Select { .. }
-                )
-            )
+            block.statements.iter().any(Stmt::is_blocking)
+                || matches!(block.terminator, Terminator::Select { .. })
         });
 
         if !has_blocking {

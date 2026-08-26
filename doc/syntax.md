@@ -152,12 +152,10 @@ Each `Var` appears at most once. `Atomic` resources must not appear here.
   "body": [
     {
       "sid": "s1",
-      "call": {
-        "kind": "spawn",
-        "func": "worker",
-        "handle": "h_worker",
-        "target": "s2"
-      }
+      "statements": [
+        { "kind": "spawn", "func": "worker", "handle": "h_worker" }
+      ],
+      "terminator": { "kind": "goto", "target": "s2" }
     },
     { "sid": "s2", "terminator": { "kind": "return" } }
   ]
@@ -202,32 +200,42 @@ present, must be a writable Var/Atomic (E921).
 ```json
 {
   "sid": "s1",
-  "call": {
-    "kind": "call",
-    "func": "process",
-    "args": ["budget", "10"],
-    "dst": "ok_flag",
-    "target": "s2"
-  }
+  "statements": [
+    {
+      "kind": "call",
+      "func": "process",
+      "args": ["budget", "10"],
+      "dst": "ok_flag"
+    }
+  ],
+  "terminator": { "kind": "goto", "target": "s2" }
 }
 ```
 
 ## Basic block
 
-A function body is a list of basic blocks. Each block has:
+A function body is a **flattened CFG** of basic blocks. Each block has:
 
-1. Zero or more [`Stmt`](#statement)s (data / structured loop).
-2. Exactly one exit: either a [`Call`](#call) **or** a
-   [`Terminator`](#terminator). Both or neither is a parse error.
+1. Zero or more [`Stmt`](#statement)s (data, sync, thread, function call).
+2. Exactly one [`Terminator`](#terminator). A missing terminator, or a leftover
+   `call` field, is a parse error.
 
-This is the MIR / LLVM layout: statements, then a call with a continuation,
-or a CFG terminator. `return` appears only as a terminator.
+Control flow lives **only** in the terminator. There is no structured `loop`
+statement: a loop is a `branch` whose `then` or `else` is a back-edge to an
+earlier block. `mutex_lock` and `atomic_load` are statements, not block exits
+— they do not take a successor `target`. `return` appears only as a terminator.
+
+A block may pack several instantaneous operations (held-lock `read_shared`,
+`atomic_load`, `assign_local`) before a single terminator, so the CFG does not
+grow a sid per load.
 
 ```json
 {
   "sid": "s3",
   "statements": [
-    { "kind": "write_shared", "resource": "count", "expr": "count + 1" }
+    { "kind": "mutex_lock", "resource": "mtx" },
+    { "kind": "write_shared", "resource": "count", "expr": "count + 1" },
+    { "kind": "mutex_unlock", "resource": "mtx" }
   ],
   "terminator": { "kind": "goto", "target": "s4" }
 }
@@ -237,69 +245,74 @@ or a CFG terminator. `return` appears only as a terminator.
 
 ## Statement
 
-Data operations and structured loop headers. They do not transfer control by
-themselves except `loop`, whose `body` / `exit` are additional CFG edges.
+Every non-control operation. None of these transfer control; the terminator
+does. In the CVN, a `read_shared` of a lock-protected Var (lock already held)
+and an `atomic_load` are instantaneous data-flow steps — they do not queue
+like `mutex_lock`.
 
-| `kind`           | Fields                         | Description |
-| ---------------- | ------------------------------ | ----------- |
-| `nop`            | —                              | No-op       |
-| `assign_local`   | `target`, `expr`               | Write a function-local |
-| `read_shared`    | `resource`, optional `dst`     | Read a `Var` |
-| `write_shared`   | `resource`, `expr`             | Write a `Var` |
-| `abstract_step`  | `reads`, `writes`, `desc`      | Opaque modeled step |
-| `loop`           | `body`, `exit`                 | Structured loop header |
+**Data**
 
-## Call
+| `kind`          | Fields                    | Description |
+| --------------- | ------------------------- | ----------- |
+| `nop`           | —                         | No-op       |
+| `assign_local`  | `target`, `expr`          | Write a function-local |
+| `read_shared`   | `resource`, optional `dst`| Read a `Var` |
+| `write_shared`  | `resource`, `expr`        | Write a `Var` |
+| `abstract_step` | `reads`, `writes`, `desc` | Opaque modeled step |
+| `atomic_load`   | `resource`, `dst`         | Instantaneous Atomic read |
+| `atomic_store`  | `resource`, `value`       | Atomic write |
+| `atomic_cas`    | `resource`, `expected`, `desired`, `dst` | Atomic CAS |
 
-Thread control, synchronization, and function invocation. Every variant except
-`select` names the successor block in `target` — the continuation after the
-call returns (MIR `Call { destination, target }`).
+**Synchronization** (may block in the CVN, but are still statements)
 
-Spawn / join pair on **handles**, not function names.
+| `kind`               | Key fields                         |
+| -------------------- | ---------------------------------- |
+| `mutex_lock` / `mutex_unlock` | `resource`                |
+| `rwlock_read` / `rwlock_write` / `rwlock_unlock` | `resource` |
+| `channel_send`       | `channel`, `value`                 |
+| `channel_recv`       | `channel`, `dst`                   |
+| `condvar_wait`       | `condvar`, `lock`                  |
+| `condvar_notify` / `condvar_notify_all` | `condvar`           |
+| `semaphore_acquire` / `semaphore_release` | `resource`, optional `count` |
 
-| `kind`                | Key fields                                      | Notes |
-| --------------------- | ----------------------------------------------- | ----- |
-| `mutex_lock`          | `resource`, `target`                            | Mutex |
-| `mutex_unlock`        | `resource`, `target`                            | Mutex |
-| `rwlock_read`         | `resource`, `target`                            | RwLock read lock |
-| `rwlock_write`        | `resource`, `target`                            | RwLock write lock |
-| `rwlock_unlock`       | `resource`, `target`                            | RwLock |
-| `channel_send`        | `channel`, `value`, `target`                    | Channel |
-| `channel_recv`        | `channel`, `dst`, `target`                      | `dst` is the data target; `target` is the successor |
-| `condvar_wait`        | `condvar`, `lock`, `target`                     | See [wait semantics](#wait-semantics) |
-| `condvar_notify`      | `condvar`, `target`                             | |
-| `condvar_notify_all`  | `condvar`, `target`                             | |
-| `semaphore_acquire`   | `resource`, optional `count`, `target`          | |
-| `semaphore_release`   | `resource`, optional `count`, `target`          | |
-| `atomic_load`         | `resource`, `dst`, `target`                     | |
-| `atomic_store`        | `resource`, `value`, `target`                   | |
-| `atomic_cas`          | `resource`, `expected`, `desired`, `dst`, `target` | |
-| `call`                | `func`, `args`, optional `dst`, `target`        | Synchronous call |
-| `spawn`               | `func`, `args`, `handle`, `target`              | OS thread |
-| `spawn_batch`         | `func`, `count`, `handle`, `target`             | |
-| `join`                | `handle`, `target`                              | Pairs with `spawn` on the same handle |
-| `join_all`            | `handle`, `target`                              | |
-| `async_call`          | `func`, `args`, `handle`, `target`              | Async task |
-| `await`               | `handle`, `target`                              | Pairs with `async_call` |
-| `select`              | `branches`, optional `default`                  | Each branch has `guard` + `target` |
+**Threads and calls.** Spawn / join pair on **handles**, not function names.
+`func` uses the [FQN rules](#naming-identifiers-and-fqns).
 
-`select` guards: `channel_recv`, `condvar_wait`, `semaphore_acquire`.
-
-Call targets (`func`) use the [FQN rules](#naming-identifiers-and-fqns): short
-name in the same module, FQN listed in `requires` otherwise.
+| `kind`         | Key fields                                      |
+| -------------- | ----------------------------------------------- |
+| `call`         | `func`, `args`, optional `dst`                  |
+| `spawn`        | `func`, `args`, `handle`                        |
+| `spawn_batch`  | `func`, `count`, `handle`                       |
+| `join` / `join_all` | `handle`                                   |
+| `async_call`   | `func`, `args`, `handle`                        |
+| `await`        | `handle`                                        |
 
 ## Terminator
 
-CFG exits. This is the only place `return` may appear.
+CFG exits. This is the only place `return` may appear, and the only place
+successors are named.
 
 | `kind`   | Fields | Description |
 | -------- | ------ | ----------- |
 | `goto`   | `target` | Unconditional jump |
-| `branch` | `cond`, `then`, `else` | Conditional; `else` is the JSON key |
+| `branch` | `cond`, `then`, `else` | Conditional; `else` is the JSON key. A back-edge (`then`/`else` to an earlier sid) is a loop. |
 | `switch` | `var`, `cases`, `default` | Multi-way branch; `default` is required |
 | `return` | optional `value` | Function return; one spelling only |
+| `select` | `branches`, optional `default` | Multi-way wait; each branch has `guard` + `target` |
 
-There is no separate `op: "return"` and no `transfer` field.
+`select` guards: `channel_recv`, `semaphore_acquire`, and `condvar_wait`.
+
+**`condvar_wait` as a select guard (E409).** In sync Rust, `Condvar::wait` is a
+blocking primitive and cannot be placed in a non-blocking `select!`. ConcIR
+therefore rejects `condvar_wait` guards unless:
+
+- the enclosing function has `kind: "async"`, and
+- the Condvar resource has `"mode": "Async"`.
+
+The translator, at codegen, must map that async guard to `tokio::sync::Notify`,
+a `watch` channel, or a timeout race — not to `std::sync::Condvar::wait`.
+A sync wait loop uses `condvar_wait` as a **statement** plus a `branch`
+back-edge, not `select`.
 
 ## Validation pipeline
 
@@ -314,18 +327,18 @@ structure  →  names  →  types  →  compat  →  protection
 ```
 
 JSON that does not match this grammar fails at deserialize (E000), including
-unknown `kind` tags and a block with both `call` and `terminator`.
+unknown `kind` tags, a leftover `call` field on a block, or a missing terminator.
 
 ## `wait` semantics
 
 `condvar_wait(cv, lock)`: release `lock`, block until woken, re-acquire
 `lock`. Lock-safety analysis treats the net effect as lock-neutral.
 
-A condvar wait loop:
+A condvar wait loop (flattened CFG; the cycle is the `branch` back-edge):
 
 ```
-s1: mutex_lock(mtx) → s2
+s1: mutex_lock(mtx); goto s2
 s2: read_shared(cond); branch(cond, then=s4, else=s3)
-s3: condvar_wait(cv, mtx) → s2     // back to the check, not to lock
-s4: ...                            // condition holds; lock still held
+s3: condvar_wait(cv, mtx); goto s2   // back to the check, not to lock
+s4: ...                              // condition holds; lock still held
 ```

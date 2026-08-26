@@ -265,20 +265,20 @@ pub struct FunctionEffects {
     pub writes: Vec<String>,
 }
 
-// ──────────────────── Block (MIR-style) ────────────────────
+// ──────────────────── Block (flattened CFG) ────────────────────
 
-/// One basic block: zero or more data [`Stmt`]s, then exactly one exit —
-/// either a [`Call`] (sync / thread / function, with a successor) or a
-/// [`Terminator`] (`goto` / `branch` / `switch` / `return`).
+/// One basic block: zero or more [`Stmt`]s, then exactly one [`Terminator`].
+///
+/// Control flow is only in the terminator (`goto` / `branch` / `switch` /
+/// `return` / `select`). Loops are back-edges from `branch`, not a statement.
+/// Operations — including `mutex_lock` and `atomic_load` — live in `statements`
+/// and do not take a successor `target`.
 #[derive(Debug, Clone, Serialize)]
 pub struct Block {
     pub sid: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub statements: Vec<Stmt>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub call: Option<Call>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub terminator: Option<Terminator>,
+    pub terminator: Terminator,
 }
 
 impl<'de> Deserialize<'de> for Block {
@@ -289,29 +289,31 @@ impl<'de> Deserialize<'de> for Block {
             #[serde(default)]
             statements: Vec<Stmt>,
             #[serde(default)]
-            call: Option<Call>,
+            call: Option<serde_json::Value>,
             #[serde(default)]
             terminator: Option<Terminator>,
         }
         let h = Helper::deserialize(deserializer)?;
-        match (h.call.is_some(), h.terminator.is_some()) {
-            (true, false) | (false, true) => Ok(Block {
-                sid: h.sid,
-                statements: h.statements,
-                call: h.call,
-                terminator: h.terminator,
-            }),
-            (true, true) => Err(D::Error::custom(
-                "block must not have both call and terminator",
-            )),
-            (false, false) => Err(D::Error::custom(
-                "block requires exactly one of call or terminator",
-            )),
+        if h.call.is_some() {
+            return Err(D::Error::custom(
+                "block has no 'call' field; put operations in statements and end with a terminator",
+            ));
         }
+        let Some(terminator) = h.terminator else {
+            return Err(D::Error::custom(
+                "block requires a terminator (goto, branch, switch, return, or select)",
+            ));
+        };
+        Ok(Block {
+            sid: h.sid,
+            statements: h.statements,
+            terminator,
+        })
     }
 }
 
-/// Data / structured statements (non-control, non-call). Analogous to MIR statements.
+/// Instantaneous and blocking operations. None of these transfer control;
+/// the block's terminator does.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum Stmt {
@@ -336,81 +338,48 @@ pub enum Stmt {
         #[serde(default)]
         desc: String,
     },
-    /// Structured loop header: body starts at `body`, break target is `exit`.
-    #[serde(rename = "loop")]
-    Loop { body: String, exit: String },
-}
-
-/// Sync, thread, and function operations. Each (except `select`) names the
-/// successor block in `target` — the analogue of MIR `Call { ..., target }`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "kind", deny_unknown_fields)]
-pub enum Call {
-    #[serde(rename = "mutex_lock")]
-    MutexLock { resource: String, target: String },
-    #[serde(rename = "mutex_unlock")]
-    MutexUnlock { resource: String, target: String },
-    #[serde(rename = "rwlock_read")]
-    RwLockRead { resource: String, target: String },
-    #[serde(rename = "rwlock_write")]
-    RwLockWrite { resource: String, target: String },
-    #[serde(rename = "rwlock_unlock")]
-    RwLockUnlock { resource: String, target: String },
-    #[serde(rename = "channel_send")]
-    ChannelSend {
-        channel: String,
-        value: String,
-        target: String,
-    },
-    #[serde(rename = "channel_recv")]
-    ChannelRecv {
-        channel: String,
-        dst: String,
-        target: String,
-    },
-    #[serde(rename = "condvar_wait")]
-    CondvarWait {
-        condvar: String,
-        lock: String,
-        target: String,
-    },
-    #[serde(rename = "condvar_notify")]
-    CondvarNotify { condvar: String, target: String },
-    #[serde(rename = "condvar_notify_all")]
-    CondvarNotifyAll { condvar: String, target: String },
-    #[serde(rename = "semaphore_acquire")]
-    SemaphoreAcquire {
-        resource: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        count: Option<i64>,
-        target: String,
-    },
-    #[serde(rename = "semaphore_release")]
-    SemaphoreRelease {
-        resource: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        count: Option<i64>,
-        target: String,
-    },
     #[serde(rename = "atomic_load")]
-    AtomicLoad {
-        resource: String,
-        dst: String,
-        target: String,
-    },
+    AtomicLoad { resource: String, dst: String },
     #[serde(rename = "atomic_store")]
-    AtomicStore {
-        resource: String,
-        value: String,
-        target: String,
-    },
+    AtomicStore { resource: String, value: String },
     #[serde(rename = "atomic_cas")]
     AtomicCas {
         resource: String,
         expected: String,
         desired: String,
         dst: String,
-        target: String,
+    },
+    #[serde(rename = "mutex_lock")]
+    MutexLock { resource: String },
+    #[serde(rename = "mutex_unlock")]
+    MutexUnlock { resource: String },
+    #[serde(rename = "rwlock_read")]
+    RwLockRead { resource: String },
+    #[serde(rename = "rwlock_write")]
+    RwLockWrite { resource: String },
+    #[serde(rename = "rwlock_unlock")]
+    RwLockUnlock { resource: String },
+    #[serde(rename = "channel_send")]
+    ChannelSend { channel: String, value: String },
+    #[serde(rename = "channel_recv")]
+    ChannelRecv { channel: String, dst: String },
+    #[serde(rename = "condvar_wait")]
+    CondvarWait { condvar: String, lock: String },
+    #[serde(rename = "condvar_notify")]
+    CondvarNotify { condvar: String },
+    #[serde(rename = "condvar_notify_all")]
+    CondvarNotifyAll { condvar: String },
+    #[serde(rename = "semaphore_acquire")]
+    SemaphoreAcquire {
+        resource: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        count: Option<i64>,
+    },
+    #[serde(rename = "semaphore_release")]
+    SemaphoreRelease {
+        resource: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        count: Option<i64>,
     },
     #[serde(rename = "call")]
     Func {
@@ -419,7 +388,6 @@ pub enum Call {
         args: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         dst: Option<String>,
-        target: String,
     },
     #[serde(rename = "spawn")]
     Spawn {
@@ -427,35 +395,26 @@ pub enum Call {
         #[serde(default)]
         args: Vec<String>,
         handle: String,
-        target: String,
     },
     #[serde(rename = "spawn_batch")]
     SpawnBatch {
         func: String,
         count: i64,
         handle: String,
-        target: String,
     },
     #[serde(rename = "join")]
-    Join { handle: String, target: String },
+    Join { handle: String },
     #[serde(rename = "join_all")]
-    JoinAll { handle: String, target: String },
+    JoinAll { handle: String },
     #[serde(rename = "async_call")]
     AsyncCall {
         func: String,
         #[serde(default)]
         args: Vec<String>,
         handle: String,
-        target: String,
     },
     #[serde(rename = "await")]
-    Await { handle: String, target: String },
-    #[serde(rename = "select")]
-    Select {
-        branches: Vec<SelectBranch>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        default: Option<String>,
-    },
+    Await { handle: String },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -466,6 +425,11 @@ pub struct SelectBranch {
 }
 
 /// Blocking operations allowed as `select` guards.
+///
+/// `condvar_wait` is not a `select!` candidate in sync Rust (`Condvar::wait`
+/// is a blocking primitive). It is only legal in an `async` function on an
+/// `Async`-mode Condvar; the translator maps it to `Notify` / `watch` or a
+/// timeout race. See `doc/syntax.md`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum SelectGuard {
@@ -477,7 +441,7 @@ pub enum SelectGuard {
     SemaphoreAcquire { resource: String },
 }
 
-/// CFG terminator: the only place `return` appears.
+/// CFG terminator: the only place control transfers, and the only spelling of `return`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum Terminator {
@@ -500,6 +464,12 @@ pub enum Terminator {
     Return {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         value: Option<String>,
+    },
+    #[serde(rename = "select")]
+    Select {
+        branches: Vec<SelectBranch>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        default: Option<String>,
     },
 }
 
@@ -558,149 +528,53 @@ impl Program {
 
 impl Block {
     pub fn successor_sids(&self) -> Vec<&str> {
-        let mut v = Vec::new();
-        for stmt in &self.statements {
-            if let Stmt::Loop { body, exit } = stmt {
-                v.push(body.as_str());
-                v.push(exit.as_str());
-            }
-        }
-        if let Some(call) = &self.call {
-            v.extend(call.successor_sids());
-            return v;
-        }
-        match &self.terminator {
-            Some(Terminator::Goto { target }) => v.push(target),
-            Some(Terminator::Branch {
-                then, else_target, ..
-            }) => {
-                v.push(then);
-                v.push(else_target);
-            }
-            Some(Terminator::Switch { cases, default, .. }) => {
-                v.extend(cases.values().map(String::as_str));
-                v.push(default);
-            }
-            Some(Terminator::Return { .. }) | None => {}
-        }
-        v
+        self.terminator.successor_sids()
     }
 
     pub fn is_return(&self) -> bool {
-        matches!(self.terminator, Some(Terminator::Return { .. }))
+        matches!(self.terminator, Terminator::Return { .. })
     }
 
     pub fn branch_cond(&self) -> Option<&str> {
         match &self.terminator {
-            Some(Terminator::Branch { cond, .. }) => Some(cond),
+            Terminator::Branch { cond, .. } => Some(cond),
             _ => None,
         }
     }
 
     pub fn switch(&self) -> Option<(&str, &BTreeMap<String, String>, &str)> {
         match &self.terminator {
-            Some(Terminator::Switch {
+            Terminator::Switch {
                 var,
                 cases,
                 default,
-            }) => Some((var, cases, default)),
+            } => Some((var, cases, default)),
             _ => None,
         }
     }
 }
 
-impl Call {
+impl Terminator {
     pub fn successor_sids(&self) -> Vec<&str> {
         match self {
-            Call::Select { branches, default } => {
+            Terminator::Goto { target } => vec![target],
+            Terminator::Branch {
+                then, else_target, ..
+            } => vec![then, else_target],
+            Terminator::Switch { cases, default, .. } => {
+                let mut v: Vec<&str> = cases.values().map(String::as_str).collect();
+                v.push(default);
+                v
+            }
+            Terminator::Return { .. } => vec![],
+            Terminator::Select { branches, default } => {
                 let mut v: Vec<&str> = branches.iter().map(|b| b.target.as_str()).collect();
                 if let Some(d) = default {
                     v.push(d);
                 }
                 v
             }
-            Call::MutexLock { target, .. }
-            | Call::MutexUnlock { target, .. }
-            | Call::RwLockRead { target, .. }
-            | Call::RwLockWrite { target, .. }
-            | Call::RwLockUnlock { target, .. }
-            | Call::ChannelSend { target, .. }
-            | Call::ChannelRecv { target, .. }
-            | Call::CondvarWait { target, .. }
-            | Call::CondvarNotify { target, .. }
-            | Call::CondvarNotifyAll { target, .. }
-            | Call::SemaphoreAcquire { target, .. }
-            | Call::SemaphoreRelease { target, .. }
-            | Call::AtomicLoad { target, .. }
-            | Call::AtomicStore { target, .. }
-            | Call::AtomicCas { target, .. }
-            | Call::Func { target, .. }
-            | Call::Spawn { target, .. }
-            | Call::SpawnBatch { target, .. }
-            | Call::Join { target, .. }
-            | Call::JoinAll { target, .. }
-            | Call::AsyncCall { target, .. }
-            | Call::Await { target, .. } => vec![target],
         }
-    }
-
-    pub fn callee_func(&self) -> Option<&str> {
-        match self {
-            Call::Func { func, .. }
-            | Call::Spawn { func, .. }
-            | Call::SpawnBatch { func, .. }
-            | Call::AsyncCall { func, .. } => Some(func),
-            _ => None,
-        }
-    }
-
-    pub fn resource_name(&self) -> Option<&str> {
-        match self {
-            Call::MutexLock { resource, .. }
-            | Call::MutexUnlock { resource, .. }
-            | Call::RwLockRead { resource, .. }
-            | Call::RwLockWrite { resource, .. }
-            | Call::RwLockUnlock { resource, .. }
-            | Call::SemaphoreAcquire { resource, .. }
-            | Call::SemaphoreRelease { resource, .. }
-            | Call::AtomicLoad { resource, .. }
-            | Call::AtomicStore { resource, .. }
-            | Call::AtomicCas { resource, .. } => Some(resource),
-            Call::ChannelSend { channel, .. } | Call::ChannelRecv { channel, .. } => Some(channel),
-            Call::CondvarWait { condvar, .. }
-            | Call::CondvarNotify { condvar, .. }
-            | Call::CondvarNotifyAll { condvar, .. } => Some(condvar),
-            _ => None,
-        }
-    }
-
-    pub fn is_lock_acquire(&self) -> Option<&str> {
-        match self {
-            Call::MutexLock { resource, .. }
-            | Call::RwLockRead { resource, .. }
-            | Call::RwLockWrite { resource, .. } => Some(resource),
-            _ => None,
-        }
-    }
-
-    pub fn is_lock_release(&self) -> Option<&str> {
-        match self {
-            Call::MutexUnlock { resource, .. } | Call::RwLockUnlock { resource, .. } => {
-                Some(resource)
-            }
-            _ => None,
-        }
-    }
-
-    pub fn is_await_like(&self) -> bool {
-        matches!(self, Call::Await { .. })
-    }
-
-    pub fn is_join_like(&self) -> bool {
-        matches!(
-            self,
-            Call::Join { .. } | Call::JoinAll { .. } | Call::Await { .. }
-        )
     }
 }
 
@@ -710,6 +584,81 @@ impl Stmt {
             Stmt::ReadShared { resource, .. } => Some((resource, false)),
             Stmt::WriteShared { resource, .. } => Some((resource, true)),
             _ => None,
+        }
+    }
+
+    pub fn callee_func(&self) -> Option<&str> {
+        match self {
+            Stmt::Func { func, .. }
+            | Stmt::Spawn { func, .. }
+            | Stmt::SpawnBatch { func, .. }
+            | Stmt::AsyncCall { func, .. } => Some(func),
+            _ => None,
+        }
+    }
+
+    pub fn resource_name(&self) -> Option<&str> {
+        match self {
+            Stmt::MutexLock { resource, .. }
+            | Stmt::MutexUnlock { resource, .. }
+            | Stmt::RwLockRead { resource, .. }
+            | Stmt::RwLockWrite { resource, .. }
+            | Stmt::RwLockUnlock { resource, .. }
+            | Stmt::SemaphoreAcquire { resource, .. }
+            | Stmt::SemaphoreRelease { resource, .. }
+            | Stmt::AtomicLoad { resource, .. }
+            | Stmt::AtomicStore { resource, .. }
+            | Stmt::AtomicCas { resource, .. } => Some(resource),
+            Stmt::ChannelSend { channel, .. } | Stmt::ChannelRecv { channel, .. } => Some(channel),
+            Stmt::CondvarWait { condvar, .. }
+            | Stmt::CondvarNotify { condvar, .. }
+            | Stmt::CondvarNotifyAll { condvar, .. } => Some(condvar),
+            Stmt::ReadShared { resource, .. } | Stmt::WriteShared { resource, .. } => {
+                Some(resource)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn is_lock_acquire(&self) -> Option<&str> {
+        match self {
+            Stmt::MutexLock { resource }
+            | Stmt::RwLockRead { resource }
+            | Stmt::RwLockWrite { resource } => Some(resource),
+            _ => None,
+        }
+    }
+
+    pub fn is_lock_release(&self) -> Option<&str> {
+        match self {
+            Stmt::MutexUnlock { resource } | Stmt::RwLockUnlock { resource } => Some(resource),
+            _ => None,
+        }
+    }
+
+    pub fn is_await_like(&self) -> bool {
+        matches!(self, Stmt::Await { .. })
+    }
+
+    pub fn is_blocking(&self) -> bool {
+        matches!(
+            self,
+            Stmt::Await { .. }
+                | Stmt::Join { .. }
+                | Stmt::JoinAll { .. }
+                | Stmt::ChannelRecv { .. }
+                | Stmt::SemaphoreAcquire { .. }
+                | Stmt::CondvarWait { .. }
+        )
+    }
+}
+
+impl SelectGuard {
+    pub fn resource_name(&self) -> Option<&str> {
+        match self {
+            SelectGuard::ChannelRecv { channel, .. } => Some(channel),
+            SelectGuard::CondvarWait { condvar, .. } => Some(condvar),
+            SelectGuard::SemaphoreAcquire { resource } => Some(resource),
         }
     }
 }

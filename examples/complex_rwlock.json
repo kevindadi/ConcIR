@@ -80,35 +80,55 @@
           "body": [
             {
               "sid": "s1",
-              "call": {
-                "kind": "spawn",
-                "func": "writer",
-                "handle": "h_writer",
+              "statements": [
+                {
+                  "kind": "spawn",
+                  "func": "writer",
+                  "handle": "h_writer"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s2"
               }
             },
             {
               "sid": "s2",
-              "call": {
-                "kind": "spawn",
-                "func": "reader",
-                "handle": "h_reader",
+              "statements": [
+                {
+                  "kind": "spawn",
+                  "func": "reader",
+                  "handle": "h_reader"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s3"
               }
             },
             {
               "sid": "s3",
-              "call": {
-                "kind": "join",
-                "handle": "h_writer",
+              "statements": [
+                {
+                  "kind": "join",
+                  "handle": "h_writer"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s4"
               }
             },
             {
               "sid": "s4",
-              "call": {
-                "kind": "join",
-                "handle": "h_reader",
+              "statements": [
+                {
+                  "kind": "join",
+                  "handle": "h_reader"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s5"
               }
             },
@@ -126,18 +146,28 @@
           "body": [
             {
               "sid": "s10",
-              "call": {
-                "kind": "call",
-                "func": "prepare_data",
-                "args": [],
+              "statements": [
+                {
+                  "kind": "call",
+                  "func": "prepare_data",
+                  "args": []
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s11"
               }
             },
             {
               "sid": "s11",
-              "call": {
-                "kind": "rwlock_write",
-                "resource": "rw",
+              "statements": [
+                {
+                  "kind": "rwlock_write",
+                  "resource": "rw"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s12"
               }
             },
@@ -157,33 +187,53 @@
             },
             {
               "sid": "s13",
-              "call": {
-                "kind": "rwlock_unlock",
-                "resource": "rw",
+              "statements": [
+                {
+                  "kind": "rwlock_unlock",
+                  "resource": "rw"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s14"
               }
             },
             {
               "sid": "s14",
-              "call": {
-                "kind": "mutex_lock",
-                "resource": "aux_mtx",
+              "statements": [
+                {
+                  "kind": "mutex_lock",
+                  "resource": "aux_mtx"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s15"
               }
             },
             {
               "sid": "s15",
-              "call": {
-                "kind": "condvar_notify_all",
-                "condvar": "cv",
+              "statements": [
+                {
+                  "kind": "condvar_notify_all",
+                  "condvar": "cv"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s16"
               }
             },
             {
               "sid": "s16",
-              "call": {
-                "kind": "mutex_unlock",
-                "resource": "aux_mtx",
+              "statements": [
+                {
+                  "kind": "mutex_unlock",
+                  "resource": "aux_mtx"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s17"
               }
             },
@@ -201,34 +251,54 @@
           "body": [
             {
               "sid": "s20",
-              "call": {
-                "kind": "mutex_lock",
-                "resource": "aux_mtx",
+              "statements": [
+                {
+                  "kind": "mutex_lock",
+                  "resource": "aux_mtx"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s21"
               }
             },
             {
               "sid": "s21",
-              "call": {
-                "kind": "condvar_wait",
-                "condvar": "cv",
-                "lock": "aux_mtx",
+              "statements": [
+                {
+                  "kind": "condvar_wait",
+                  "condvar": "cv",
+                  "lock": "aux_mtx"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s22"
               }
             },
             {
               "sid": "s22",
-              "call": {
-                "kind": "mutex_unlock",
-                "resource": "aux_mtx",
+              "statements": [
+                {
+                  "kind": "mutex_unlock",
+                  "resource": "aux_mtx"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s23"
               }
             },
             {
               "sid": "s23",
-              "call": {
-                "kind": "rwlock_read",
-                "resource": "rw",
+              "statements": [
+                {
+                  "kind": "rwlock_read",
+                  "resource": "rw"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s24"
               }
             },
@@ -247,27 +317,42 @@
             },
             {
               "sid": "s25",
-              "call": {
-                "kind": "call",
-                "func": "process_data",
-                "args": [],
+              "statements": [
+                {
+                  "kind": "call",
+                  "func": "process_data",
+                  "args": []
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s26"
               }
             },
             {
               "sid": "s26",
-              "call": {
-                "kind": "rwlock_unlock",
-                "resource": "rw",
+              "statements": [
+                {
+                  "kind": "rwlock_unlock",
+                  "resource": "rw"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s27"
               }
             },
             {
               "sid": "s27",
-              "call": {
-                "kind": "atomic_load",
-                "resource": "error_flag",
-                "dst": "_",
+              "statements": [
+                {
+                  "kind": "atomic_load",
+                  "resource": "error_flag",
+                  "dst": "_"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s30"
               }
             },

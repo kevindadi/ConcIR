@@ -61,35 +61,55 @@
           "body": [
             {
               "sid": "s1",
-              "call": {
-                "kind": "spawn",
-                "func": "controller",
-                "handle": "h_controller",
+              "statements": [
+                {
+                  "kind": "spawn",
+                  "func": "controller",
+                  "handle": "h_controller"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s2"
               }
             },
             {
               "sid": "s2",
-              "call": {
-                "kind": "spawn",
-                "func": "worker",
-                "handle": "h_worker",
+              "statements": [
+                {
+                  "kind": "spawn",
+                  "func": "worker",
+                  "handle": "h_worker"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s3"
               }
             },
             {
               "sid": "s3",
-              "call": {
-                "kind": "join",
-                "handle": "h_controller",
+              "statements": [
+                {
+                  "kind": "join",
+                  "handle": "h_controller"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s4"
               }
             },
             {
               "sid": "s4",
-              "call": {
-                "kind": "join",
-                "handle": "h_worker",
+              "statements": [
+                {
+                  "kind": "join",
+                  "handle": "h_worker"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s5"
               }
             },
@@ -107,9 +127,14 @@
           "body": [
             {
               "sid": "s10",
-              "call": {
-                "kind": "mutex_lock",
-                "resource": "mtx",
+              "statements": [
+                {
+                  "kind": "mutex_lock",
+                  "resource": "mtx"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s11"
               }
             },
@@ -129,17 +154,27 @@
             },
             {
               "sid": "s12",
-              "call": {
-                "kind": "condvar_notify_all",
-                "condvar": "cv",
+              "statements": [
+                {
+                  "kind": "condvar_notify_all",
+                  "condvar": "cv"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s13"
               }
             },
             {
               "sid": "s13",
-              "call": {
-                "kind": "mutex_unlock",
-                "resource": "mtx",
+              "statements": [
+                {
+                  "kind": "mutex_unlock",
+                  "resource": "mtx"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s14"
               }
             },
@@ -157,9 +192,14 @@
           "body": [
             {
               "sid": "s20",
-              "call": {
-                "kind": "mutex_lock",
-                "resource": "mtx",
+              "statements": [
+                {
+                  "kind": "mutex_lock",
+                  "resource": "mtx"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s21"
               }
             },
@@ -185,35 +225,55 @@
             },
             {
               "sid": "s22",
-              "call": {
-                "kind": "condvar_wait",
-                "condvar": "cv",
-                "lock": "mtx",
+              "statements": [
+                {
+                  "kind": "condvar_wait",
+                  "condvar": "cv",
+                  "lock": "mtx"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s21"
               }
             },
             {
               "sid": "s23",
-              "call": {
-                "kind": "mutex_unlock",
-                "resource": "mtx",
+              "statements": [
+                {
+                  "kind": "mutex_unlock",
+                  "resource": "mtx"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s26"
               }
             },
             {
               "sid": "s24",
-              "call": {
-                "kind": "condvar_wait",
-                "condvar": "cv",
-                "lock": "mtx",
+              "statements": [
+                {
+                  "kind": "condvar_wait",
+                  "condvar": "cv",
+                  "lock": "mtx"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s21"
               }
             },
             {
               "sid": "s25",
-              "call": {
-                "kind": "mutex_unlock",
-                "resource": "mtx",
+              "statements": [
+                {
+                  "kind": "mutex_unlock",
+                  "resource": "mtx"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
                 "target": "s26"
               }
             },
