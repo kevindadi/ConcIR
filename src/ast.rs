@@ -98,7 +98,10 @@ pub enum ComplexBaseType {
     /// Bounded Int value domain `[lo, hi]`, serialized as `{"Int": [lo, hi]}`.
     /// Keeps counter loops decidable (updates leaving the domain disable the
     /// transition in the CVN).
-    BoundedInt { lo: i64, hi: i64 },
+    BoundedInt {
+        lo: i64,
+        hi: i64,
+    },
 }
 
 impl Serialize for ComplexBaseType {
@@ -107,9 +110,7 @@ impl Serialize for ComplexBaseType {
             ComplexBaseType::Enum(variants) => ("Enum", variants).serialize(serializer),
             ComplexBaseType::Struct(fields) => ("Struct", fields).serialize(serializer),
             ComplexBaseType::Array(def) => ("Array", def).serialize(serializer),
-            ComplexBaseType::BoundedInt { lo, hi } => {
-                ("Int", (lo, hi)).serialize(serializer)
-            }
+            ComplexBaseType::BoundedInt { lo, hi } => ("Int", (lo, hi)).serialize(serializer),
         }
     }
 }
@@ -117,11 +118,13 @@ impl Serialize for ComplexBaseType {
 impl<'de> Deserialize<'de> for ComplexBaseType {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = serde_json::Value::deserialize(deserializer)?;
-        let object = value.as_object().ok_or_else(|| {
-            de::Error::custom("complex base type must be a single-key object")
-        })?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| de::Error::custom("complex base type must be a single-key object"))?;
         if object.len() != 1 {
-            return Err(de::Error::custom("complex base type must have exactly one key"));
+            return Err(de::Error::custom(
+                "complex base type must have exactly one key",
+            ));
         }
         let (key, val) = object.iter().next().unwrap();
         match key.as_str() {
@@ -135,8 +138,8 @@ impl<'de> Deserialize<'de> for ComplexBaseType {
                 .map(ComplexBaseType::Array)
                 .map_err(de::Error::custom),
             "Int" => {
-                let bounds: Vec<i64> = serde_json::from_value(val.clone())
-                    .map_err(de::Error::custom)?;
+                let bounds: Vec<i64> =
+                    serde_json::from_value(val.clone()).map_err(de::Error::custom)?;
                 if bounds.len() != 2 || bounds[0] > bounds[1] {
                     return Err(de::Error::custom(
                         "bounded Int must be [lo, hi] with lo <= hi",
@@ -545,10 +548,7 @@ impl<'de> Deserialize<'de> for Transfer {
     }
 }
 
-fn reject_extra_elements<'de, A: SeqAccess<'de>>(
-    seq: &mut A,
-    shape: &str,
-) -> Result<(), A::Error> {
+fn reject_extra_elements<'de, A: SeqAccess<'de>>(seq: &mut A, shape: &str) -> Result<(), A::Error> {
     if seq.next_element::<de::IgnoredAny>()?.is_some() {
         return Err(de::Error::custom(format!(
             "{shape} tuple has extra elements"
