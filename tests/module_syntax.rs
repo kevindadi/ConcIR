@@ -1,6 +1,6 @@
-//! Module + FQN + Block/Stmt/Terminator grammar.
+//! Module + FQN + statement-level CFG grammar.
 
-use concir::ast::{Block, Function, Module, Program, Terminator};
+use concir::ast::{Function, Module, Op, Program, Stmt};
 use concir::fqn;
 
 fn sample_module_json() -> &'static str {
@@ -18,11 +18,9 @@ fn sample_module_json() -> &'static str {
                 "kind": "normal",
                 "form": "closure",
                 "body": [
-                    {"sid": "s1", "statements": [{"kind": "mutex_lock", "resource": "mtx"}],
-                     "terminator": {"kind": "goto", "target": "s2"}},
-                    {"sid": "s2", "statements": [{"kind": "mutex_unlock", "resource": "mtx"}],
-                     "terminator": {"kind": "goto", "target": "s3"}},
-                    {"sid": "s3", "terminator": {"kind": "return"}}
+                    {"sid": "s1", "kind": "mutex_lock", "resource": "mtx"},
+                    {"sid": "s2", "kind": "mutex_unlock", "resource": "mtx"},
+                    {"sid": "s3", "kind": "return"}
                 ]
             }
         ]
@@ -36,8 +34,8 @@ fn module_deserializes() {
     assert_eq!(module.provides.functions, vec!["producer"]);
     assert_eq!(module.functions[0].body.len(), 3);
     assert!(matches!(
-        module.functions[0].body[2].terminator,
-        Terminator::Return { value: None }
+        module.functions[0].body[2].op,
+        Op::Return { value: None }
     ));
 }
 
@@ -61,35 +59,41 @@ fn program_uses_modules_and_fqn_entry() {
 }
 
 #[test]
-fn block_rejects_call_field() {
+fn stmt_rejects_legacy_call_field() {
     let json = r#"{
         "sid": "s1",
         "call": {"kind": "mutex_lock", "resource": "m", "target": "s2"},
-        "terminator": {"kind": "return"}
+        "kind": "return"
     }"#;
-    let result: Result<Block, _> = serde_json::from_str(json);
+    let result: Result<Stmt, _> = serde_json::from_str(json);
     assert!(result.is_err());
 }
 
 #[test]
-fn block_requires_terminator() {
+fn stmt_requires_kind() {
+    let json = r#"{"sid": "s1"}"#;
+    let result: Result<Stmt, _> = serde_json::from_str(json);
+    assert!(result.is_err());
+}
+
+#[test]
+fn stmt_rejects_legacy_block_shape() {
     let json = r#"{"sid": "s1", "statements": [{"kind": "nop"}]}"#;
-    let result: Result<Block, _> = serde_json::from_str(json);
+    let result: Result<Stmt, _> = serde_json::from_str(json);
     assert!(result.is_err());
 }
 
 #[test]
-fn return_lives_only_on_terminator() {
+fn return_is_a_statement() {
     let f: Function = serde_json::from_str(
         r#"{
             "name": "f",
             "kind": "normal",
-            "body": [{"sid": "s1", "terminator": {"kind": "return"}}]
+            "body": [{"sid": "s1", "kind": "return"}]
         }"#,
     )
     .unwrap();
     assert!(f.body[0].is_return());
-    assert!(f.body[0].statements.is_empty());
 }
 
 #[test]

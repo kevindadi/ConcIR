@@ -15,26 +15,15 @@ fn fn_named<'a>(prog: &'a Program, name: &str) -> &'a Function {
         .unwrap()
 }
 
-fn stmt_goto(sid: &str, stmt: Stmt, target: &str) -> Block {
-    Block {
+fn stmt(sid: &str, op: Op) -> Stmt {
+    Stmt {
         sid: sid.into(),
-        statements: vec![stmt],
-        terminator: Terminator::Goto {
-            target: target.into(),
-        },
+        op,
     }
 }
 
-fn data_block(sid: &str, statements: Vec<Stmt>, terminator: Terminator) -> Block {
-    Block {
-        sid: sid.into(),
-        statements,
-        terminator,
-    }
-}
-
-fn ret_block(sid: &str) -> Block {
-    data_block(sid, vec![], Terminator::Return { value: None })
+fn ret(sid: &str) -> Stmt {
+    stmt(sid, Op::Return { value: None })
 }
 
 fn make_linear_function() -> Function {
@@ -47,31 +36,26 @@ fn make_linear_function() -> Function {
         returns: None,
         locals: vec![],
         body: vec![
-            stmt_goto(
+            stmt(
                 "s1",
-                Stmt::MutexLock {
+                Op::MutexLock {
                     resource: "mtx".into(),
                 },
-                "s2",
             ),
-            data_block(
+            stmt(
                 "s2",
-                vec![Stmt::WriteShared {
+                Op::WriteShared {
                     resource: "x".into(),
                     expr: "42".into(),
-                }],
-                Terminator::Goto {
-                    target: "s3".into(),
                 },
             ),
-            stmt_goto(
+            stmt(
                 "s3",
-                Stmt::MutexUnlock {
+                Op::MutexUnlock {
                     resource: "mtx".into(),
                 },
-                "s4",
             ),
-            ret_block("s4"),
+            ret("s4"),
         ],
     }
 }
@@ -86,39 +70,35 @@ fn make_branch_function() -> Function {
         returns: None,
         locals: vec![],
         body: vec![
-            data_block(
+            stmt(
                 "s1",
-                vec![Stmt::ReadShared {
-                    resource: "flag".into(),
-                    dst: None,
-                }],
-                Terminator::Branch {
+                Op::Branch {
                     cond: "flag == true".into(),
                     then: "s2".into(),
                     else_target: "s3".into(),
                 },
             ),
-            data_block(
+            stmt(
                 "s2",
-                vec![Stmt::WriteShared {
+                Op::WriteShared {
                     resource: "x".into(),
                     expr: "1".into(),
-                }],
-                Terminator::Goto {
+                },
+            ),
+            stmt(
+                "s5",
+                Op::Goto {
                     target: "s4".into(),
                 },
             ),
-            data_block(
+            stmt(
                 "s3",
-                vec![Stmt::WriteShared {
+                Op::WriteShared {
                     resource: "x".into(),
                     expr: "0".into(),
-                }],
-                Terminator::Goto {
-                    target: "s4".into(),
                 },
             ),
-            ret_block("s4"),
+            ret("s4"),
         ],
     }
 }
@@ -133,29 +113,21 @@ fn make_loop_function() -> Function {
         returns: None,
         locals: vec![],
         body: vec![
-            data_block(
+            stmt(
                 "s1",
-                vec![Stmt::ReadShared {
-                    resource: "counter".into(),
-                    dst: None,
-                }],
-                Terminator::Branch {
+                Op::Branch {
                     cond: "counter < 10".into(),
                     then: "s2".into(),
                     else_target: "s3".into(),
                 },
             ),
-            data_block(
+            stmt(
                 "s2",
-                vec![Stmt::WriteShared {
-                    resource: "counter".into(),
-                    expr: "counter + 1".into(),
-                }],
-                Terminator::Goto {
+                Op::Goto {
                     target: "s1".into(),
                 },
             ),
-            ret_block("s3"),
+            ret("s3"),
         ],
     }
 }
@@ -227,8 +199,8 @@ fn switch_from_state_machine() {
     let worker = fn_named(&prog, "worker");
     let dot = worker.to_dot();
 
-    // s21 is the switch node (reads state, then switches)
-    assert!(dot.contains("worker_s21") && dot.contains("shape=diamond"));
+    // s3 is the switch node
+    assert!(dot.contains("worker_s3") && dot.contains("shape=diamond"));
     // Case labels
     assert!(dot.contains("label=\"Init\""));
     assert!(dot.contains("label=\"Running\""));
@@ -274,7 +246,7 @@ fn cross_function_call() {
     // worker s11 calls validate, but validate has no function body
     // so no cross-function edge emitted (target not in functions list)
     // The call node should still be rendered with rounded style
-    assert!(dot.contains("worker_s11"));
+    assert!(dot.contains("worker_s2"));
     assert!(dot.contains("style=\"filled,rounded\""));
 }
 
@@ -377,7 +349,7 @@ fn condvar_node_styles() {
     let dot = prog.to_dot();
 
     // wait → purple, penwidth=2
-    assert!(dot.contains("consumer_s3") && dot.contains("color=purple"));
+    assert!(dot.contains("consumer_s4") && dot.contains("color=purple"));
     // notify_all → purple, dashed
     assert!(dot.contains("producer_s3") && dot.contains("color=purple"));
 }

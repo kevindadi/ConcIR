@@ -1,9 +1,15 @@
 # Statement
 
-Every non-control operation. None of these transfer control; the
-[terminator](terminator.md) does. In the CVN, a `read_shared` of a
-lock-protected Var (lock already held) and an `atomic_load` are instantaneous
-data-flow steps — they do not queue like `mutex_lock`.
+Every operation in a function body, including control transfer. JSON is
+flat: `{ "sid": "s1", "kind": "mutex_lock", "resource": "mtx" }`.
+
+Non-control ops fall through to the next statement. Control ops
+(`goto` / `branch` / `switch` / `return` / `select`) name successors.
+See [Control flow](block.md).
+
+In the CVN, a `read_shared` of a lock-protected Var (lock already held)
+and an `atomic_load` are instantaneous data-flow steps — they do not
+queue like `mutex_lock`.
 
 ## Data
 
@@ -31,27 +37,12 @@ current value), **not** a Bool success flag.
   value. A spin loop uses that value as the next `expected`.
 
 Do not write `dst` as Bool unless the Atomic itself is `Bool` (in which case
-the old value happens to be Bool). Test success with a terminator:
+the old value happens to be Bool). Test success with a `branch`:
 
 ```json
-{
-  "sid": "s1",
-  "statements": [
-    {
-      "kind": "atomic_cas",
-      "resource": "flag",
-      "expected": "0",
-      "desired": "1",
-      "dst": "ret"
-    }
-  ],
-  "terminator": {
-    "kind": "branch",
-    "cond": "ret == 0",
-    "then": "s2",
-    "else": "s1"
-  }
-}
+{ "sid": "s1", "kind": "atomic_cas", "resource": "flag", "expected": "0", "desired": "1", "dst": "ret" },
+{ "sid": "s2", "kind": "branch", "cond": "ret == 0", "then": "s3", "else": "s1" },
+{ "sid": "s3", "kind": "return" }
 ```
 
 On the back-edge, `ret` is the new current value; the next CAS should use it
@@ -59,7 +50,7 @@ as `expected` (via `assign_local` or by passing `ret` in `expected`).
 
 ## Synchronization
 
-May block in the CVN, but are still statements.
+May block in the CVN.
 
 | `kind`                                           | Key fields                   |
 | ------------------------------------------------ | ---------------------------- |
@@ -73,7 +64,7 @@ May block in the CVN, but are still statements.
 
 `channel_recv` `dst` is the popped payload (Channel `base`); `"_"` discards.
 The in-flight messages live in the Channel resource's `capacity` slots.
-See [Resource](resource.md) and [`select` guards](terminator.md).
+See [Resource](resource.md) and [`select` guards](#select).
 
 `condvar_wait` lock release / re-acquire is described under
 [Wait semantics](wait.md).
@@ -93,3 +84,56 @@ Unstructured `spawn` / `join` pair on **handles**, not function names. A
 | `join_all`     | —                              | Mid-scope barrier; E412 outside a scope |
 | `async_call`   | `func`, `args`, `handle`       | |
 | `await`        | `handle`                       | |
+
+## Control
+
+These kinds transfer control. They are statements like any other; there is
+no separate terminator.
+
+| `kind`   | Fields                         | Description                                                                                   |
+| -------- | ------------------------------ | --------------------------------------------------------------------------------------------- |
+| `goto`   | `target`                       | Unconditional jump. Omit when the target is the next statement (fallthrough).                 |
+| `branch` | `cond`, `then`, `else`         | Conditional; `else` is the JSON key. A back-edge (`then`/`else` to an earlier sid) is a loop. |
+| `switch` | `var`, `cases`, `default`      | Multi-way branch; `default` is required                                                       |
+| `return` | optional `value`               | Function return                                                                               |
+| `select` | `branches`, optional `default` | Multi-way wait; each branch has `guard` + `target`                                            |
+
+`select` guards reuse the **same tagged JSON object** as the corresponding
+statement (`kind` plus the same fields). Legal kinds: `channel_recv`,
+`semaphore_acquire`, and `condvar_wait`.
+
+### `select` `channel_recv` `dst`: popped payload
+
+The Channel resource is the message store (`capacity` slots of `base`).
+When a `channel_recv` guard fires, one slot is dequeued into `dst` — a
+function local or Var/Atomic of that `base` (E206). `"_"` discards the
+payload. This is the same field as statement `channel_recv`.
+
+```json
+{
+  "sid": "s1",
+  "kind": "select",
+  "branches": [
+    {
+      "guard": { "kind": "channel_recv", "channel": "tx", "dst": "msg" },
+      "target": "s2"
+    }
+  ]
+}
+```
+
+See [Resource](resource.md) for Channel `capacity`.
+
+### `condvar_wait` as a select guard (E409)
+
+In sync Rust, `Condvar::wait` is a blocking primitive and cannot be placed
+in a non-blocking `select!`. ConcIR therefore rejects `condvar_wait` guards
+unless:
+
+- the enclosing function has `kind: "async"`, and
+- the Condvar resource has `"mode": "Async"`.
+
+The translator, at codegen, must map that async guard to `tokio::sync::Notify`,
+a `watch` channel, or a timeout race — not to `std::sync::Condvar::wait`.
+A sync wait loop uses `condvar_wait` as a **statement** plus a `branch`
+back-edge, not `select`. See [Wait semantics](wait.md).

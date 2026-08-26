@@ -73,8 +73,8 @@ fn build_cfg(f: &Function) -> Cfg {
     let n = f.body.len();
     let mut successors = vec![Vec::new(); n];
 
-    for (i, block) in f.body.iter().enumerate() {
-        for t in block.successor_sids() {
+    for (i, _) in f.body.iter().enumerate() {
+        for t in f.successors(i) {
             if let Some(&ti) = sid_to_idx.get(t) {
                 successors[i].push(ti);
             }
@@ -107,41 +107,40 @@ fn check_lock_drop_pairing(
         visited[idx].insert(held.clone());
 
         let stmt = &f.body[idx];
-        for s in &stmt.statements {
-            if let Some(resource) = s.is_lock_acquire() {
-                if lock_resources.contains(resource) {
-                    if held.contains(resource) {
-                        diags.push(
-                            Diagnostic::error(
-                                "E503",
-                                format!(
-                                    "double lock on '{resource}' in function '{}' without prior unlock",
-                                    f.name
-                                ),
-                            )
-                            .with_path(format!("{fn_path}.body[{idx}].statements"))
-                            .with_fix("unlock before re-locking"),
-                        );
-                    }
-                    held.insert(resource.to_string());
+        let s = &stmt.op;
+        if let Some(resource) = s.is_lock_acquire() {
+            if lock_resources.contains(resource) {
+                if held.contains(resource) {
+                    diags.push(
+                        Diagnostic::error(
+                            "E503",
+                            format!(
+                                "double lock on '{resource}' in function '{}' without prior unlock",
+                                f.name
+                            ),
+                        )
+                        .with_path(format!("{fn_path}.body[{idx}]"))
+                        .with_fix("unlock before re-locking"),
+                    );
                 }
-            } else if let Some(resource) = s.is_lock_release() {
-                if lock_resources.contains(resource) {
-                    if !held.contains(resource) {
-                        diags.push(
-                            Diagnostic::error(
-                                "E502",
-                                format!(
-                                    "unlock without lock for '{resource}' in function '{}'",
-                                    f.name
-                                ),
-                            )
-                            .with_path(format!("{fn_path}.body[{idx}].statements"))
-                            .with_fix("lock before unlock, or remove the unlock"),
-                        );
-                    }
-                    held.remove(resource);
+                held.insert(resource.to_string());
+            }
+        } else if let Some(resource) = s.is_lock_release() {
+            if lock_resources.contains(resource) {
+                if !held.contains(resource) {
+                    diags.push(
+                        Diagnostic::error(
+                            "E502",
+                            format!(
+                                "unlock without lock for '{resource}' in function '{}'",
+                                f.name
+                            ),
+                        )
+                        .with_path(format!("{fn_path}.body[{idx}]"))
+                        .with_fix("lock before unlock, or remove the unlock"),
+                    );
                 }
+                held.remove(resource);
             }
         }
 
@@ -195,20 +194,20 @@ fn check_sync_lock_across_await(
 
         let stmt = &f.body[idx];
 
-        for s in &stmt.statements {
-            if let Some(resource) = s.is_lock_acquire() {
-                if sync_locks.contains(resource) {
-                    held.insert(resource.to_string());
-                }
-            } else if let Some(resource) = s.is_lock_release() {
-                if sync_locks.contains(resource) {
-                    held.remove(resource);
-                }
+        let s = &stmt.op;
+        if let Some(resource) = s.is_lock_acquire() {
+            if sync_locks.contains(resource) {
+                held.insert(resource.to_string());
             }
+        } else if let Some(resource) = s.is_lock_release() {
+            if sync_locks.contains(resource) {
+                held.remove(resource);
+            }
+        }
 
-            if s.is_await_like() && !held.is_empty() {
-                for lock in &held {
-                    diags.push(
+        if s.is_await_like() && !held.is_empty() {
+            for lock in &held {
+                diags.push(
                         Diagnostic::error(
                             "E504",
                             format!(
@@ -216,10 +215,9 @@ fn check_sync_lock_across_await(
                                 f.name
                             ),
                         )
-                        .with_path(format!("{fn_path}.body[{idx}].statements"))
+                        .with_path(format!("{fn_path}.body[{idx}]"))
                         .with_fix("unlock before await and re-acquire after, or use Async-mode lock"),
                     );
-                }
             }
         }
 
@@ -263,16 +261,15 @@ fn check_lock_ordering(
         visited.insert(key);
 
         let stmt = &f.body[idx];
-        for s in &stmt.statements {
-            if let Some(resource) = s.is_lock_acquire() {
-                if lock_resources.contains(resource) && !held.contains(resource) {
-                    order.push(resource.to_string());
-                    held.insert(resource.to_string());
-                }
-            } else if let Some(resource) = s.is_lock_release() {
-                if lock_resources.contains(resource) {
-                    held.remove(resource);
-                }
+        let s = &stmt.op;
+        if let Some(resource) = s.is_lock_acquire() {
+            if lock_resources.contains(resource) && !held.contains(resource) {
+                order.push(resource.to_string());
+                held.insert(resource.to_string());
+            }
+        } else if let Some(resource) = s.is_lock_release() {
+            if lock_resources.contains(resource) {
+                held.remove(resource);
             }
         }
 
@@ -345,11 +342,11 @@ fn check_var_access_without_lock(
 
         let stmt = &f.body[idx];
 
-        for s in &stmt.statements {
-            if let Some((resource, _)) = s.shared_var_access() {
-                if let Some(required_lock) = protection_map.get(resource) {
-                    if !held.contains(required_lock) {
-                        diags.push(
+        let s = &stmt.op;
+        if let Some((resource, _)) = s.shared_var_access() {
+            if let Some(required_lock) = protection_map.get(resource) {
+                if !held.contains(required_lock) {
+                    diags.push(
                             Diagnostic::error(
                                 "E309",
                                 format!(
@@ -357,20 +354,19 @@ fn check_var_access_without_lock(
                                     f.name
                                 ),
                             )
-                            .with_path(format!("{fn_path}.body[{idx}].statements"))
+                            .with_path(format!("{fn_path}.body[{idx}]"))
                             .with_fix("acquire the lock before accessing this variable"),
                         );
-                    }
                 }
             }
-            if let Some(resource) = s.is_lock_acquire() {
-                if lock_resources.contains(resource) {
-                    held.insert(resource.to_string());
-                }
-            } else if let Some(resource) = s.is_lock_release() {
-                if lock_resources.contains(resource) {
-                    held.remove(resource);
-                }
+        }
+        if let Some(resource) = s.is_lock_acquire() {
+            if lock_resources.contains(resource) {
+                held.insert(resource.to_string());
+            }
+        } else if let Some(resource) = s.is_lock_release() {
+            if lock_resources.contains(resource) {
+                held.remove(resource);
             }
         }
 

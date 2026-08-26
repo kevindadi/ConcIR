@@ -6,13 +6,10 @@ use crate::validate::types::{build_resource_type_map, ResType};
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let rt_map = build_resource_type_map(program);
 
-    program.walk_blocks(|mi, fi, si, _, _, block| {
-        let stmt_path = format!("{}.statements", Program::block_path(mi, fi, si));
-        for stmt in &block.statements {
-            check_stmt(&rt_map, diags, &stmt_path, stmt);
-        }
-        if let Terminator::Select { branches, .. } = &block.terminator {
-            let path = format!("{}.terminator", Program::block_path(mi, fi, si));
+    program.walk_stmts(|mi, fi, si, _, _, stmt| {
+        let path = Program::stmt_path(mi, fi, si);
+        check_op(&rt_map, diags, &path, &stmt.op);
+        if let Op::Select { branches, .. } = &stmt.op {
             for branch in branches {
                 match &branch.guard {
                     SelectGuard::ChannelRecv { channel, .. } => {
@@ -66,14 +63,14 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     });
 }
 
-fn check_stmt(
+fn check_op(
     rt_map: &std::collections::HashMap<String, ResType>,
     diags: &mut Vec<Diagnostic>,
     path: &str,
-    stmt: &Stmt,
+    op: &Op,
 ) {
-    match stmt {
-        Stmt::MutexLock { resource } | Stmt::MutexUnlock { resource } => {
+    match op {
+        Op::MutexLock { resource } | Op::MutexUnlock { resource } => {
             check_rt(
                 rt_map,
                 diags,
@@ -84,9 +81,9 @@ fn check_stmt(
                 "mutex_lock/unlock requires a Mutex",
             );
         }
-        Stmt::RwLockRead { resource }
-        | Stmt::RwLockWrite { resource }
-        | Stmt::RwLockUnlock { resource } => {
+        Op::RwLockRead { resource }
+        | Op::RwLockWrite { resource }
+        | Op::RwLockUnlock { resource } => {
             check_rt(
                 rt_map,
                 diags,
@@ -97,7 +94,7 @@ fn check_stmt(
                 "rwlock_* requires an RwLock",
             );
         }
-        Stmt::CondvarWait { condvar, lock } => {
+        Op::CondvarWait { condvar, lock } => {
             check_rt(
                 rt_map,
                 diags,
@@ -120,7 +117,7 @@ fn check_stmt(
                 }
             }
         }
-        Stmt::CondvarNotify { condvar } | Stmt::CondvarNotifyAll { condvar } => {
+        Op::CondvarNotify { condvar } | Op::CondvarNotifyAll { condvar } => {
             check_rt(
                 rt_map,
                 diags,
@@ -131,7 +128,7 @@ fn check_stmt(
                 "condvar_notify requires a Condvar",
             );
         }
-        Stmt::SemaphoreAcquire { resource, .. } | Stmt::SemaphoreRelease { resource, .. } => {
+        Op::SemaphoreAcquire { resource, .. } | Op::SemaphoreRelease { resource, .. } => {
             check_rt(
                 rt_map,
                 diags,
@@ -142,7 +139,7 @@ fn check_stmt(
                 "semaphore_* requires a Semaphore",
             );
         }
-        Stmt::ChannelSend { channel, .. } | Stmt::ChannelRecv { channel, .. } => {
+        Op::ChannelSend { channel, .. } | Op::ChannelRecv { channel, .. } => {
             check_rt(
                 rt_map,
                 diags,
@@ -153,9 +150,9 @@ fn check_stmt(
                 "channel_send/recv requires a Channel",
             );
         }
-        Stmt::AtomicLoad { resource, .. }
-        | Stmt::AtomicStore { resource, .. }
-        | Stmt::AtomicCas { resource, .. } => {
+        Op::AtomicLoad { resource, .. }
+        | Op::AtomicStore { resource, .. }
+        | Op::AtomicCas { resource, .. } => {
             check_rt(
                 rt_map,
                 diags,
@@ -166,7 +163,7 @@ fn check_stmt(
                 "atomic_* requires an Atomic",
             );
         }
-        Stmt::ReadShared { resource, .. } | Stmt::WriteShared { resource, .. } => {
+        Op::ReadShared { resource, .. } | Op::WriteShared { resource, .. } => {
             if let Some(rt) = rt_map.get(resource) {
                 if !matches!(rt, ResType::Var(_)) {
                     diags.push(

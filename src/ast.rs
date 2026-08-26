@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use serde::de::{self, Deserializer, Error};
+use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::fqn;
@@ -9,7 +9,7 @@ use crate::fqn;
 // ──────────────────── Top-level ────────────────────
 
 fn default_version() -> String {
-    "3.2.0".to_string()
+    "3.3.0".to_string()
 }
 
 fn default_form() -> String {
@@ -256,7 +256,7 @@ pub struct Function {
     ///
     /// A `"scope"` is a structured fork-join region (`thread::scope`): every
     /// `spawn` inside it is a fork; `return` (and `join_all`) is the join
-    /// barrier. Enter a named scope with [`Stmt::SpawnBatch`].
+    /// barrier. Enter a named scope with [`Op::SpawnBatch`].
     pub kind: String,
     /// Callable form: `"function"` (default) or `"closure"`. Codegen hint
     /// only; `spawn` may target either.
@@ -268,9 +268,11 @@ pub struct Function {
     pub returns: Option<ParamDecl>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub locals: Vec<LocalDecl>,
-    /// Basic blocks. Empty body is a nobody function (codegen placeholder).
+    /// Statement list. Empty body is a nobody function (codegen placeholder).
+    /// Sequential fallthrough: a non-control statement continues at the next
+    /// entry. `goto` / `branch` / `switch` / `return` / `select` transfer control.
     #[serde(default)]
-    pub body: Vec<Block>,
+    pub body: Vec<Stmt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effects: Option<FunctionEffects>,
 }
@@ -287,6 +289,12 @@ impl Function {
     pub fn is_closure(&self) -> bool {
         self.form == "closure"
     }
+
+    /// CFG successors of `body[i]`. Non-control ops fall through to `body[i+1]`.
+    pub fn successors(&self, i: usize) -> Vec<&str> {
+        let next = self.body.get(i + 1);
+        self.body[i].successors(next)
+    }
 }
 
 /// Data-footprint hint for a body-less function.
@@ -299,58 +307,24 @@ pub struct FunctionEffects {
     pub writes: Vec<String>,
 }
 
-// ──────────────────── Block (flattened CFG) ────────────────────
+// ──────────────────── Statement (CFG node) ────────────────────
 
-/// One basic block: zero or more [`Stmt`]s, then exactly one [`Terminator`].
+/// One CFG node: a `sid` plus a tagged [`Op`].
 ///
-/// Control flow is only in the terminator (`goto` / `branch` / `switch` /
-/// `return` / `select`). Loops are back-edges from `branch`, not a statement.
-/// Operations — including `mutex_lock` and `atomic_load` — live in `statements`
-/// and do not take a successor `target`.
-#[derive(Debug, Clone, Serialize)]
-pub struct Block {
+/// JSON is flat: `{ "sid": "s1", "kind": "mutex_lock", "resource": "mtx" }`.
+/// Non-control ops fall through to the next statement in `Function.body`.
+/// Control ops (`goto`, `branch`, `switch`, `return`, `select`) name successors.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Stmt {
     pub sid: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub statements: Vec<Stmt>,
-    pub terminator: Terminator,
+    #[serde(flatten)]
+    pub op: Op,
 }
 
-impl<'de> Deserialize<'de> for Block {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        struct Helper {
-            sid: String,
-            #[serde(default)]
-            statements: Vec<Stmt>,
-            #[serde(default)]
-            call: Option<serde_json::Value>,
-            #[serde(default)]
-            terminator: Option<Terminator>,
-        }
-        let h = Helper::deserialize(deserializer)?;
-        if h.call.is_some() {
-            return Err(D::Error::custom(
-                "block has no 'call' field; put operations in statements and end with a terminator",
-            ));
-        }
-        let Some(terminator) = h.terminator else {
-            return Err(D::Error::custom(
-                "block requires a terminator (goto, branch, switch, return, or select)",
-            ));
-        };
-        Ok(Block {
-            sid: h.sid,
-            statements: h.statements,
-            terminator,
-        })
-    }
-}
-
-/// Instantaneous and blocking operations. None of these transfer control;
-/// the block's terminator does.
+/// Tagged operation. Control-flow kinds live here; there is no separate terminator.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
-pub enum Stmt {
+pub enum Op {
     #[serde(rename = "nop")]
     Nop,
     #[serde(rename = "assign_local")]
@@ -438,8 +412,6 @@ pub enum Stmt {
         handle: String,
     },
     /// Enter a [`Function`] with `kind: "scope"` and wait for its fork-join.
-    /// Not "N copies of one function" — homogeneous repetition is a `branch`
-    /// loop of [`Stmt::Spawn`] inside the scope.
     #[serde(rename = "spawn_batch")]
     SpawnBatch {
         func: String,
@@ -451,7 +423,6 @@ pub enum Stmt {
     #[serde(rename = "join")]
     Join { handle: String },
     /// Join every outstanding spawn in the enclosing `kind: "scope"` function.
-    /// Illegal outside a scope (E412). Scope `return` already joins survivors.
     #[serde(rename = "join_all")]
     JoinAll,
     #[serde(rename = "async_call")]
@@ -463,44 +434,6 @@ pub enum Stmt {
     },
     #[serde(rename = "await")]
     Await { handle: String },
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct SelectBranch {
-    pub guard: SelectGuard,
-    pub target: String,
-}
-
-/// Blocking operations allowed as `select` guards.
-///
-/// Each variant uses the **same tagged JSON object** as the corresponding
-/// [`Stmt`] (`kind` plus the same fields). `channel_recv` therefore carries
-/// `dst`: the payload popped from the Channel's `capacity` slots.
-///
-/// `condvar_wait` is not a `select!` candidate in sync Rust (`Condvar::wait`
-/// is a blocking primitive). It is only legal in an `async` function on an
-/// `Async`-mode Condvar; the translator maps it to `Notify` / `watch` or a
-/// timeout race. See `doc/syntax/terminator.md`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "kind", deny_unknown_fields)]
-pub enum SelectGuard {
-    #[serde(rename = "channel_recv")]
-    ChannelRecv {
-        channel: String,
-        /// Same as [`Stmt::ChannelRecv`]: popped payload, or `"_"` to discard.
-        dst: String,
-    },
-    #[serde(rename = "condvar_wait")]
-    CondvarWait { condvar: String, lock: String },
-    #[serde(rename = "semaphore_acquire")]
-    SemaphoreAcquire { resource: String },
-}
-
-/// CFG terminator: the only place control transfers, and the only spelling of `return`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "kind", deny_unknown_fields)]
-pub enum Terminator {
     #[serde(rename = "goto")]
     Goto { target: String },
     #[serde(rename = "branch")]
@@ -529,6 +462,38 @@ pub enum Terminator {
     },
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SelectBranch {
+    pub guard: SelectGuard,
+    pub target: String,
+}
+
+/// Blocking operations allowed as `select` guards.
+///
+/// Each variant uses the **same tagged JSON object** as the corresponding
+/// [`Op`] (`kind` plus the same fields). `channel_recv` therefore carries
+/// `dst`: the payload popped from the Channel's `capacity` slots.
+///
+/// `condvar_wait` is not a `select!` candidate in sync Rust (`Condvar::wait`
+/// is a blocking primitive). It is only legal in an `async` function on an
+/// `Async`-mode Condvar; the translator maps it to `Notify` / `watch` or a
+/// timeout race. See `doc/syntax/statement.md`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "kind", deny_unknown_fields)]
+pub enum SelectGuard {
+    #[serde(rename = "channel_recv")]
+    ChannelRecv {
+        channel: String,
+        /// Same as [`Op::ChannelRecv`]: popped payload, or `"_"` to discard.
+        dst: String,
+    },
+    #[serde(rename = "condvar_wait")]
+    CondvarWait { condvar: String, lock: String },
+    #[serde(rename = "semaphore_acquire")]
+    SemaphoreAcquire { resource: String },
+}
+
 // ──────────────────── Helpers ────────────────────
 
 impl Program {
@@ -536,15 +501,15 @@ impl Program {
         self.modules.iter().find(|m| m.name == name)
     }
 
-    /// Visit every basic block: `(module_idx, fn_idx, block_idx, module, function, block)`.
-    pub fn walk_blocks<F>(&self, mut visit: F)
+    /// Visit every statement: `(module_idx, fn_idx, stmt_idx, module, function, stmt)`.
+    pub fn walk_stmts<F>(&self, mut visit: F)
     where
-        F: FnMut(usize, usize, usize, &Module, &Function, &Block),
+        F: FnMut(usize, usize, usize, &Module, &Function, &Stmt),
     {
         for (mi, m) in self.modules.iter().enumerate() {
             for (fi, f) in m.functions.iter().enumerate() {
-                for (si, b) in f.body.iter().enumerate() {
-                    visit(mi, fi, si, m, f, b);
+                for (si, s) in f.body.iter().enumerate() {
+                    visit(mi, fi, si, m, f, s);
                 }
             }
         }
@@ -554,7 +519,7 @@ impl Program {
         format!("modules[{mi}].functions[{fi}]")
     }
 
-    pub fn block_path(mi: usize, fi: usize, si: usize) -> String {
+    pub fn stmt_path(mi: usize, fi: usize, si: usize) -> String {
         format!("modules[{mi}].functions[{fi}].body[{si}]")
     }
 
@@ -582,25 +547,59 @@ impl Program {
     }
 }
 
-impl Block {
-    pub fn successor_sids(&self) -> Vec<&str> {
-        self.terminator.successor_sids()
+impl Stmt {
+    pub fn is_return(&self) -> bool {
+        matches!(self.op, Op::Return { .. })
     }
 
-    pub fn is_return(&self) -> bool {
-        matches!(self.terminator, Terminator::Return { .. })
+    pub fn is_control(&self) -> bool {
+        matches!(
+            self.op,
+            Op::Goto { .. }
+                | Op::Branch { .. }
+                | Op::Switch { .. }
+                | Op::Return { .. }
+                | Op::Select { .. }
+        )
+    }
+
+    /// Named successors, or the next statement's sid on fallthrough.
+    pub fn successors<'a>(&'a self, next: Option<&'a Stmt>) -> Vec<&'a str> {
+        match &self.op {
+            Op::Goto { target } => vec![target.as_str()],
+            Op::Branch {
+                then, else_target, ..
+            } => vec![then.as_str(), else_target.as_str()],
+            Op::Switch { cases, default, .. } => {
+                let mut v: Vec<&str> = cases.values().map(String::as_str).collect();
+                v.push(default);
+                v
+            }
+            Op::Return { .. } => vec![],
+            Op::Select { branches, default } => {
+                let mut v: Vec<&str> = branches.iter().map(|b| b.target.as_str()).collect();
+                if let Some(d) = default {
+                    v.push(d);
+                }
+                v
+            }
+            _ => match next {
+                Some(n) => vec![n.sid.as_str()],
+                None => vec![],
+            },
+        }
     }
 
     pub fn branch_cond(&self) -> Option<&str> {
-        match &self.terminator {
-            Terminator::Branch { cond, .. } => Some(cond),
+        match &self.op {
+            Op::Branch { cond, .. } => Some(cond),
             _ => None,
         }
     }
 
     pub fn switch(&self) -> Option<(&str, &BTreeMap<String, String>, &str)> {
-        match &self.terminator {
-            Terminator::Switch {
+        match &self.op {
+            Op::Switch {
                 var,
                 cases,
                 default,
@@ -610,102 +609,77 @@ impl Block {
     }
 }
 
-impl Terminator {
-    pub fn successor_sids(&self) -> Vec<&str> {
-        match self {
-            Terminator::Goto { target } => vec![target],
-            Terminator::Branch {
-                then, else_target, ..
-            } => vec![then, else_target],
-            Terminator::Switch { cases, default, .. } => {
-                let mut v: Vec<&str> = cases.values().map(String::as_str).collect();
-                v.push(default);
-                v
-            }
-            Terminator::Return { .. } => vec![],
-            Terminator::Select { branches, default } => {
-                let mut v: Vec<&str> = branches.iter().map(|b| b.target.as_str()).collect();
-                if let Some(d) = default {
-                    v.push(d);
-                }
-                v
-            }
-        }
-    }
-}
-
-impl Stmt {
+impl Op {
     pub fn shared_var_access(&self) -> Option<(&str, bool)> {
         match self {
-            Stmt::ReadShared { resource, .. } => Some((resource, false)),
-            Stmt::WriteShared { resource, .. } => Some((resource, true)),
+            Op::ReadShared { resource, .. } => Some((resource, false)),
+            Op::WriteShared { resource, .. } => Some((resource, true)),
             _ => None,
         }
     }
 
     pub fn callee_func(&self) -> Option<&str> {
         match self {
-            Stmt::Func { func, .. }
-            | Stmt::Spawn { func, .. }
-            | Stmt::SpawnBatch { func, .. }
-            | Stmt::AsyncCall { func, .. } => Some(func),
+            Op::Func { func, .. }
+            | Op::Spawn { func, .. }
+            | Op::SpawnBatch { func, .. }
+            | Op::AsyncCall { func, .. } => Some(func),
             _ => None,
         }
     }
 
     pub fn resource_name(&self) -> Option<&str> {
         match self {
-            Stmt::MutexLock { resource, .. }
-            | Stmt::MutexUnlock { resource, .. }
-            | Stmt::RwLockRead { resource, .. }
-            | Stmt::RwLockWrite { resource, .. }
-            | Stmt::RwLockUnlock { resource, .. }
-            | Stmt::SemaphoreAcquire { resource, .. }
-            | Stmt::SemaphoreRelease { resource, .. }
-            | Stmt::AtomicLoad { resource, .. }
-            | Stmt::AtomicStore { resource, .. }
-            | Stmt::AtomicCas { resource, .. } => Some(resource),
-            Stmt::ChannelSend { channel, .. } | Stmt::ChannelRecv { channel, .. } => Some(channel),
-            Stmt::CondvarWait { condvar, .. }
-            | Stmt::CondvarNotify { condvar, .. }
-            | Stmt::CondvarNotifyAll { condvar, .. } => Some(condvar),
-            Stmt::ReadShared { resource, .. } | Stmt::WriteShared { resource, .. } => {
-                Some(resource)
-            }
+            Op::MutexLock { resource, .. }
+            | Op::MutexUnlock { resource, .. }
+            | Op::RwLockRead { resource, .. }
+            | Op::RwLockWrite { resource, .. }
+            | Op::RwLockUnlock { resource, .. }
+            | Op::SemaphoreAcquire { resource, .. }
+            | Op::SemaphoreRelease { resource, .. }
+            | Op::AtomicLoad { resource, .. }
+            | Op::AtomicStore { resource, .. }
+            | Op::AtomicCas { resource, .. } => Some(resource),
+            Op::ChannelSend { channel, .. } | Op::ChannelRecv { channel, .. } => Some(channel),
+            Op::CondvarWait { condvar, .. }
+            | Op::CondvarNotify { condvar, .. }
+            | Op::CondvarNotifyAll { condvar, .. } => Some(condvar),
+            Op::ReadShared { resource, .. } | Op::WriteShared { resource, .. } => Some(resource),
             _ => None,
         }
     }
 
     pub fn is_lock_acquire(&self) -> Option<&str> {
         match self {
-            Stmt::MutexLock { resource }
-            | Stmt::RwLockRead { resource }
-            | Stmt::RwLockWrite { resource } => Some(resource),
+            Op::MutexLock { resource }
+            | Op::RwLockRead { resource }
+            | Op::RwLockWrite { resource } => Some(resource),
             _ => None,
         }
     }
 
     pub fn is_lock_release(&self) -> Option<&str> {
         match self {
-            Stmt::MutexUnlock { resource } | Stmt::RwLockUnlock { resource } => Some(resource),
+            Op::MutexUnlock { resource } | Op::RwLockUnlock { resource } => Some(resource),
             _ => None,
         }
     }
 
     pub fn is_await_like(&self) -> bool {
-        matches!(self, Stmt::Await { .. })
+        matches!(self, Op::Await { .. })
     }
 
     pub fn is_blocking(&self) -> bool {
         matches!(
             self,
-            Stmt::Await { .. }
-                | Stmt::Join { .. }
-                | Stmt::JoinAll
-                | Stmt::SpawnBatch { .. }
-                | Stmt::ChannelRecv { .. }
-                | Stmt::SemaphoreAcquire { .. }
-                | Stmt::CondvarWait { .. }
+            Op::Await { .. }
+                | Op::Join { .. }
+                | Op::JoinAll
+                | Op::SpawnBatch { .. }
+                | Op::ChannelRecv { .. }
+                | Op::SemaphoreAcquire { .. }
+                | Op::CondvarWait { .. }
+                | Op::Select { .. }
         )
     }
 }

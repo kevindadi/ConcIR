@@ -11,83 +11,81 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let mut async_spawns: HashMap<String, Vec<OpInfo>> = HashMap::new();
     let mut awaits: HashMap<String, Vec<OpInfo>> = HashMap::new();
 
-    program.walk_blocks(|mi, fi, si, m, f, block| {
-        let path = format!("{}.statements", Program::block_path(mi, fi, si));
-        for stmt in &block.statements {
-            let info = OpInfo {
-                fn_kind: f.kind.clone(),
-                fn_name: f.name.clone(),
-                path: path.clone(),
-            };
-            match stmt {
-                Stmt::Spawn { handle, func, .. } => {
-                    check_not_scope_callee(
-                        program,
-                        &m.name,
-                        func,
-                        "spawn",
-                        "E411",
-                        "enter a scope with spawn_batch, not spawn",
-                        &path,
-                        diags,
-                    );
-                    spawns.entry(handle.clone()).or_default().push(info);
-                }
-                Stmt::SpawnBatch { func, .. } => {
-                    check_spawn_batch_target(program, &m.name, func, &path, diags);
-                }
-                Stmt::Join { handle, .. } => {
-                    joins.entry(handle.clone()).or_default().push(info);
-                }
-                Stmt::JoinAll => {
-                    if !f.is_scope() {
-                        diags.push(
-                            Diagnostic::error(
-                                "E412",
-                                format!(
-                                    "join_all in non-scope function '{}'; join_all is the \
-                                     mid-scope fork-join barrier",
-                                    f.name
-                                ),
-                            )
-                            .with_path(path.clone())
-                            .with_fix(
-                                "put join_all inside a kind: \"scope\" function, or join \
-                                 individual handles",
-                            ),
-                        );
-                    }
-                }
-                Stmt::AsyncCall { handle, func, .. } => {
-                    check_not_scope_callee(
-                        program,
-                        &m.name,
-                        func,
-                        "async_call",
-                        "E411",
-                        "enter a scope with spawn_batch, not async_call",
-                        &path,
-                        diags,
-                    );
-                    async_spawns.entry(handle.clone()).or_default().push(info);
-                }
-                Stmt::Await { handle, .. } => {
-                    awaits.entry(handle.clone()).or_default().push(info);
-                }
-                Stmt::Func { func, .. } => {
-                    check_not_scope_callee(
-                        program,
-                        &m.name,
-                        func,
-                        "call",
-                        "E411",
-                        "enter a scope with spawn_batch, not call",
-                        &path,
-                        diags,
-                    );
-                }
-                _ => {}
+    program.walk_stmts(|mi, fi, si, m, f, stmt| {
+        let path = Program::stmt_path(mi, fi, si);
+        let info = OpInfo {
+            fn_kind: f.kind.clone(),
+            fn_name: f.name.clone(),
+            path: path.clone(),
+        };
+        match &stmt.op {
+            Op::Spawn { handle, func, .. } => {
+                check_not_scope_callee(
+                    program,
+                    &m.name,
+                    func,
+                    "spawn",
+                    "E411",
+                    "enter a scope with spawn_batch, not spawn",
+                    &path,
+                    diags,
+                );
+                spawns.entry(handle.clone()).or_default().push(info);
             }
+            Op::SpawnBatch { func, .. } => {
+                check_spawn_batch_target(program, &m.name, func, &path, diags);
+            }
+            Op::Join { handle, .. } => {
+                joins.entry(handle.clone()).or_default().push(info);
+            }
+            Op::JoinAll => {
+                if !f.is_scope() {
+                    diags.push(
+                        Diagnostic::error(
+                            "E412",
+                            format!(
+                                "join_all in non-scope function '{}'; join_all is the \
+                                     mid-scope fork-join barrier",
+                                f.name
+                            ),
+                        )
+                        .with_path(path.clone())
+                        .with_fix(
+                            "put join_all inside a kind: \"scope\" function, or join \
+                                 individual handles",
+                        ),
+                    );
+                }
+            }
+            Op::AsyncCall { handle, func, .. } => {
+                check_not_scope_callee(
+                    program,
+                    &m.name,
+                    func,
+                    "async_call",
+                    "E411",
+                    "enter a scope with spawn_batch, not async_call",
+                    &path,
+                    diags,
+                );
+                async_spawns.entry(handle.clone()).or_default().push(info);
+            }
+            Op::Await { handle, .. } => {
+                awaits.entry(handle.clone()).or_default().push(info);
+            }
+            Op::Func { func, .. } => {
+                check_not_scope_callee(
+                    program,
+                    &m.name,
+                    func,
+                    "call",
+                    "E411",
+                    "enter a scope with spawn_batch, not call",
+                    &path,
+                    diags,
+                );
+            }
+            _ => {}
         }
     });
 
@@ -274,11 +272,11 @@ fn check_not_scope_callee(
 /// Allowed only in an `async` function on an `Async`-mode Condvar; the
 /// translator maps that guard to `Notify` / `watch` or a timeout race.
 fn check_select_guards(program: &Program, diags: &mut Vec<Diagnostic>) {
-    program.walk_blocks(|mi, fi, si, m, f, block| {
-        let Terminator::Select { branches, .. } = &block.terminator else {
+    program.walk_stmts(|mi, fi, si, m, f, stmt| {
+        let Op::Select { branches, .. } = &stmt.op else {
             return;
         };
-        let path = format!("{}.terminator", Program::block_path(mi, fi, si));
+        let path = Program::stmt_path(mi, fi, si);
         for branch in branches {
             let SelectGuard::CondvarWait { condvar, .. } = &branch.guard else {
                 continue;

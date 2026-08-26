@@ -1,12 +1,22 @@
 {
   "program": "async_workers",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "modules": [
     {
       "name": "main",
       "provides": {
-        "resources": ["async_mtx", "sem", "tx", "result", "task_count"],
-        "functions": ["main", "worker", "collector"]
+        "resources": [
+          "async_mtx",
+          "sem",
+          "tx",
+          "result",
+          "task_count"
+        ],
+        "functions": [
+          "main",
+          "worker",
+          "collector"
+        ]
       },
       "requires": {
         "resources": [],
@@ -62,63 +72,29 @@
           "body": [
             {
               "sid": "s1",
-              "statements": [
-                {
-                  "kind": "async_call",
-                  "func": "worker",
-                  "handle": "h_worker"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s2"
-              }
+              "kind": "async_call",
+              "func": "worker",
+              "handle": "h_worker"
             },
             {
               "sid": "s2",
-              "statements": [
-                {
-                  "kind": "async_call",
-                  "func": "collector",
-                  "handle": "h_collector"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s3"
-              }
+              "kind": "async_call",
+              "func": "collector",
+              "handle": "h_collector"
             },
             {
               "sid": "s3",
-              "statements": [
-                {
-                  "kind": "await",
-                  "handle": "h_worker"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s4"
-              }
+              "kind": "await",
+              "handle": "h_worker"
             },
             {
               "sid": "s4",
-              "statements": [
-                {
-                  "kind": "await",
-                  "handle": "h_collector"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s5"
-              }
+              "kind": "await",
+              "handle": "h_collector"
             },
             {
               "sid": "s5",
-              "terminator": {
-                "kind": "return"
-              }
+              "kind": "return"
             }
           ]
         },
@@ -127,64 +103,30 @@
           "kind": "async",
           "body": [
             {
-              "sid": "s10",
-              "statements": [
-                {
-                  "kind": "semaphore_acquire",
-                  "resource": "sem"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s11"
-              }
+              "sid": "s1",
+              "kind": "semaphore_acquire",
+              "resource": "sem"
             },
             {
-              "sid": "s11",
-              "statements": [
-                {
-                  "kind": "atomic_store",
-                  "resource": "task_count",
-                  "value": "task_count + 1"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s12"
-              }
+              "sid": "s2",
+              "kind": "atomic_store",
+              "resource": "task_count",
+              "value": "task_count + 1"
             },
             {
-              "sid": "s12",
-              "statements": [
-                {
-                  "kind": "channel_send",
-                  "channel": "tx",
-                  "value": "100"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s13"
-              }
+              "sid": "s3",
+              "kind": "channel_send",
+              "channel": "tx",
+              "value": "100"
             },
             {
-              "sid": "s13",
-              "statements": [
-                {
-                  "kind": "semaphore_release",
-                  "resource": "sem"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s14"
-              }
+              "sid": "s4",
+              "kind": "semaphore_release",
+              "resource": "sem"
             },
             {
-              "sid": "s14",
-              "terminator": {
-                "kind": "return"
-              }
+              "sid": "s5",
+              "kind": "return"
             }
           ]
         },
@@ -200,77 +142,35 @@
           ],
           "body": [
             {
-              "sid": "s20",
-              "statements": [
-                {
-                  "kind": "channel_recv",
-                  "channel": "tx",
-                  "dst": "msg"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s21"
-              }
+              "sid": "s1",
+              "kind": "channel_recv",
+              "channel": "tx",
+              "dst": "msg"
             },
             {
-              "sid": "s21",
-              "statements": [
-                {
-                  "kind": "mutex_lock",
-                  "resource": "async_mtx"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s22"
-              }
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "async_mtx"
             },
             {
-              "sid": "s22",
-              "statements": [
-                {
-                  "kind": "read_shared",
-                  "resource": "result"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s23"
-              }
+              "sid": "s3",
+              "kind": "read_shared",
+              "resource": "result"
             },
             {
-              "sid": "s23",
-              "statements": [
-                {
-                  "kind": "write_shared",
-                  "resource": "result",
-                  "expr": "result + 100"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s24"
-              }
+              "sid": "s4",
+              "kind": "write_shared",
+              "resource": "result",
+              "expr": "result + 100"
             },
             {
-              "sid": "s24",
-              "statements": [
-                {
-                  "kind": "mutex_unlock",
-                  "resource": "async_mtx"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s25"
-              }
+              "sid": "s5",
+              "kind": "mutex_unlock",
+              "resource": "async_mtx"
             },
             {
-              "sid": "s25",
-              "terminator": {
-                "kind": "return"
-              }
+              "sid": "s6",
+              "kind": "return"
             }
           ]
         }

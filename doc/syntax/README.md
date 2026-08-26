@@ -1,10 +1,11 @@
 # ConcIR Syntax
 
 ConcIR (Concurrency Intermediate Representation) is a statement-level,
-verification-oriented IR. The shape follows compiler intermediate code
-(basic blocks, statements, calls, terminators) rather than a source language.
-ConcIR is language-neutral: names are ConcIR identifiers and FQNs, never
-backend crate paths or source-language keywords.
+verification-oriented IR. A function body is a flat list of statements
+(CFG nodes); control transfer is itself a statement kind (`goto` /
+`branch` / `switch` / `return` / `select`). ConcIR is language-neutral:
+names are ConcIR identifiers and FQNs, never backend crate paths or
+source-language keywords.
 
 The executable definition is `src/ast.rs`, `src/fqn.rs`, and `src/validate/`.
 The formal grammar is [`ebnf.md`](../ebnf.md). See
@@ -19,8 +20,7 @@ The formal grammar is [`ebnf.md`](../ebnf.md). See
 | [Resource](resource.md) | Sync primitives, shared vars, `base` types, Channel |
 | [Protection](protection.md) | Var → lock mapping |
 | [Function](function.md) | `kind` / `form`, scope, params / returns / locals |
-| [Basic block](block.md) | Flattened CFG: statements + terminator |
-| [Statement](statement.md) | Data, sync, threads, calls |
-| [Terminator](terminator.md) | `goto` / `branch` / `switch` / `return` / `select` |
+| [Control flow](block.md) | Statement list, fallthrough, successors |
+| [Statement](statement.md) | Data, sync, threads, calls, control ops |
 | [Validation](validation.md) | Nine-pass pipeline |
 | [Wait semantics](wait.md) | `condvar_wait` lock release / re-acquire |

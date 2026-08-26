@@ -7,7 +7,7 @@ Status legend: `[x]` done · `[ ]` planned · `[~]` in progress
 - `[x]` FnSummary removed; body-less ("nobody") functions as codegen placeholders with optional `effects` hints
 - `[x]` `call` expands into the callee skeleton (entry/return places) so cross-function lock chains enter the model; calling a body-less callee is an atomic pass-through
 - `[x]` Modules as the program unit; entity names are ConcIR FQNs (`module::entity`), not backend crate paths
-- `[x]` Flattened CFG: basic block = statements + terminator (`goto`/`branch`/`switch`/`return`/`select`); no `Statement.loop`; loops are `branch` back-edges; `mutex_lock`/`atomic_load` are statements, not block exits
+- `[x]` Flattened CFG: function body is a statement list; non-control ops fall through; `goto`/`branch`/`switch`/`return`/`select` are statement kinds; no terminator object; loops are back-edges
 - `[x]` Bounded typed data flow with projection: function `params`/`returns`/`locals`
   with a `modeled` flag
 - `[x]` `assign_local` for writable intermediate values

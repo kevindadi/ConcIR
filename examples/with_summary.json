@@ -1,12 +1,21 @@
 {
   "program": "with_summary",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "modules": [
     {
       "name": "main",
       "provides": {
-        "resources": ["mtx", "counter", "threshold"],
-        "functions": ["main", "worker", "validate", "helper_compare"]
+        "resources": [
+          "mtx",
+          "counter",
+          "threshold"
+        ],
+        "functions": [
+          "main",
+          "worker",
+          "validate",
+          "helper_compare"
+        ]
       },
       "requires": {
         "resources": [],
@@ -51,36 +60,18 @@
           "body": [
             {
               "sid": "s1",
-              "statements": [
-                {
-                  "kind": "spawn",
-                  "func": "worker",
-                  "handle": "h_worker"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s2"
-              }
+              "kind": "spawn",
+              "func": "worker",
+              "handle": "h_worker"
             },
             {
               "sid": "s2",
-              "statements": [
-                {
-                  "kind": "join",
-                  "handle": "h_worker"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s3"
-              }
+              "kind": "join",
+              "handle": "h_worker"
             },
             {
               "sid": "s3",
-              "terminator": {
-                "kind": "return"
-              }
+              "kind": "return"
             }
           ]
         },
@@ -90,64 +81,30 @@
           "form": "closure",
           "body": [
             {
-              "sid": "s10",
-              "statements": [
-                {
-                  "kind": "mutex_lock",
-                  "resource": "mtx"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s11"
-              }
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "mtx"
             },
             {
-              "sid": "s11",
-              "statements": [
-                {
-                  "kind": "call",
-                  "func": "validate",
-                  "args": []
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s12"
-              }
+              "sid": "s2",
+              "kind": "call",
+              "func": "validate",
+              "args": []
             },
             {
-              "sid": "s12",
-              "statements": [
-                {
-                  "kind": "write_shared",
-                  "resource": "counter",
-                  "expr": "counter + 1"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s13"
-              }
+              "sid": "s3",
+              "kind": "write_shared",
+              "resource": "counter",
+              "expr": "counter + 1"
             },
             {
-              "sid": "s13",
-              "statements": [
-                {
-                  "kind": "mutex_unlock",
-                  "resource": "mtx"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s14"
-              }
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "mtx"
             },
             {
-              "sid": "s14",
-              "terminator": {
-                "kind": "return"
-              }
+              "sid": "s5",
+              "kind": "return"
             }
           ]
         },
@@ -156,7 +113,10 @@
           "kind": "normal",
           "body": [],
           "effects": {
-            "reads": ["counter", "threshold"],
+            "reads": [
+              "counter",
+              "threshold"
+            ],
             "writes": []
           }
         },
@@ -165,7 +125,9 @@
           "kind": "normal",
           "body": [],
           "effects": {
-            "reads": ["threshold"],
+            "reads": [
+              "threshold"
+            ],
             "writes": []
           }
         }

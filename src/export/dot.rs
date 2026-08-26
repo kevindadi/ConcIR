@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use crate::ast::{Block, Function, Program, SelectGuard, Stmt, Terminator};
+use crate::ast::{Function, Op, Program, SelectGuard, Stmt};
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -176,8 +176,8 @@ fn write_function_subgraph(out: &mut String, func: &Function, opts: &DotOptions)
 
     writeln!(out).unwrap();
 
-    for stmt in &func.body {
-        write_edges(out, prefix, stmt, opts);
+    for (i, _) in func.body.iter().enumerate() {
+        write_edges(out, prefix, func, i, opts);
     }
 
     writeln!(out, "  }}").unwrap();
@@ -206,83 +206,66 @@ impl Default for NodeStyle {
     }
 }
 
-fn node_style(block: &Block) -> NodeStyle {
-    match &block.terminator {
-        Terminator::Branch { .. } => {
-            return NodeStyle {
-                shape: "diamond",
-                fillcolor: "#ffffcc",
-                ..Default::default()
-            };
-        }
-        Terminator::Switch { .. } | Terminator::Select { .. } => {
-            return NodeStyle {
-                shape: "diamond",
-                fillcolor: "#ffe8cc",
-                ..Default::default()
-            };
-        }
-        Terminator::Return { .. } if block.statements.is_empty() => {
-            return NodeStyle {
-                shape: "ellipse",
-                fillcolor: "#a0a0a0",
-                ..Default::default()
-            };
-        }
-        _ => {}
-    }
-
-    match block.statements.last() {
-        Some(Stmt::MutexLock { .. } | Stmt::RwLockWrite { .. } | Stmt::SemaphoreAcquire { .. }) => {
+fn node_style(stmt: &Stmt) -> NodeStyle {
+    match &stmt.op {
+        Op::Branch { .. } => NodeStyle {
+            shape: "diamond",
+            fillcolor: "#ffffcc",
+            ..Default::default()
+        },
+        Op::Switch { .. } | Op::Select { .. } => NodeStyle {
+            shape: "diamond",
+            fillcolor: "#ffe8cc",
+            ..Default::default()
+        },
+        Op::Return { .. } => NodeStyle {
+            shape: "ellipse",
+            fillcolor: "#a0a0a0",
+            ..Default::default()
+        },
+        Op::MutexLock { .. } | Op::RwLockWrite { .. } | Op::SemaphoreAcquire { .. } => NodeStyle {
+            color: "red",
+            penwidth: 2,
+            ..Default::default()
+        },
+        Op::MutexUnlock { .. } | Op::RwLockUnlock { .. } | Op::SemaphoreRelease { .. } => {
             NodeStyle {
-                color: "red",
+                color: "green",
                 penwidth: 2,
                 ..Default::default()
             }
         }
-        Some(
-            Stmt::MutexUnlock { .. } | Stmt::RwLockUnlock { .. } | Stmt::SemaphoreRelease { .. },
-        ) => NodeStyle {
-            color: "green",
-            penwidth: 2,
-            ..Default::default()
-        },
-        Some(
-            Stmt::CondvarWait { .. } | Stmt::CondvarNotify { .. } | Stmt::CondvarNotifyAll { .. },
-        ) => NodeStyle {
-            color: "purple",
-            penwidth: 2,
-            ..Default::default()
-        },
-        Some(Stmt::Spawn { .. } | Stmt::SpawnBatch { .. } | Stmt::AsyncCall { .. }) => NodeStyle {
+        Op::CondvarWait { .. } | Op::CondvarNotify { .. } | Op::CondvarNotifyAll { .. } => {
+            NodeStyle {
+                color: "purple",
+                penwidth: 2,
+                ..Default::default()
+            }
+        }
+        Op::Spawn { .. } | Op::SpawnBatch { .. } | Op::AsyncCall { .. } => NodeStyle {
             shape: "doubleoctagon",
             ..Default::default()
         },
-        Some(Stmt::Join { .. } | Stmt::JoinAll | Stmt::Await { .. }) => NodeStyle {
+        Op::Join { .. } | Op::JoinAll | Op::Await { .. } => NodeStyle {
             shape: "doubleoctagon",
             style: "filled,dashed".to_string(),
             ..Default::default()
         },
-        Some(Stmt::Func { .. }) => NodeStyle {
+        Op::Func { .. } => NodeStyle {
             shape: "rect",
             style: "filled,rounded".to_string(),
             ..Default::default()
         },
-        Some(Stmt::WriteShared { .. }) => NodeStyle {
+        Op::WriteShared { .. } => NodeStyle {
             color: "orange",
             penwidth: 2,
-            ..Default::default()
-        },
-        _ if block.is_return() => NodeStyle {
-            shape: "ellipse",
-            fillcolor: "#a0a0a0",
             ..Default::default()
         },
         _ => NodeStyle::default(),
     }
 }
 
-fn write_node(out: &mut String, prefix: &str, stmt: &Block, is_entry: bool, opts: &DotOptions) {
+fn write_node(out: &mut String, prefix: &str, stmt: &Stmt, is_entry: bool, opts: &DotOptions) {
     let label = if opts.verbose_labels {
         format_label_verbose(stmt)
     } else {
@@ -310,78 +293,61 @@ fn write_node(out: &mut String, prefix: &str, stmt: &Block, is_entry: bool, opts
 
 // ── Label formatting ────────────────────────────────────────────────────────
 
-fn format_label_compact(block: &Block) -> String {
-    let op_str = match &block.terminator {
-        Terminator::Branch { .. }
-        | Terminator::Switch { .. }
-        | Terminator::Select { .. }
-        | Terminator::Return { .. } => format_terminator_compact(block),
-        Terminator::Goto { .. } => {
-            if let Some(stmt) = block.statements.last() {
-                format_stmt_compact(stmt)
-            } else {
-                "goto".into()
-            }
-        }
-    };
-    escape(&format!("{}: {}", block.sid, op_str))
+fn format_label_compact(stmt: &Stmt) -> String {
+    escape(&format!("{}: {}", stmt.sid, format_op_compact(&stmt.op)))
 }
 
-fn format_stmt_compact(stmt: &Stmt) -> String {
-    match stmt {
-        Stmt::Nop => "nop".into(),
-        Stmt::AssignLocal { target, expr } => format!("assign({target}, {expr})"),
-        Stmt::ReadShared { resource, .. } => format!("read_shared({resource})"),
-        Stmt::WriteShared { resource, expr } => format!("write_shared({resource}, {expr})"),
-        Stmt::AbstractStep { desc, .. } => {
+fn format_op_compact(op: &Op) -> String {
+    match op {
+        Op::Nop => "nop".into(),
+        Op::AssignLocal { target, expr } => format!("assign({target}, {expr})"),
+        Op::ReadShared { resource, .. } => format!("read_shared({resource})"),
+        Op::WriteShared { resource, expr } => format!("write_shared({resource}, {expr})"),
+        Op::AbstractStep { desc, .. } => {
             if desc.is_empty() {
                 "abstract_step".into()
             } else {
                 format!("abstract_step({desc})")
             }
         }
-        Stmt::AtomicLoad { resource, .. } => format!("atomic_load({resource})"),
-        Stmt::AtomicStore { resource, .. } => format!("atomic_store({resource})"),
-        Stmt::AtomicCas { resource, .. } => format!("atomic_cas({resource})"),
-        Stmt::MutexLock { resource } => format!("mutex_lock({resource})"),
-        Stmt::MutexUnlock { resource } => format!("mutex_unlock({resource})"),
-        Stmt::RwLockRead { resource } => format!("rwlock_read({resource})"),
-        Stmt::RwLockWrite { resource } => format!("rwlock_write({resource})"),
-        Stmt::RwLockUnlock { resource } => format!("rwlock_unlock({resource})"),
-        Stmt::ChannelSend { channel, .. } => format!("channel_send({channel})"),
-        Stmt::ChannelRecv { channel, dst } => format!("channel_recv({channel} → {dst})"),
-        Stmt::CondvarWait { condvar, lock } => format!("condvar_wait({condvar}, {lock})"),
-        Stmt::CondvarNotify { condvar } => format!("condvar_notify({condvar})"),
-        Stmt::CondvarNotifyAll { condvar } => format!("condvar_notify_all({condvar})"),
-        Stmt::SemaphoreAcquire { resource, .. } => format!("semaphore_acquire({resource})"),
-        Stmt::SemaphoreRelease { resource, .. } => format!("semaphore_release({resource})"),
-        Stmt::Func { func, .. } => format!("call({func})"),
-        Stmt::Spawn { func, .. } => format!("spawn({func})"),
-        Stmt::SpawnBatch { func, .. } => format!("spawn_batch({func})"),
-        Stmt::Join { handle } => format!("join({handle})"),
-        Stmt::JoinAll => "join_all".into(),
-        Stmt::AsyncCall { func, .. } => format!("async_call({func})"),
-        Stmt::Await { handle } => format!("await({handle})"),
+        Op::AtomicLoad { resource, .. } => format!("atomic_load({resource})"),
+        Op::AtomicStore { resource, .. } => format!("atomic_store({resource})"),
+        Op::AtomicCas { resource, .. } => format!("atomic_cas({resource})"),
+        Op::MutexLock { resource } => format!("mutex_lock({resource})"),
+        Op::MutexUnlock { resource } => format!("mutex_unlock({resource})"),
+        Op::RwLockRead { resource } => format!("rwlock_read({resource})"),
+        Op::RwLockWrite { resource } => format!("rwlock_write({resource})"),
+        Op::RwLockUnlock { resource } => format!("rwlock_unlock({resource})"),
+        Op::ChannelSend { channel, .. } => format!("channel_send({channel})"),
+        Op::ChannelRecv { channel, dst } => format!("channel_recv({channel} → {dst})"),
+        Op::CondvarWait { condvar, lock } => format!("condvar_wait({condvar}, {lock})"),
+        Op::CondvarNotify { condvar } => format!("condvar_notify({condvar})"),
+        Op::CondvarNotifyAll { condvar } => format!("condvar_notify_all({condvar})"),
+        Op::SemaphoreAcquire { resource, .. } => format!("semaphore_acquire({resource})"),
+        Op::SemaphoreRelease { resource, .. } => format!("semaphore_release({resource})"),
+        Op::Func { func, .. } => format!("call({func})"),
+        Op::Spawn { func, .. } => format!("spawn({func})"),
+        Op::SpawnBatch { func, .. } => format!("spawn_batch({func})"),
+        Op::Join { handle } => format!("join({handle})"),
+        Op::JoinAll => "join_all".into(),
+        Op::AsyncCall { func, .. } => format!("async_call({func})"),
+        Op::Await { handle } => format!("await({handle})"),
+        Op::Goto { .. } => "goto".into(),
+        Op::Branch { .. } => "branch".into(),
+        Op::Switch { .. } => "switch".into(),
+        Op::Return { .. } => "return".into(),
+        Op::Select { .. } => "select".into(),
     }
 }
 
-fn format_terminator_compact(block: &Block) -> String {
-    match &block.terminator {
-        Terminator::Goto { .. } => "goto".into(),
-        Terminator::Branch { .. } => "branch".into(),
-        Terminator::Switch { .. } => "switch".into(),
-        Terminator::Return { .. } => "return".into(),
-        Terminator::Select { .. } => "select".into(),
-    }
-}
-
-fn format_label_verbose(stmt: &Block) -> String {
+fn format_label_verbose(stmt: &Stmt) -> String {
     format_label_compact(stmt)
 }
 
 // ── Edge generation ─────────────────────────────────────────────────────────
 
-fn write_edges(out: &mut String, prefix: &str, stmt: &Block, opts: &DotOptions) {
+fn write_edges(out: &mut String, prefix: &str, func: &Function, i: usize, opts: &DotOptions) {
+    let stmt = &func.body[i];
     let src = format!("{prefix}_{}", stmt.sid);
 
     if stmt.is_return() {
@@ -390,8 +356,8 @@ fn write_edges(out: &mut String, prefix: &str, stmt: &Block, opts: &DotOptions) 
         return;
     }
 
-    match &stmt.terminator {
-        Terminator::Goto { target } => {
+    match &stmt.op {
+        Op::Goto { target } => {
             let dst = format!("{prefix}_{target}");
             if opts.highlight_back_edges && is_back_edge(&stmt.sid, target) {
                 writeln!(out, "    {src} -> {dst} [color=blue, penwidth=2];").unwrap();
@@ -399,7 +365,7 @@ fn write_edges(out: &mut String, prefix: &str, stmt: &Block, opts: &DotOptions) 
                 writeln!(out, "    {src} -> {dst};").unwrap();
             }
         }
-        Terminator::Branch {
+        Op::Branch {
             then, else_target, ..
         } => {
             let dst_t = format!("{prefix}_{then}");
@@ -429,7 +395,7 @@ fn write_edges(out: &mut String, prefix: &str, stmt: &Block, opts: &DotOptions) 
                 .unwrap();
             }
         }
-        Terminator::Switch { cases, default, .. } => {
+        Op::Switch { cases, default, .. } => {
             for (label, target) in cases {
                 let dst = format!("{prefix}_{target}");
                 writeln!(out, "    {src} -> {dst} [label=\"{label}\"];").unwrap();
@@ -437,7 +403,7 @@ fn write_edges(out: &mut String, prefix: &str, stmt: &Block, opts: &DotOptions) 
             let dst = format!("{prefix}_{default}");
             writeln!(out, "    {src} -> {dst} [label=\"default\", style=dashed];").unwrap();
         }
-        Terminator::Select { branches, default } => {
+        Op::Select { branches, default } => {
             for branch in branches {
                 let dst = format!("{prefix}_{}", branch.target);
                 let label = match &branch.guard {
@@ -458,7 +424,16 @@ fn write_edges(out: &mut String, prefix: &str, stmt: &Block, opts: &DotOptions) 
                 writeln!(out, "    {src} -> {dst} [label=\"default\", style=dashed];").unwrap();
             }
         }
-        Terminator::Return { .. } => {}
+        _ => {
+            for t in func.successors(i) {
+                let dst = format!("{prefix}_{t}");
+                if opts.highlight_back_edges && is_back_edge(&stmt.sid, t) {
+                    writeln!(out, "    {src} -> {dst} [color=blue, penwidth=2];").unwrap();
+                } else {
+                    writeln!(out, "    {src} -> {dst};").unwrap();
+                }
+            }
+        }
     }
 }
 
@@ -477,93 +452,65 @@ fn write_cross_function_edges(out: &mut String, functions: &[&Function]) {
         let spawned: Vec<&str> = func
             .body
             .iter()
-            .flat_map(|b| {
-                b.statements.iter().filter_map(|s| match s {
-                    Stmt::Spawn { func: t, .. } => Some(t.as_str()),
-                    _ => None,
-                })
+            .filter_map(|s| match &s.op {
+                Op::Spawn { func: t, .. } => Some(t.as_str()),
+                _ => None,
             })
             .collect();
 
         for stmt in &func.body {
             let src = format!("{}_{}", func.name, stmt.sid);
-            for s in &stmt.statements {
-                match s {
-                    Stmt::Spawn { func: target, .. } => {
-                        write_callee_edge(
-                            out,
-                            &src,
-                            target,
-                            &first_sids,
-                            "spawn",
-                            "dashed",
-                            "blue",
-                        );
-                    }
-                    Stmt::SpawnBatch { func: target, .. } => {
-                        write_callee_edge(
-                            out,
-                            &src,
-                            target,
-                            &first_sids,
-                            "scope",
-                            "dashed",
-                            "blue",
-                        );
-                    }
-                    Stmt::AsyncCall { func: target, .. } => {
-                        write_callee_edge(
-                            out,
-                            &src,
-                            target,
-                            &first_sids,
-                            "async_call",
-                            "dashed",
-                            "blue",
-                        );
-                    }
-                    Stmt::Join { handle } => {
-                        if let Some(name) = handle.strip_prefix("h_") {
-                            writeln!(
-                                out,
-                                "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join\"];",
-                            )
-                            .unwrap();
-                        }
-                    }
-                    Stmt::JoinAll => {
-                        for target in &spawned {
-                            let name = target.rsplit("::").next().unwrap_or(target);
-                            writeln!(
-                                out,
-                                "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join_all\"];",
-                            )
-                            .unwrap();
-                        }
-                    }
-                    Stmt::Func { func: target, .. } => {
-                        write_callee_edge(
-                            out,
-                            &src,
-                            target,
-                            &first_sids,
-                            "call",
-                            "dotted",
-                            "gray50",
-                        );
-                    }
-                    _ => {}
+            match &stmt.op {
+                Op::Spawn { func: target, .. } => {
+                    write_callee_edge(out, &src, target, &first_sids, "spawn", "dashed", "blue");
                 }
-            }
-            if func.is_scope() && matches!(stmt.terminator, Terminator::Return { .. }) {
-                for target in &spawned {
-                    let name = target.rsplit("::").next().unwrap_or(target);
-                    writeln!(
+                Op::SpawnBatch { func: target, .. } => {
+                    write_callee_edge(out, &src, target, &first_sids, "scope", "dashed", "blue");
+                }
+                Op::AsyncCall { func: target, .. } => {
+                    write_callee_edge(
                         out,
-                        "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join\"];",
-                    )
-                    .unwrap();
+                        &src,
+                        target,
+                        &first_sids,
+                        "async_call",
+                        "dashed",
+                        "blue",
+                    );
                 }
+                Op::Join { handle } => {
+                    if let Some(name) = handle.strip_prefix("h_") {
+                        writeln!(
+                            out,
+                            "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join\"];",
+                        )
+                        .unwrap();
+                    }
+                }
+                Op::JoinAll => {
+                    for target in &spawned {
+                        let name = target.rsplit("::").next().unwrap_or(target);
+                        writeln!(
+                            out,
+                            "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join_all\"];",
+                        )
+                        .unwrap();
+                    }
+                }
+                Op::Func { func: target, .. } => {
+                    write_callee_edge(out, &src, target, &first_sids, "call", "dotted", "gray50");
+                }
+                Op::Return { .. } if func.is_scope() => {
+                    for target in &spawned {
+                        let name = target.rsplit("::").next().unwrap_or(target);
+                        writeln!(
+                            out,
+                            "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join\"];",
+                        )
+                        .unwrap();
+                    }
+                }
+                _ => {}
             }
         }
     }

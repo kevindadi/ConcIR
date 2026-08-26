@@ -187,38 +187,36 @@ fn resource_defined(program: &Program, from_module: &str, name: &str) -> bool {
 }
 
 fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
-    program.walk_blocks(|mi, fi, si, m, _, block| {
-        let path = Program::block_path(mi, fi, si);
-        for stmt in &block.statements {
-            if let Some(resource) = stmt.resource_name() {
-                if !resource_defined(program, &m.name, resource) {
-                    diags.push(
-                        Diagnostic::error("E101", format!("undefined resource '{resource}'"))
-                            .with_path(format!("{path}.statements"))
-                            .with_fix("declare the resource or import it via requires"),
-                    );
-                }
-            }
-            if let Stmt::CondvarWait { lock, .. } = stmt {
-                if !resource_defined(program, &m.name, lock) {
-                    diags.push(
-                        Diagnostic::error(
-                            "E101",
-                            format!("undefined resource '{lock}' referenced in condvar_wait"),
-                        )
-                        .with_path(format!("{path}.statements"))
-                        .with_fix("declare this lock resource"),
-                    );
-                }
+    program.walk_stmts(|mi, fi, si, m, _, stmt| {
+        let path = Program::stmt_path(mi, fi, si);
+        if let Some(resource) = stmt.op.resource_name() {
+            if !resource_defined(program, &m.name, resource) {
+                diags.push(
+                    Diagnostic::error("E101", format!("undefined resource '{resource}'"))
+                        .with_path(path.clone())
+                        .with_fix("declare the resource or import it via requires"),
+                );
             }
         }
-        if let Terminator::Select { branches, .. } = &block.terminator {
+        if let Op::CondvarWait { lock, .. } = &stmt.op {
+            if !resource_defined(program, &m.name, lock) {
+                diags.push(
+                    Diagnostic::error(
+                        "E101",
+                        format!("undefined resource '{lock}' referenced in condvar_wait"),
+                    )
+                    .with_path(path.clone())
+                    .with_fix("declare this lock resource"),
+                );
+            }
+        }
+        if let Op::Select { branches, .. } = &stmt.op {
             for branch in branches {
                 if let Some(resource) = branch.guard.resource_name() {
                     if !resource_defined(program, &m.name, resource) {
                         diags.push(
                             Diagnostic::error("E101", format!("undefined resource '{resource}'"))
-                                .with_path(format!("{path}.terminator"))
+                                .with_path(path.clone())
                                 .with_fix("declare the resource or import it via requires"),
                         );
                     }
@@ -230,7 +228,7 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
                                 "E101",
                                 format!("undefined resource '{lock}' referenced in condvar_wait"),
                             )
-                            .with_path(format!("{path}.terminator"))
+                            .with_path(path.clone())
                             .with_fix("declare this lock resource"),
                         );
                     }
@@ -241,35 +239,32 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
 }
 
 fn check_function_references(program: &Program, diags: &mut Vec<Diagnostic>) {
-    program.walk_blocks(|mi, fi, si, m, _, block| {
-        for stmt in &block.statements {
-            let Some(func) = stmt.callee_func() else {
-                continue;
-            };
-            if program.lookup_function(&m.name, func).is_none() {
+    program.walk_stmts(|mi, fi, si, m, _, stmt| {
+        let Some(func) = stmt.op.callee_func() else {
+            return;
+        };
+        if program.lookup_function(&m.name, func).is_none() {
+            diags.push(
+                Diagnostic::error("E102", format!("undefined function '{func}' referenced"))
+                    .with_path(Program::stmt_path(mi, fi, si))
+                    .with_fix("define the function or import it via requires"),
+            );
+        }
+        if is_fqn(func) {
+            let required: HashSet<&str> = m.requires.functions.iter().map(String::as_str).collect();
+            if split_fqn(func).map(|(mod_name, _)| mod_name) != Some(m.name.as_str())
+                && !required.contains(func)
+            {
                 diags.push(
-                    Diagnostic::error("E102", format!("undefined function '{func}' referenced"))
-                        .with_path(format!("{}.statements", Program::block_path(mi, fi, si)))
-                        .with_fix("define the function or import it via requires"),
+                    Diagnostic::error(
+                        "E108",
+                        format!(
+                            "cross-module reference '{func}' is not listed in requires.functions"
+                        ),
+                    )
+                    .with_path(Program::stmt_path(mi, fi, si))
+                    .with_fix("add this FQN to the module's requires.functions"),
                 );
-            }
-            if is_fqn(func) {
-                let required: HashSet<&str> =
-                    m.requires.functions.iter().map(String::as_str).collect();
-                if split_fqn(func).map(|(mod_name, _)| mod_name) != Some(m.name.as_str())
-                    && !required.contains(func)
-                {
-                    diags.push(
-                        Diagnostic::error(
-                            "E108",
-                            format!(
-                                "cross-module reference '{func}' is not listed in requires.functions"
-                            ),
-                        )
-                        .with_path(format!("{}.statements", Program::block_path(mi, fi, si)))
-                        .with_fix("add this FQN to the module's requires.functions"),
-                    );
-                }
             }
         }
     });
@@ -279,15 +274,15 @@ fn check_sid_references(program: &Program, diags: &mut Vec<Diagnostic>) {
     for (mi, m) in program.modules.iter().enumerate() {
         for (fi, f) in m.functions.iter().enumerate() {
             let sids: HashSet<&str> = f.body.iter().map(|s| s.sid.as_str()).collect();
-            for (si, block) in f.body.iter().enumerate() {
-                for t in block.successor_sids() {
+            for (si, _) in f.body.iter().enumerate() {
+                for t in f.successors(si) {
                     if !sids.contains(t) {
                         diags.push(
                             Diagnostic::error(
                                 "E103",
                                 format!("undefined statement id '{t}' in function '{}'", f.name),
                             )
-                            .with_path(Program::block_path(mi, fi, si))
+                            .with_path(Program::stmt_path(mi, fi, si))
                             .with_fix("use an existing statement id from this function"),
                         );
                     }

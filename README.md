@@ -8,8 +8,9 @@ from a validated program for state-space exploration.
 
 ConcIR is language-neutral. A program is a set of modules; names are ConcIR
 FQNs (`module::entity`), not backend crate paths. Function bodies are a
-flattened CFG: each basic block is a list of statements followed by exactly
-one terminator (`goto` / `branch` / `switch` / `return` / `select`).
+flattened CFG: a list of statements. Non-control ops fall through to the
+next statement; `goto` / `branch` / `switch` / `return` / `select` are
+statement kinds that transfer control.
 
 ## Quick Start
 
@@ -45,7 +46,7 @@ items, and the process exits with exit code 1.
 src/
   main.rs              Entry: read JSON → deserialize → validate → emit report
   lib.rs               Module declarations
-  ast.rs               IR types (Program, Module, Block, Stmt, Terminator)
+  ast.rs               IR types (Program, Module, Stmt, Op)
   fqn.rs               Identifier and FQN rules
   diagnostic.rs        Diagnostic types (Diagnostic, ValidationReport)
   validate/
@@ -60,7 +61,7 @@ src/
     control.rs         E6xx  Control flow
     dataflow.rs        E9xx  Typed params / returns / call arity
   export/
-    dot.rs             Graphviz DOT from blocks / calls / terminators
+    dot.rs             Graphviz DOT from statements / calls / control edges
 doc/
   syntax/              ConcIR grammar (one page per top-level construct)
   ebnf.md              ISO EBNF abstract syntax

@@ -24,8 +24,8 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
             let n = f.body.len();
             let mut successors = vec![Vec::new(); n];
 
-            for (i, block) in f.body.iter().enumerate() {
-                for t in block.successor_sids() {
+            for (i, _) in f.body.iter().enumerate() {
+                for t in f.successors(i) {
                     if let Some(&ti) = sid_to_idx.get(t) {
                         successors[i].push(ti);
                     }
@@ -113,9 +113,9 @@ fn check_return_paths(
 /// E603: branch with same true/false targets
 fn check_branch_targets_same(f: &Function, fn_path: &str, diags: &mut Vec<Diagnostic>) {
     for (si, block) in f.body.iter().enumerate() {
-        if let Terminator::Branch {
+        if let Op::Branch {
             then, else_target, ..
-        } = &block.terminator
+        } = &block.op
         {
             if then == else_target {
                 diags.push(
@@ -126,7 +126,7 @@ fn check_branch_targets_same(f: &Function, fn_path: &str, diags: &mut Vec<Diagno
                             block.sid
                         ),
                     )
-                    .with_path(format!("{fn_path}.body[{si}].terminator"))
+                    .with_path(format!("{fn_path}.body[{si}]"))
                     .with_fix("use goto instead, or correct the branch targets"),
                 );
             }
@@ -163,7 +163,7 @@ fn check_switch_exhaustive(
                                     missing.join(", ")
                                 ),
                             )
-                            .with_path(format!("{fn_path}.body[{si}].terminator.cases"))
+                            .with_path(format!("{fn_path}.body[{si}].cases"))
                             .with_fix("add case branches for the missing variants"),
                         );
                     }
@@ -201,11 +201,7 @@ fn check_infinite_loop(
             continue;
         }
 
-        let has_blocking = scc.iter().any(|&idx| {
-            let block = &f.body[idx];
-            block.statements.iter().any(Stmt::is_blocking)
-                || matches!(block.terminator, Terminator::Select { .. })
-        });
+        let has_blocking = scc.iter().any(|&idx| f.body[idx].op.is_blocking());
 
         if !has_blocking {
             let first = scc[0];

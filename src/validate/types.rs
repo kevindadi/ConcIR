@@ -66,8 +66,8 @@ pub(crate) fn build_resource_type_map(program: &Program) -> HashMap<String, ResT
 /// In the JSON format, conditions are strings. We check for the presence of
 /// a comparison operator (==, !=, >, <, >=, <=).
 fn check_branch_conditions(program: &Program, diags: &mut Vec<Diagnostic>) {
-    program.walk_blocks(|mi, fi, si, _, _, block| {
-        let Some(cond) = block.branch_cond() else {
+    program.walk_stmts(|mi, fi, si, _, _, stmt| {
+        let Some(cond) = stmt.branch_cond() else {
             return;
         };
         let has_cmp = cond.contains("==")
@@ -82,10 +82,7 @@ fn check_branch_conditions(program: &Program, diags: &mut Vec<Diagnostic>) {
                     "E201",
                     format!("branch condition \"{cond}\" is not a comparison expression"),
                 )
-                .with_path(format!(
-                    "{}.terminator.cond",
-                    Program::block_path(mi, fi, si)
-                ))
+                .with_path(Program::stmt_path(mi, fi, si))
                 .with_fix("use a comparison operator: ==, !=, >, <, >=, <="),
             );
         }
@@ -98,11 +95,11 @@ fn check_switch_variables(
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    program.walk_blocks(|mi, fi, si, _, _, block| {
-        let Some((var, cases, _)) = block.switch() else {
+    program.walk_stmts(|mi, fi, si, _, _, stmt| {
+        let Some((var, cases, _)) = stmt.switch() else {
             return;
         };
-        let path = Program::block_path(mi, fi, si);
+        let path = Program::stmt_path(mi, fi, si);
         if let Some(rt) = resource_types.get(var) {
             let bt = res_type_to_base(rt);
             match bt {
@@ -117,7 +114,7 @@ fn check_switch_variables(
                                 "switch variable '{var}' is of type {other}, expected Enum or Int"
                             ),
                         )
-                        .with_path(format!("{path}.terminator.var"))
+                        .with_path(format!("{path}.var"))
                         .with_fix("use an Enum or Int typed resource, or use branch instead"),
                     );
                 }
@@ -133,7 +130,7 @@ fn check_switch_variables(
                                     "switch case label '{label}' is not a variant of enum '{var}'"
                                 ),
                             )
-                            .with_path(format!("{path}.terminator.cases"))
+                            .with_path(format!("{path}.cases"))
                             .with_fix("use a valid enum variant as the case label"),
                         );
                     }
@@ -149,76 +146,50 @@ fn check_write_types(
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    program.walk_blocks(|mi, fi, si, _, f, block| {
-        let path = Program::block_path(mi, fi, si);
-        for stmt in &block.statements {
-            match stmt {
-                Stmt::WriteShared { resource, expr } => {
-                    if let Some(ResType::Var(expected)) = resource_types.get(resource) {
-                        check_literal_type(
-                            diags,
-                            "E203",
-                            expr,
-                            expected,
-                            &format!("{path}.statements"),
-                        );
-                    }
+    program.walk_stmts(|mi, fi, si, _, f, stmt| {
+        let path = Program::stmt_path(mi, fi, si);
+        match &stmt.op {
+            Op::WriteShared { resource, expr } => {
+                if let Some(ResType::Var(expected)) = resource_types.get(resource) {
+                    check_literal_type(diags, "E203", expr, expected, &path);
                 }
-                Stmt::AtomicStore { resource, value } => {
-                    if let Some(ResType::Atomic(expected)) = resource_types.get(resource) {
-                        check_literal_type(
-                            diags,
-                            "E204",
-                            value,
-                            expected,
-                            &format!("{path}.statements"),
-                        );
-                    }
+            }
+            Op::AtomicStore { resource, value } => {
+                if let Some(ResType::Atomic(expected)) = resource_types.get(resource) {
+                    check_literal_type(diags, "E204", value, expected, &path);
                 }
-                Stmt::AtomicCas {
-                    resource,
-                    expected,
-                    desired,
-                    dst,
-                } => {
-                    if let Some(ResType::Atomic(ty)) = resource_types.get(resource) {
-                        check_literal_type(
-                            diags,
-                            "E205",
-                            expected,
-                            ty,
-                            &format!("{path}.statements"),
-                        );
-                        check_literal_type(
-                            diags,
-                            "E205",
-                            desired,
-                            ty,
-                            &format!("{path}.statements"),
-                        );
-                        if let Some(dst_ty) = lookup_dst_type(f, resource_types, dst) {
-                            if dst_ty != ty {
-                                diags.push(
-                                    Diagnostic::error(
-                                        "E205",
-                                        format!(
-                                            "atomic_cas dst '{dst}' has type {dst_ty}, but must \
+            }
+            Op::AtomicCas {
+                resource,
+                expected,
+                desired,
+                dst,
+            } => {
+                if let Some(ResType::Atomic(ty)) = resource_types.get(resource) {
+                    check_literal_type(diags, "E205", expected, ty, &path);
+                    check_literal_type(diags, "E205", desired, ty, &path);
+                    if let Some(dst_ty) = lookup_dst_type(f, resource_types, dst) {
+                        if dst_ty != ty {
+                            diags.push(
+                                Diagnostic::error(
+                                    "E205",
+                                    format!(
+                                        "atomic_cas dst '{dst}' has type {dst_ty}, but must \
                                              hold the pre-CAS old value (Atomic base {ty}), not a \
                                              Bool success flag"
-                                        ),
-                                    )
-                                    .with_path(format!("{path}.statements"))
-                                    .with_fix(
-                                        "bind dst to a local or Var/Atomic of the same base type; \
-                                         test success with branch(dst == expected)",
                                     ),
-                                );
-                            }
+                                )
+                                .with_path(path.to_string())
+                                .with_fix(
+                                    "bind dst to a local or Var/Atomic of the same base type; \
+                                         test success with branch(dst == expected)",
+                                ),
+                            );
                         }
                     }
                 }
-                _ => {}
             }
+            _ => {}
         }
     });
 }
@@ -229,47 +200,25 @@ fn check_channel_payload_types(
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    program.walk_blocks(|mi, fi, si, _, f, block| {
-        let path = Program::block_path(mi, fi, si);
-        for stmt in &block.statements {
-            match stmt {
-                Stmt::ChannelSend { channel, value } => {
-                    if let Some(ResType::Channel(expected)) = resource_types.get(channel) {
-                        check_literal_type(
-                            diags,
-                            "E206",
-                            value,
-                            expected,
-                            &format!("{path}.statements"),
-                        );
+    program.walk_stmts(|mi, fi, si, _, f, stmt| {
+        let path = Program::stmt_path(mi, fi, si);
+        match &stmt.op {
+            Op::ChannelSend { channel, value } => {
+                if let Some(ResType::Channel(expected)) = resource_types.get(channel) {
+                    check_literal_type(diags, "E206", value, expected, &path);
+                }
+            }
+            Op::ChannelRecv { channel, dst } => {
+                check_recv_dst(diags, f, resource_types, channel, dst, &path);
+            }
+            Op::Select { branches, .. } => {
+                for branch in branches {
+                    if let SelectGuard::ChannelRecv { channel, dst } = &branch.guard {
+                        check_recv_dst(diags, f, resource_types, channel, dst, &path);
                     }
                 }
-                Stmt::ChannelRecv { channel, dst } => {
-                    check_recv_dst(
-                        diags,
-                        f,
-                        resource_types,
-                        channel,
-                        dst,
-                        &format!("{path}.statements"),
-                    );
-                }
-                _ => {}
             }
-        }
-        if let Terminator::Select { branches, .. } = &block.terminator {
-            for branch in branches {
-                if let SelectGuard::ChannelRecv { channel, dst } = &branch.guard {
-                    check_recv_dst(
-                        diags,
-                        f,
-                        resource_types,
-                        channel,
-                        dst,
-                        &format!("{path}.terminator"),
-                    );
-                }
-            }
+            _ => {}
         }
     });
 }

@@ -94,20 +94,20 @@ fn check_return_decl(f: &Function, mi: usize, fi: usize, diags: &mut Vec<Diagnos
     let bare_returns = f
         .body
         .iter()
-        .filter(|b| matches!(&b.terminator, Terminator::Return { value: None }))
+        .filter(|s| matches!(&s.op, Op::Return { value: None }))
         .count();
     if bare_returns > 0 {
         diags.push(
             Diagnostic::warning(
                 "E913",
                 format!(
-                    "function '{}' declares a modeled return '{}' but {} return terminator(s) \
+                    "function '{}' declares a modeled return '{}' but {} return statement(s) \
                      carry no value; those paths bind Unknown",
                     f.name, ret.name, bare_returns
                 ),
             )
             .with_path(format!("{}.returns", Program::fn_path(mi, fi)))
-            .with_fix("give every return terminator a value expression"),
+            .with_fix("give every return statement a value expression"),
         );
     }
 }
@@ -120,91 +120,78 @@ fn check_call_sites(
     fi: usize,
     diags: &mut Vec<Diagnostic>,
 ) {
-    for (si, block) in f.body.iter().enumerate() {
-        for stmt in &block.statements {
-            let (op, func, args, dst) = match stmt {
-                Stmt::Func { func, args, dst } => ("call", func, args, dst),
-                Stmt::SpawnBatch { func, args, dst } => ("spawn_batch", func, args, dst),
-                _ => continue,
-            };
-            let Some(callee) = callees.get(func) else {
-                continue;
-            };
+    for (si, stmt) in f.body.iter().enumerate() {
+        let (op, func, args, dst) = match &stmt.op {
+            Op::Func { func, args, dst } => ("call", func, args, dst),
+            Op::SpawnBatch { func, args, dst } => ("spawn_batch", func, args, dst),
+            _ => continue,
+        };
+        let Some(callee) = callees.get(func) else {
+            continue;
+        };
 
-            let modeled_params: Vec<&ParamDecl> =
-                callee.params.iter().filter(|p| p.modeled).collect();
-            let path = format!("{}.statements", Program::block_path(mi, fi, si));
+        let modeled_params: Vec<&ParamDecl> = callee.params.iter().filter(|p| p.modeled).collect();
+        let path = Program::stmt_path(mi, fi, si);
 
-            if args.len() != modeled_params.len() {
+        if args.len() != modeled_params.len() {
+            diags.push(
+                Diagnostic::error(
+                    "E920",
+                    format!(
+                        "{op}('{func}') expects {} argument(s) for its modeled parameters, \
+                             got {}",
+                        modeled_params.len(),
+                        args.len()
+                    ),
+                )
+                .with_path(path.clone())
+                .with_fix(
+                    "supply one argument per modeled parameter, or mark unused parameters \
+                     \"modeled\": false",
+                ),
+            );
+        }
+
+        if let Some(out_name) = dst {
+            if !var_resources.contains(out_name) {
                 diags.push(
                     Diagnostic::error(
-                        "E920",
+                        "E921",
                         format!(
-                            "{op}('{func}') expects {} argument(s) for its modeled parameters, \
-                             got {}",
-                            modeled_params.len(),
-                            args.len()
+                            "{op}('{func}') captures its return into '{out_name}', which is \
+                                 not a writable Var/Atomic resource"
                         ),
                     )
                     .with_path(path.clone())
-                    .with_fix(
-                        "supply one argument per modeled parameter, or mark unused parameters \
-                     \"modeled\": false",
-                    ),
+                    .with_fix("capture into a declared Var or Atomic resource"),
                 );
-            }
-
-            if let Some(out_name) = dst {
-                if !var_resources.contains(out_name) {
-                    diags.push(
-                        Diagnostic::error(
-                            "E921",
-                            format!(
-                                "{op}('{func}') captures its return into '{out_name}', which is \
-                                 not a writable Var/Atomic resource"
-                            ),
-                        )
-                        .with_path(path.clone())
-                        .with_fix("capture into a declared Var or Atomic resource"),
-                    );
-                }
             }
         }
     }
 }
 
 fn param_referenced_in_body(f: &Function, param: &str) -> bool {
-    f.body.iter().any(|b| {
+    f.body.iter().any(|s| {
         let mut texts: Vec<&str> = Vec::new();
-        for s in &b.statements {
-            match s {
-                Stmt::AssignLocal { expr, .. } | Stmt::WriteShared { expr, .. } => texts.push(expr),
-                Stmt::AtomicStore { value, .. } | Stmt::ChannelSend { value, .. } => {
-                    texts.push(value);
-                }
-                Stmt::AtomicCas {
-                    expected, desired, ..
-                } => {
-                    texts.push(expected);
-                    texts.push(desired);
-                }
-                Stmt::Func { args, .. }
-                | Stmt::Spawn { args, .. }
-                | Stmt::SpawnBatch { args, .. }
-                | Stmt::AsyncCall { args, .. } => {
-                    texts.extend(args.iter().map(String::as_str));
-                }
-                _ => {}
+        match &s.op {
+            Op::AssignLocal { expr, .. } | Op::WriteShared { expr, .. } => texts.push(expr),
+            Op::AtomicStore { value, .. } | Op::ChannelSend { value, .. } => texts.push(value),
+            Op::AtomicCas {
+                expected, desired, ..
+            } => {
+                texts.push(expected);
+                texts.push(desired);
             }
-        }
-        if let Terminator::Return { value: Some(value) } = &b.terminator {
-            texts.push(value);
-        }
-        if let Some(cond) = b.branch_cond() {
-            texts.push(cond);
-        }
-        if let Some((var, _, _)) = b.switch() {
-            texts.push(var);
+            Op::Func { args, .. }
+            | Op::Spawn { args, .. }
+            | Op::SpawnBatch { args, .. }
+            | Op::AsyncCall { args, .. } => {
+                texts.extend(args.iter().map(String::as_str));
+            }
+            Op::Return { value: Some(value) } => texts.push(value),
+            Op::Branch { cond, .. } => texts.push(cond),
+            Op::Switch { var, .. } => texts.push(var),
+            _ => {}
         }
         texts.iter().any(|t| contains_word(t, param))
     })

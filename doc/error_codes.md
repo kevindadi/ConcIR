@@ -8,8 +8,8 @@ See [`syntax/`](syntax/README.md) for the grammar and [`todo.md`](todo.md) for t
 ## E0xx — Structural errors
 
 Supplemental structural checks after successful JSON deserialization.
-Unknown `kind` tags and a block with both `call` and `terminator` fail at
-parse time (E000), not here.
+Unknown `kind` tags and leftover block fields (`statements`, `terminator`,
+`call`) fail at parse time (E000), not here.
 
 | Code | Name                  | Severity | Description                                                                                |
 | ---- | --------------------- | :------: | ------------------------------------------------------------------------------------------ |
@@ -131,7 +131,7 @@ Pairing is by **handle**, not by function name.
 | E910 | ParamNameCollides           |  error   | parameter name collides with a declared resource name                                    |
 | E911 | DuplicateParam              |  error   | duplicate parameter name within a function                                               |
 | E912 | UnmodeledParamReferenced    |  error   | expression references a `modeled: false` parameter (it is not in the CVN variable store) |
-| E913 | BareReturnWithModeledReturn | warning  | function models a return but some `return` terminator carries no value (binds Unknown)   |
+| E913 | BareReturnWithModeledReturn | warning  | function models a return but some `return` statement carries no value (binds Unknown)    |
 | E920 | CallArityMismatch           |  error   | `call` argument count does not match the callee's modeled parameters                     |
 | E921 | CallCaptureNotVar           |  error   | `call` `dst` is not a writable Var/Atomic resource                                       |
 

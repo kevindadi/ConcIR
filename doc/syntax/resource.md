@@ -23,7 +23,7 @@
 - `capacity: n` (`n ≥ 1`) — bounded buffer of `n` messages of type `base`
 
 `channel_send` enqueues into those slots; `channel_recv` ([statement](statement.md)
-or [`select` guard](terminator.md)) dequeues one slot into `dst`. The CVN
+or [`select` guard](statement.md#select)) dequeues one slot into `dst`. The CVN
 currently still treats send/recv as unbuffered tokens; bounded-buffer
 semantics from `capacity` are on the roadmap.
 

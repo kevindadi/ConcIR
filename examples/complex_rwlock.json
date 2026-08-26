@@ -1,11 +1,17 @@
 {
   "program": "complex_rwlock",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "modules": [
     {
       "name": "main",
       "provides": {
-        "resources": ["rw", "cv", "aux_mtx", "shared_map", "error_flag"],
+        "resources": [
+          "rw",
+          "cv",
+          "aux_mtx",
+          "shared_map",
+          "error_flag"
+        ],
         "functions": [
           "main",
           "writer",
@@ -74,37 +80,19 @@
           "body": [
             {
               "sid": "s1",
-              "statements": [
-                {
-                  "kind": "spawn",
-                  "func": "writer",
-                  "handle": "h_writer"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s2"
-              }
+              "kind": "spawn",
+              "func": "writer",
+              "handle": "h_writer"
             },
             {
               "sid": "s2",
-              "statements": [
-                {
-                  "kind": "spawn",
-                  "func": "reader",
-                  "handle": "h_reader"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s3"
-              }
+              "kind": "spawn",
+              "func": "reader",
+              "handle": "h_reader"
             },
             {
               "sid": "s3",
-              "terminator": {
-                "kind": "return"
-              }
+              "kind": "return"
             }
           ]
         },
@@ -114,103 +102,45 @@
           "form": "closure",
           "body": [
             {
-              "sid": "s10",
-              "statements": [
-                {
-                  "kind": "call",
-                  "func": "prepare_data",
-                  "args": []
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s11"
-              }
+              "sid": "s1",
+              "kind": "call",
+              "func": "prepare_data",
+              "args": []
             },
             {
-              "sid": "s11",
-              "statements": [
-                {
-                  "kind": "rwlock_write",
-                  "resource": "rw"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s12"
-              }
+              "sid": "s2",
+              "kind": "rwlock_write",
+              "resource": "rw"
             },
             {
-              "sid": "s12",
-              "statements": [
-                {
-                  "kind": "write_shared",
-                  "resource": "shared_map",
-                  "expr": "{100, true}"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s13"
-              }
+              "sid": "s3",
+              "kind": "write_shared",
+              "resource": "shared_map",
+              "expr": "{100, true}"
             },
             {
-              "sid": "s13",
-              "statements": [
-                {
-                  "kind": "rwlock_unlock",
-                  "resource": "rw"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s14"
-              }
+              "sid": "s4",
+              "kind": "rwlock_unlock",
+              "resource": "rw"
             },
             {
-              "sid": "s14",
-              "statements": [
-                {
-                  "kind": "mutex_lock",
-                  "resource": "aux_mtx"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s15"
-              }
+              "sid": "s5",
+              "kind": "mutex_lock",
+              "resource": "aux_mtx"
             },
             {
-              "sid": "s15",
-              "statements": [
-                {
-                  "kind": "condvar_notify_all",
-                  "condvar": "cv"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s16"
-              }
+              "sid": "s6",
+              "kind": "condvar_notify_all",
+              "condvar": "cv"
             },
             {
-              "sid": "s16",
-              "statements": [
-                {
-                  "kind": "mutex_unlock",
-                  "resource": "aux_mtx"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s17"
-              }
+              "sid": "s7",
+              "kind": "mutex_unlock",
+              "resource": "aux_mtx"
             },
             {
-              "sid": "s17",
-              "terminator": {
-                "kind": "return"
-              }
+              "sid": "s8",
+              "kind": "return"
             }
           ]
         },
@@ -220,132 +150,62 @@
           "form": "closure",
           "body": [
             {
-              "sid": "s20",
-              "statements": [
-                {
-                  "kind": "mutex_lock",
-                  "resource": "aux_mtx"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s21"
-              }
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "aux_mtx"
             },
             {
-              "sid": "s21",
-              "statements": [
-                {
-                  "kind": "condvar_wait",
-                  "condvar": "cv",
-                  "lock": "aux_mtx"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s22"
-              }
+              "sid": "s2",
+              "kind": "condvar_wait",
+              "condvar": "cv",
+              "lock": "aux_mtx"
             },
             {
-              "sid": "s22",
-              "statements": [
-                {
-                  "kind": "mutex_unlock",
-                  "resource": "aux_mtx"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s23"
-              }
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "aux_mtx"
             },
             {
-              "sid": "s23",
-              "statements": [
-                {
-                  "kind": "rwlock_read",
-                  "resource": "rw"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s24"
-              }
+              "sid": "s4",
+              "kind": "rwlock_read",
+              "resource": "rw"
             },
             {
-              "sid": "s24",
-              "statements": [
-                {
-                  "kind": "read_shared",
-                  "resource": "shared_map"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s25"
-              }
+              "sid": "s5",
+              "kind": "read_shared",
+              "resource": "shared_map"
             },
             {
-              "sid": "s25",
-              "statements": [
-                {
-                  "kind": "call",
-                  "func": "process_data",
-                  "args": []
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s26"
-              }
+              "sid": "s6",
+              "kind": "call",
+              "func": "process_data",
+              "args": []
             },
             {
-              "sid": "s26",
-              "statements": [
-                {
-                  "kind": "rwlock_unlock",
-                  "resource": "rw"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s27"
-              }
+              "sid": "s7",
+              "kind": "rwlock_unlock",
+              "resource": "rw"
             },
             {
-              "sid": "s27",
-              "statements": [
-                {
-                  "kind": "atomic_load",
-                  "resource": "error_flag",
-                  "dst": "_"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s30"
-              }
+              "sid": "s8",
+              "kind": "atomic_load",
+              "resource": "error_flag",
+              "dst": "_"
             },
             {
-              "sid": "s30",
-              "terminator": {
-                "kind": "branch",
-                "cond": "error_flag == true",
-                "then": "s28",
-                "else": "s29"
-              }
+              "sid": "s9",
+              "kind": "branch",
+              "cond": "error_flag == true",
+              "then": "s10",
+              "else": "s11"
             },
             {
-              "sid": "s28",
-              "terminator": {
-                "kind": "return"
-              }
+              "sid": "s10",
+              "kind": "return"
             },
             {
-              "sid": "s29",
-              "terminator": {
-                "kind": "return"
-              }
+              "sid": "s11",
+              "kind": "return"
             }
           ]
         },
@@ -359,7 +219,9 @@
           "kind": "normal",
           "body": [],
           "effects": {
-            "reads": ["shared_map"],
+            "reads": [
+              "shared_map"
+            ],
             "writes": []
           }
         },
@@ -368,7 +230,9 @@
           "kind": "normal",
           "body": [],
           "effects": {
-            "reads": ["shared_map"],
+            "reads": [
+              "shared_map"
+            ],
             "writes": []
           }
         }

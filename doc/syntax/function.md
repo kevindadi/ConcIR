@@ -7,14 +7,8 @@
   "params": [],
   "locals": [],
   "body": [
-    {
-      "sid": "s1",
-      "statements": [
-        { "kind": "spawn", "func": "worker", "handle": "h_worker" }
-      ],
-      "terminator": { "kind": "goto", "target": "s2" }
-    },
-    { "sid": "s2", "terminator": { "kind": "return" } }
+    { "sid": "s1", "kind": "spawn", "func": "worker", "handle": "h_worker" },
+    { "sid": "s2", "kind": "return" }
   ]
 }
 ```
@@ -33,7 +27,7 @@
 An empty `body` is a nobody function: a codegen placeholder, not a call-chain
 element. Optionally attach `effects: { "reads": [...], "writes": [...] }`.
 
-The `body` is a flattened CFG of [basic blocks](block.md).
+The `body` is a [statement-level CFG](block.md).
 
 ## `kind: "scope"` — fork-join
 
@@ -53,15 +47,9 @@ fork-join completes. Homogeneous "N copies of one function" is **not**
   "name": "section",
   "kind": "scope",
   "body": [
-    {
-      "sid": "s1",
-      "statements": [
-        { "kind": "spawn", "func": "producer", "handle": "hp" },
-        { "kind": "spawn", "func": "consumer", "handle": "hc" }
-      ],
-      "terminator": { "kind": "goto", "target": "s2" }
-    },
-    { "sid": "s2", "terminator": { "kind": "return" } }
+    { "sid": "s1", "kind": "spawn", "func": "producer", "handle": "hp" },
+    { "sid": "s2", "kind": "spawn", "func": "consumer", "handle": "hc" },
+    { "sid": "s3", "kind": "return" }
   ]
 }
 ```
@@ -107,16 +95,5 @@ At a `call` site: `args` must match modeled parameters (E920); `dst`, if
 present, must be a writable Var/Atomic (E921).
 
 ```json
-{
-  "sid": "s1",
-  "statements": [
-    {
-      "kind": "call",
-      "func": "process",
-      "args": ["budget", "10"],
-      "dst": "ok_flag"
-    }
-  ],
-  "terminator": { "kind": "goto", "target": "s2" }
-}
+{ "sid": "s1", "kind": "call", "func": "process", "args": ["budget", "10"], "dst": "ok_flag" }
 ```

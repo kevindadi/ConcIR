@@ -32,13 +32,11 @@ fn spawn_inside_scope_without_join_is_valid() {
         "[]",
         r#"[
             {"name": "main", "kind": "scope", "body": [
-                {"sid": "s1", "statements": [
-                    {"kind": "spawn", "func": "worker", "handle": "h_w"}
-                ], "terminator": {"kind": "goto", "target": "s2"}},
-                {"sid": "s2", "terminator": {"kind": "return"}}
+                {"sid": "s1", "kind": "spawn", "func": "worker", "handle": "h_w"},
+                {"sid": "s2", "kind": "return"}
             ]},
             {"name": "worker", "kind": "normal", "form": "closure",
-             "body": [{"sid": "s1", "terminator": {"kind": "return"}}]}
+             "body": [{"sid": "s1", "kind": "return"}]}
         ]"#,
     );
     assert!(
@@ -59,13 +57,11 @@ fn spawn_outside_scope_without_join_is_e401_warning() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "statements": [
-                    {"kind": "spawn", "func": "worker", "handle": "h_w"}
-                ], "terminator": {"kind": "goto", "target": "s2"}},
-                {"sid": "s2", "terminator": {"kind": "return"}}
+                {"sid": "s1", "kind": "spawn", "func": "worker", "handle": "h_w"},
+                {"sid": "s2", "kind": "return"}
             ]},
             {"name": "worker", "kind": "normal",
-             "body": [{"sid": "s1", "terminator": {"kind": "return"}}]}
+             "body": [{"sid": "s1", "kind": "return"}]}
         ]"#,
     );
     assert!(
@@ -86,22 +82,18 @@ fn spawn_batch_of_scope_is_valid() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "statements": [
-                    {"kind": "spawn_batch", "func": "section"}
-                ], "terminator": {"kind": "goto", "target": "s2"}},
-                {"sid": "s2", "terminator": {"kind": "return"}}
+                {"sid": "s1", "kind": "spawn_batch", "func": "section"},
+                {"sid": "s2", "kind": "return"}
             ]},
             {"name": "section", "kind": "scope", "body": [
-                {"sid": "s1", "statements": [
-                    {"kind": "spawn", "func": "a", "handle": "ha"},
-                    {"kind": "spawn", "func": "b", "handle": "hb"}
-                ], "terminator": {"kind": "goto", "target": "s2"}},
-                {"sid": "s2", "terminator": {"kind": "return"}}
+                {"sid": "s1", "kind": "spawn", "func": "a", "handle": "ha"},
+                {"sid": "s2", "kind": "spawn", "func": "b", "handle": "hb"},
+                {"sid": "s3", "kind": "return"}
             ]},
             {"name": "a", "kind": "normal", "form": "function",
-             "body": [{"sid": "s1", "terminator": {"kind": "return"}}]},
+             "body": [{"sid": "s1", "kind": "return"}]},
             {"name": "b", "kind": "normal", "form": "closure",
-             "body": [{"sid": "s1", "terminator": {"kind": "return"}}]}
+             "body": [{"sid": "s1", "kind": "return"}]}
         ]"#,
     );
     assert!(
@@ -117,12 +109,11 @@ fn spawn_batch_of_non_scope_is_e410() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "statements": [
-                    {"kind": "spawn_batch", "func": "worker"}
-                ], "terminator": {"kind": "return"}}
+                {"sid": "s1", "kind": "spawn_batch", "func": "worker"},
+                {"sid": "s2", "kind": "return"}
             ]},
             {"name": "worker", "kind": "normal",
-             "body": [{"sid": "s1", "terminator": {"kind": "return"}}]}
+             "body": [{"sid": "s1", "kind": "return"}]}
         ]"#,
     );
     assert!(!report.valid);
@@ -139,12 +130,11 @@ fn call_of_scope_is_e411() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "statements": [
-                    {"kind": "call", "func": "section"}
-                ], "terminator": {"kind": "return"}}
+                {"sid": "s1", "kind": "call", "func": "section"},
+                {"sid": "s2", "kind": "return"}
             ]},
             {"name": "section", "kind": "scope",
-             "body": [{"sid": "s1", "terminator": {"kind": "return"}}]}
+             "body": [{"sid": "s1", "kind": "return"}]}
         ]"#,
     );
     assert!(!report.valid);
@@ -161,14 +151,12 @@ fn spawn_of_scope_is_e411() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "statements": [
-                    {"kind": "spawn", "func": "section", "handle": "hs"}
-                ], "terminator": {"kind": "goto", "target": "s2"}},
-                {"sid": "s2", "statements": [{"kind": "join", "handle": "hs"}],
-                 "terminator": {"kind": "return"}}
+                {"sid": "s1", "kind": "spawn", "func": "section", "handle": "hs"},
+                {"sid": "s2", "kind": "join", "handle": "hs"},
+                {"sid": "s3", "kind": "return"}
             ]},
             {"name": "section", "kind": "scope",
-             "body": [{"sid": "s1", "terminator": {"kind": "return"}}]}
+             "body": [{"sid": "s1", "kind": "return"}]}
         ]"#,
     );
     assert!(!report.valid);
@@ -185,8 +173,8 @@ fn join_all_outside_scope_is_e412() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "statements": [{"kind": "join_all"}],
-                 "terminator": {"kind": "return"}}
+                {"sid": "s1", "kind": "join_all"},
+                {"sid": "s2", "kind": "return"}
             ]}
         ]"#,
     );
@@ -204,15 +192,12 @@ fn join_all_inside_scope_is_valid() {
         "[]",
         r#"[
             {"name": "main", "kind": "scope", "body": [
-                {"sid": "s1", "statements": [
-                    {"kind": "spawn", "func": "worker", "handle": "h_w"}
-                ], "terminator": {"kind": "goto", "target": "s2"}},
-                {"sid": "s2", "statements": [{"kind": "join_all"}],
-                 "terminator": {"kind": "goto", "target": "s3"}},
-                {"sid": "s3", "terminator": {"kind": "return"}}
+                {"sid": "s1", "kind": "spawn", "func": "worker", "handle": "h_w"},
+                {"sid": "s2", "kind": "join_all"},
+                {"sid": "s3", "kind": "return"}
             ]},
             {"name": "worker", "kind": "normal",
-             "body": [{"sid": "s1", "terminator": {"kind": "return"}}]}
+             "body": [{"sid": "s1", "kind": "return"}]}
         ]"#,
     );
     assert!(
@@ -227,7 +212,7 @@ fn kind_closure_is_e010() {
     let report = wrap(
         "[]",
         r#"[{"name": "main", "kind": "closure",
-            "body": [{"sid": "s1", "terminator": {"kind": "return"}}]}]"#,
+            "body": [{"sid": "s1", "kind": "return"}]}]"#,
     );
     assert!(!report.valid);
     assert!(

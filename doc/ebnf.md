@@ -28,7 +28,7 @@ Ident      = Letter, { Letter | Digit } ;
                (* [A-Za-z_][A-Za-z0-9_]* ; module / entity / handle names *)
 
 Sid        = "s", Digit, { Digit } ;
-               (* "s1", "s10"; first block of a function is the entry *)
+               (* "s1", "s10"; first statement of a function is the entry *)
 
 Fqn        = Ident, "::", Ident ;
                (* exactly one "::"; crate::foo::bar is not a ConcIR FQN *)
@@ -137,7 +137,7 @@ Function   = Ident,                     (* name *)
              { ParamDecl },             (* params *)
              [ ParamDecl ],             (* returns *)
              { LocalDecl },             (* locals *)
-             { Block },                 (* body; empty = nobody placeholder *)
+             { Stmt },                  (* body; empty = nobody placeholder *)
              [ Effects ] ;
 
 FnKind     = "normal" | "async" | "scope" ;
@@ -155,24 +155,18 @@ Effects    = { Name },                  (* reads *)
              { Name } ;                 (* writes; nobody-function hint *)
 ```
 
-## Basic block (flattened CFG)
+## Statement (CFG node)
 
-A block is statements then exactly one terminator. There is no block-level
-`call` field and no `loop` statement. Loops are `Branch` back-edges.
-
-```ebnf
-Block      = Sid,
-             { Stmt },
-             Terminator ;
-```
-
-## Statement
-
-Statements do not transfer control. `Name` is a resource or function
-reference (short or FQN). `Ident` on the left of `assign_local` is a local.
+A function body is a list of statements. Non-control ops fall through to
+the next statement. Control ops (`Goto` / `Branch` / `Switch` / `Return` /
+`Select`) name successors. There is no structured `loop`; loops are
+`Branch` / `Goto` back-edges. `Name` is a resource or function reference
+(short or FQN). `Ident` on the left of `assign_local` is a local.
 
 ```ebnf
-Stmt       = Nop
+Stmt       = Sid, Op ;
+
+Op         = Nop
            | AssignLocal
            | ReadShared
            | WriteShared
@@ -198,7 +192,12 @@ Stmt       = Nop
            | Join
            | JoinAll
            | AsyncCall
-           | Await ;
+           | Await
+           | Goto
+           | Branch
+           | Switch
+           | Return
+           | Select ;
 
 Nop        = "nop" ;
 
@@ -267,18 +266,6 @@ JoinAll    = "join_all" ;
 
 AsyncCall  = "async_call", Name, { Expr }, Ident ;
 Await      = "await", Ident ;
-```
-
-## Terminator
-
-The only place successors and `return` appear.
-
-```ebnf
-Terminator = Goto
-           | Branch
-           | Switch
-           | Return
-           | Select ;
 
 Goto       = "goto", Sid ;
 
