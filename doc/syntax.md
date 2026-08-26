@@ -42,7 +42,7 @@ reachability queries belong to the verifier / CVN layer, not the IR.
 ```json
 {
   "program": "app",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "modules": [ ... ],
   "entry": "core::main"
 }
@@ -51,7 +51,7 @@ reachability queries belong to the verifier / CVN layer, not the IR.
 | Field     | Type   | Required | Description                       |
 | --------- | ------ | :------: | --------------------------------- |
 | `program` | string |   yes    | Program name                      |
-| `version` | string |    no    | Defaults to `"3.1.0"`             |
+| `version` | string |    no    | Defaults to `"3.2.0"`             |
 | `modules` | array  |   yes    | One or more [`Module`](#module)s  |
 | `entry`   | FQN    |   yes    | Entry function, e.g. `core::main` |
 
@@ -154,7 +154,7 @@ Each `Var` appears at most once. `Atomic` resources must not appear here.
 ```json
 {
   "name": "main",
-  "kind": "normal",
+  "kind": "scope",
   "params": [],
   "locals": [],
   "body": [
@@ -170,10 +170,58 @@ Each `Var` appears at most once. `Atomic` resources must not appear here.
 }
 ```
 
-`kind` values: `"normal"` / `"async"` / `"closure"`.
+`kind` is the body / execution model:
+
+| `kind`     | Meaning |
+| ---------- | ------- |
+| `"normal"` | Ordinary sequential function |
+| `"async"`  | Async function (`async_call` / `await`) |
+| `"scope"`  | Structured fork-join region (see below) |
+
+`form` is an optional codegen hint: `"function"` (default) or `"closure"`.
+`spawn` may target either; ConcIR does not require thread bodies to be closures.
 
 An empty `body` is a nobody function: a codegen placeholder, not a call-chain
 element. Optionally attach `effects: { "reads": [...], "writes": [...] }`.
+
+### `kind: "scope"` — fork-join
+
+A scope is `thread::scope` / structured concurrency: every `spawn` in its
+body is a **fork**; `return` is the **join barrier** for handles not yet
+explicitly `join`ed. `join` is still allowed for an early join of one
+handle. `join_all` (no handle) is a mid-scope barrier over remaining
+forks; it is illegal outside a scope (E412).
+
+Enter a named scope with `spawn_batch` (not `call` / `spawn` / `async_call`,
+which are E411). The caller of `spawn_batch` waits until the scope's
+fork-join completes. Homogeneous "N copies of one function" is **not**
+`spawn_batch`: write a `branch` loop of `spawn` inside the scope.
+
+```json
+{
+  "name": "section",
+  "kind": "scope",
+  "body": [
+    {
+      "sid": "s1",
+      "statements": [
+        { "kind": "spawn", "func": "producer", "handle": "hp" },
+        { "kind": "spawn", "func": "consumer", "handle": "hc" }
+      ],
+      "terminator": { "kind": "goto", "target": "s2" }
+    },
+    { "sid": "s2", "terminator": { "kind": "return" } }
+  ]
+}
+```
+
+```json
+{ "kind": "spawn_batch", "func": "section" }
+```
+
+`spawn_batch` target must have `kind: "scope"` (E410). Spawns inside a
+scope do not need a matching `join` (no E401); unstructured `spawn`
+outside a scope still warns if unpaired.
 
 ### Typed data flow (params / returns / locals)
 
@@ -325,17 +373,19 @@ as `expected` (via `assign_local` or by passing `ret` in `expected`).
 `channel_recv` `dst` is the popped payload (Channel `base`); `"_"` discards.
 The in-flight messages live in the Channel resource's `capacity` slots.
 
-**Threads and calls.** Spawn / join pair on **handles**, not function names.
-`func` uses the [FQN rules](#naming-identifiers-and-fqns).
+**Threads and calls.** Unstructured `spawn` / `join` pair on **handles**,
+not function names. A `kind: "scope"` function joins leftover handles at
+`return`. `func` uses the [FQN rules](#naming-identifiers-and-fqns).
 
-| `kind`              | Key fields                     |
-| ------------------- | ------------------------------ |
-| `call`              | `func`, `args`, optional `dst` |
-| `spawn`             | `func`, `args`, `handle`       |
-| `spawn_batch`       | `func`, `count`, `handle`      |
-| `join` / `join_all` | `handle`                       |
-| `async_call`        | `func`, `args`, `handle`       |
-| `await`             | `handle`                       |
+| `kind`         | Key fields                     | Notes |
+| -------------- | ------------------------------ | ----- |
+| `call`         | `func`, `args`, optional `dst` | Sequential call; cannot target a scope (E411) |
+| `spawn`        | `func`, `args`, `handle`       | Fork a thread; `form` is not restricted |
+| `spawn_batch`  | `func`, `args`, optional `dst` | Enter a `kind: "scope"` function and wait |
+| `join`         | `handle`                       | Early join of one spawn |
+| `join_all`     | —                              | Mid-scope barrier; E412 outside a scope |
+| `async_call`   | `func`, `args`, `handle`       | |
+| `await`        | `handle`                       | |
 
 ## Terminator
 

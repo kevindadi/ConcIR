@@ -226,15 +226,28 @@ fn check_functions(program: &Program, diags: &mut Vec<Diagnostic>) {
         for (fi, f) in m.functions.iter().enumerate() {
             let fn_path = Program::fn_path(mi, fi);
 
-            // E010: function kind must be normal/async/closure
-            if !["normal", "async", "closure"].contains(&f.kind.as_str()) {
+            // E010: function kind must be normal/async/scope; form function/closure
+            if !["normal", "async", "scope"].contains(&f.kind.as_str()) {
                 diags.push(
                     Diagnostic::error(
                         "E010",
                         format!("function '{}' has invalid kind '{}'", f.name, f.kind),
                     )
                     .with_path(format!("{fn_path}.kind"))
-                    .with_fix("kind must be \"normal\", \"async\", or \"closure\""),
+                    .with_fix(
+                        "kind must be \"normal\", \"async\", or \"scope\" (use form: \"closure\" \
+                         for a closure, not kind)",
+                    ),
+                );
+            }
+            if f.form != "function" && f.form != "closure" {
+                diags.push(
+                    Diagnostic::error(
+                        "E010",
+                        format!("function '{}' has invalid form '{}'", f.name, f.form),
+                    )
+                    .with_path(format!("{fn_path}.form"))
+                    .with_fix("form must be \"function\" or \"closure\""),
                 );
             }
 

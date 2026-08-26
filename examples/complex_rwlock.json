@@ -1,6 +1,6 @@
 {
   "program": "complex_rwlock",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "modules": [
     {
       "name": "main",
@@ -70,7 +70,7 @@
       "functions": [
         {
           "name": "main",
-          "kind": "normal",
+          "kind": "scope",
           "body": [
             {
               "sid": "s1",
@@ -102,32 +102,6 @@
             },
             {
               "sid": "s3",
-              "statements": [
-                {
-                  "kind": "join",
-                  "handle": "h_writer"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s4"
-              }
-            },
-            {
-              "sid": "s4",
-              "statements": [
-                {
-                  "kind": "join",
-                  "handle": "h_reader"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s5"
-              }
-            },
-            {
-              "sid": "s5",
               "terminator": {
                 "kind": "return"
               }
@@ -136,7 +110,8 @@
         },
         {
           "name": "writer",
-          "kind": "closure",
+          "kind": "normal",
+          "form": "closure",
           "body": [
             {
               "sid": "s10",
@@ -241,7 +216,8 @@
         },
         {
           "name": "reader",
-          "kind": "closure",
+          "kind": "normal",
+          "form": "closure",
           "body": [
             {
               "sid": "s20",

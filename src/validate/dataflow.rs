@@ -122,8 +122,10 @@ fn check_call_sites(
 ) {
     for (si, block) in f.body.iter().enumerate() {
         for stmt in &block.statements {
-            let Stmt::Func { func, args, dst } = stmt else {
-                continue;
+            let (op, func, args, dst) = match stmt {
+                Stmt::Func { func, args, dst } => ("call", func, args, dst),
+                Stmt::SpawnBatch { func, args, dst } => ("spawn_batch", func, args, dst),
+                _ => continue,
             };
             let Some(callee) = callees.get(func) else {
                 continue;
@@ -138,10 +140,11 @@ fn check_call_sites(
                     Diagnostic::error(
                         "E920",
                         format!(
-                        "call('{func}') expects {} argument(s) for its modeled parameters, got {}",
-                        modeled_params.len(),
-                        args.len()
-                    ),
+                            "{op}('{func}') expects {} argument(s) for its modeled parameters, \
+                             got {}",
+                            modeled_params.len(),
+                            args.len()
+                        ),
                     )
                     .with_path(path.clone())
                     .with_fix(
@@ -157,9 +160,9 @@ fn check_call_sites(
                         Diagnostic::error(
                             "E921",
                             format!(
-                            "call('{func}') captures its return into '{out_name}', which is not \
-                             a writable Var/Atomic resource"
-                        ),
+                                "{op}('{func}') captures its return into '{out_name}', which is \
+                                 not a writable Var/Atomic resource"
+                            ),
                         )
                         .with_path(path.clone())
                         .with_fix("capture into a declared Var or Atomic resource"),
@@ -187,6 +190,7 @@ fn param_referenced_in_body(f: &Function, param: &str) -> bool {
                 }
                 Stmt::Func { args, .. }
                 | Stmt::Spawn { args, .. }
+                | Stmt::SpawnBatch { args, .. }
                 | Stmt::AsyncCall { args, .. } => {
                     texts.extend(args.iter().map(String::as_str));
                 }

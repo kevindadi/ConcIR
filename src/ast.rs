@@ -9,7 +9,15 @@ use crate::fqn;
 // ──────────────────── Top-level ────────────────────
 
 fn default_version() -> String {
-    "3.1.0".to_string()
+    "3.2.0".to_string()
+}
+
+fn default_form() -> String {
+    "function".to_string()
+}
+
+fn is_function_form(s: &str) -> bool {
+    s == "function"
 }
 
 /// A complete ConcIR program: a set of [`Module`]s with a single entry FQN.
@@ -244,7 +252,16 @@ pub struct LocalDecl {
 #[serde(deny_unknown_fields)]
 pub struct Function {
     pub name: String,
+    /// Body / execution: `"normal"`, `"async"`, or `"scope"`.
+    ///
+    /// A `"scope"` is a structured fork-join region (`thread::scope`): every
+    /// `spawn` inside it is a fork; `return` (and `join_all`) is the join
+    /// barrier. Enter a named scope with [`Stmt::SpawnBatch`].
     pub kind: String,
+    /// Callable form: `"function"` (default) or `"closure"`. Codegen hint
+    /// only; `spawn` may target either.
+    #[serde(default = "default_form", skip_serializing_if = "is_function_form")]
+    pub form: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<ParamDecl>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -256,6 +273,20 @@ pub struct Function {
     pub body: Vec<Block>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effects: Option<FunctionEffects>,
+}
+
+impl Function {
+    pub fn is_scope(&self) -> bool {
+        self.kind == "scope"
+    }
+
+    pub fn is_async(&self) -> bool {
+        self.kind == "async"
+    }
+
+    pub fn is_closure(&self) -> bool {
+        self.form == "closure"
+    }
 }
 
 /// Data-footprint hint for a body-less function.
@@ -406,16 +437,23 @@ pub enum Stmt {
         args: Vec<String>,
         handle: String,
     },
+    /// Enter a [`Function`] with `kind: "scope"` and wait for its fork-join.
+    /// Not "N copies of one function" — homogeneous repetition is a `branch`
+    /// loop of [`Stmt::Spawn`] inside the scope.
     #[serde(rename = "spawn_batch")]
     SpawnBatch {
         func: String,
-        count: i64,
-        handle: String,
+        #[serde(default)]
+        args: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dst: Option<String>,
     },
     #[serde(rename = "join")]
     Join { handle: String },
+    /// Join every outstanding spawn in the enclosing `kind: "scope"` function.
+    /// Illegal outside a scope (E412). Scope `return` already joins survivors.
     #[serde(rename = "join_all")]
-    JoinAll { handle: String },
+    JoinAll,
     #[serde(rename = "async_call")]
     AsyncCall {
         func: String,
@@ -663,7 +701,8 @@ impl Stmt {
             self,
             Stmt::Await { .. }
                 | Stmt::Join { .. }
-                | Stmt::JoinAll { .. }
+                | Stmt::JoinAll
+                | Stmt::SpawnBatch { .. }
                 | Stmt::ChannelRecv { .. }
                 | Stmt::SemaphoreAcquire { .. }
                 | Stmt::CondvarWait { .. }

@@ -55,7 +55,7 @@ Naming constraints (not encoded as extra nonterminals): `provides` uses
 
 ```ebnf
 Program    = Ident,                     (* program *)
-             [ String ],                (* version; default "3.1.0" *)
+             [ String ],                (* version; default "3.2.0" *)
              { Module }-,               (* modules; at least one *)
              Fqn ;                      (* entry = module::function *)
 
@@ -133,13 +133,18 @@ AtomicRes  = Ident, "var", "Atomic", BaseType, JsonValue ;
 ```ebnf
 Function   = Ident,                     (* name *)
              FnKind,
+             [ FnForm ],                (* default "function" *)
              { ParamDecl },             (* params *)
              [ ParamDecl ],             (* returns *)
              { LocalDecl },             (* locals *)
              { Block },                 (* body; empty = nobody placeholder *)
              [ Effects ] ;
 
-FnKind     = "normal" | "async" | "closure" ;
+FnKind     = "normal" | "async" | "scope" ;
+               (* scope = structured fork-join; return joins leftover spawns *)
+
+FnForm     = "function" | "closure" ;
+               (* codegen hint; spawn may target either *)
 
 ParamDecl  = Ident, BaseType, Boolean ; (* name, type, modeled *)
 
@@ -253,10 +258,12 @@ Call       = "call", Name, { Expr }, [ Name ] ;
                (* func, args, optional dst *)
 
 Spawn      = "spawn", Name, { Expr }, Ident ;
-               (* func, args, handle *)
-SpawnBatch = "spawn_batch", Name, Integer, Ident ;
+               (* func, args, handle; target must not be a scope (E411) *)
+SpawnBatch = "spawn_batch", Name, { Expr }, [ Name ] ;
+               (* func, args, optional dst; func must be kind "scope" (E410) *)
 Join       = "join", Ident ;
-JoinAll    = "join_all", Ident ;
+JoinAll    = "join_all" ;
+               (* mid-scope barrier; E412 outside a scope *)
 
 AsyncCall  = "async_call", Name, { Expr }, Ident ;
 Await      = "await", Ident ;

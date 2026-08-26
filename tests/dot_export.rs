@@ -41,6 +41,7 @@ fn make_linear_function() -> Function {
     Function {
         name: "linear".into(),
         kind: "normal".into(),
+        form: "function".into(),
         effects: None,
         params: vec![],
         returns: None,
@@ -79,6 +80,7 @@ fn make_branch_function() -> Function {
     Function {
         name: "branching".into(),
         kind: "normal".into(),
+        form: "function".into(),
         effects: None,
         params: vec![],
         returns: None,
@@ -124,7 +126,8 @@ fn make_branch_function() -> Function {
 fn make_loop_function() -> Function {
     Function {
         name: "looping".into(),
-        kind: "closure".into(),
+        kind: "normal".into(),
+        form: "closure".into(),
         effects: None,
         params: vec![],
         returns: None,
@@ -257,10 +260,10 @@ fn cross_function_spawn_join() {
     assert!(dot.contains("label=\"spawn\""));
     assert!(dot.contains("main_s2 -> consumer_s1"));
 
-    // join edges (target_ret → join_node)
+    // join edges: scope return is the barrier (both children join at s3)
     assert!(dot.contains("producer_ret -> main_s3"));
     assert!(dot.contains("label=\"join\""));
-    assert!(dot.contains("consumer_ret -> main_s4"));
+    assert!(dot.contains("consumer_ret -> main_s3"));
 }
 
 #[test]
@@ -364,8 +367,8 @@ fn spawn_join_node_shapes() {
 
     // Spawn should be doubleoctagon
     assert!(dot.contains("main_s1") && dot.contains("shape=doubleoctagon"));
-    // Join should be doubleoctagon with dashed
-    assert!(dot.contains("main_s3") && dot.contains("shape=doubleoctagon"));
+    // Scope return is the join barrier (ellipse), not an explicit join node
+    assert!(dot.contains("main_s3") && dot.contains("shape=ellipse"));
 }
 
 #[test]

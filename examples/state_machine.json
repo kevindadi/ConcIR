@@ -1,6 +1,6 @@
 {
   "program": "state_machine",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "modules": [
     {
       "name": "main",
@@ -44,7 +44,7 @@
       "functions": [
         {
           "name": "main",
-          "kind": "normal",
+          "kind": "scope",
           "body": [
             {
               "sid": "s1",
@@ -76,32 +76,6 @@
             },
             {
               "sid": "s3",
-              "statements": [
-                {
-                  "kind": "join",
-                  "handle": "h_controller"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s4"
-              }
-            },
-            {
-              "sid": "s4",
-              "statements": [
-                {
-                  "kind": "join",
-                  "handle": "h_worker"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s5"
-              }
-            },
-            {
-              "sid": "s5",
               "terminator": {
                 "kind": "return"
               }
@@ -110,7 +84,8 @@
         },
         {
           "name": "controller",
-          "kind": "closure",
+          "kind": "normal",
+          "form": "closure",
           "body": [
             {
               "sid": "s10",
@@ -175,7 +150,8 @@
         },
         {
           "name": "worker",
-          "kind": "closure",
+          "kind": "normal",
+          "form": "closure",
           "body": [
             {
               "sid": "s20",

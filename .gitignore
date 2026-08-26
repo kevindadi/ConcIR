@@ -6,3 +6,4 @@ Cargo.lock
 .claude
 
 .DS_Store
+**.snap

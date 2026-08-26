@@ -1,6 +1,6 @@
 {
   "program": "producer_consumer",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "modules": [
     {
       "name": "main",
@@ -42,7 +42,7 @@
       "functions": [
         {
           "name": "main",
-          "kind": "normal",
+          "kind": "scope",
           "body": [
             {
               "sid": "s1",
@@ -74,32 +74,6 @@
             },
             {
               "sid": "s3",
-              "statements": [
-                {
-                  "kind": "join",
-                  "handle": "h_producer"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s4"
-              }
-            },
-            {
-              "sid": "s4",
-              "statements": [
-                {
-                  "kind": "join",
-                  "handle": "h_consumer"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s5"
-              }
-            },
-            {
-              "sid": "s5",
               "terminator": {
                 "kind": "return"
               }
@@ -108,7 +82,8 @@
         },
         {
           "name": "producer",
-          "kind": "closure",
+          "kind": "normal",
+          "form": "closure",
           "body": [
             {
               "sid": "s1",
@@ -173,7 +148,8 @@
         },
         {
           "name": "consumer",
-          "kind": "closure",
+          "kind": "normal",
+          "form": "closure",
           "body": [
             {
               "sid": "s1",

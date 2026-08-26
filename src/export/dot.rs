@@ -153,7 +153,7 @@ fn write_function_subgraph(out: &mut String, func: &Function, opts: &DotOptions)
         out,
         "    label=\"{name} ({kind})\";",
         name = escape(&func.name),
-        kind = escape(&func.kind),
+        kind = escape(&cluster_kind_label(func)),
     )
     .unwrap();
     writeln!(out, "    style=rounded;").unwrap();
@@ -258,7 +258,7 @@ fn node_style(block: &Block) -> NodeStyle {
             shape: "doubleoctagon",
             ..Default::default()
         },
-        Some(Stmt::Join { .. } | Stmt::JoinAll { .. } | Stmt::Await { .. }) => NodeStyle {
+        Some(Stmt::Join { .. } | Stmt::JoinAll | Stmt::Await { .. }) => NodeStyle {
             shape: "doubleoctagon",
             style: "filled,dashed".to_string(),
             ..Default::default()
@@ -359,7 +359,7 @@ fn format_stmt_compact(stmt: &Stmt) -> String {
         Stmt::Spawn { func, .. } => format!("spawn({func})"),
         Stmt::SpawnBatch { func, .. } => format!("spawn_batch({func})"),
         Stmt::Join { handle } => format!("join({handle})"),
-        Stmt::JoinAll { handle } => format!("join_all({handle})"),
+        Stmt::JoinAll => "join_all".into(),
         Stmt::AsyncCall { func, .. } => format!("async_call({func})"),
         Stmt::Await { handle } => format!("await({handle})"),
     }
@@ -474,31 +474,55 @@ fn write_cross_function_edges(out: &mut String, functions: &[&Function]) {
         .collect();
 
     for func in functions {
+        let spawned: Vec<&str> = func
+            .body
+            .iter()
+            .flat_map(|b| {
+                b.statements.iter().filter_map(|s| match s {
+                    Stmt::Spawn { func: t, .. } => Some(t.as_str()),
+                    _ => None,
+                })
+            })
+            .collect();
+
         for stmt in &func.body {
             let src = format!("{}_{}", func.name, stmt.sid);
             for s in &stmt.statements {
                 match s {
-                    Stmt::Spawn { func: target, .. } | Stmt::SpawnBatch { func: target, .. } => {
-                        let name = target.rsplit("::").next().unwrap_or(target);
-                        if let Some(first) = first_sids.get(name) {
-                            writeln!(
-                                out,
-                                "  {src} -> {name}_{first} [style=dashed, color=blue, label=\"spawn\"];",
-                            )
-                            .unwrap();
-                        }
+                    Stmt::Spawn { func: target, .. } => {
+                        write_callee_edge(
+                            out,
+                            &src,
+                            target,
+                            &first_sids,
+                            "spawn",
+                            "dashed",
+                            "blue",
+                        );
+                    }
+                    Stmt::SpawnBatch { func: target, .. } => {
+                        write_callee_edge(
+                            out,
+                            &src,
+                            target,
+                            &first_sids,
+                            "scope",
+                            "dashed",
+                            "blue",
+                        );
                     }
                     Stmt::AsyncCall { func: target, .. } => {
-                        let name = target.rsplit("::").next().unwrap_or(target);
-                        if let Some(first) = first_sids.get(name) {
-                            writeln!(
-                                out,
-                                "  {src} -> {name}_{first} [style=dashed, color=blue, label=\"async_call\"];",
-                            )
-                            .unwrap();
-                        }
+                        write_callee_edge(
+                            out,
+                            &src,
+                            target,
+                            &first_sids,
+                            "async_call",
+                            "dashed",
+                            "blue",
+                        );
                     }
-                    Stmt::Join { handle, .. } | Stmt::JoinAll { handle, .. } => {
+                    Stmt::Join { handle } => {
                         if let Some(name) = handle.strip_prefix("h_") {
                             writeln!(
                                 out,
@@ -507,22 +531,62 @@ fn write_cross_function_edges(out: &mut String, functions: &[&Function]) {
                             .unwrap();
                         }
                     }
-                    Stmt::Func { func: target, .. } => {
-                        let name = target.rsplit("::").next().unwrap_or(target);
-                        if let Some(first) = first_sids.get(name) {
+                    Stmt::JoinAll => {
+                        for target in &spawned {
+                            let name = target.rsplit("::").next().unwrap_or(target);
                             writeln!(
                                 out,
-                                "  {src} -> {name}_{first} [style=dotted, color=gray50, label=\"call\"];",
+                                "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join_all\"];",
                             )
                             .unwrap();
                         }
                     }
+                    Stmt::Func { func: target, .. } => {
+                        write_callee_edge(
+                            out,
+                            &src,
+                            target,
+                            &first_sids,
+                            "call",
+                            "dotted",
+                            "gray50",
+                        );
+                    }
                     _ => {}
+                }
+            }
+            if func.is_scope() && matches!(stmt.terminator, Terminator::Return { .. }) {
+                for target in &spawned {
+                    let name = target.rsplit("::").next().unwrap_or(target);
+                    writeln!(
+                        out,
+                        "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join\"];",
+                    )
+                    .unwrap();
                 }
             }
         }
     }
     writeln!(out).unwrap();
+}
+
+fn write_callee_edge(
+    out: &mut String,
+    src: &str,
+    target: &str,
+    first_sids: &std::collections::HashMap<&str, &str>,
+    label: &str,
+    style: &str,
+    color: &str,
+) {
+    let name = target.rsplit("::").next().unwrap_or(target);
+    if let Some(first) = first_sids.get(name) {
+        writeln!(
+            out,
+            "  {src} -> {name}_{first} [style={style}, color={color}, label=\"{label}\"];",
+        )
+        .unwrap();
+    }
 }
 
 // ── Back-edge detection ─────────────────────────────────────────────────────
@@ -539,6 +603,18 @@ fn is_back_edge(current: &str, target: &str) -> bool {
 }
 
 // ── Utility ─────────────────────────────────────────────────────────────────
+
+fn cluster_kind_label(func: &Function) -> String {
+    if func.is_scope() {
+        "scope".into()
+    } else if func.is_async() {
+        "async".into()
+    } else if func.is_closure() {
+        "closure".into()
+    } else {
+        "normal".into()
+    }
+}
 
 fn escape(s: &str) -> String {
     s.replace('\\', "\\\\")

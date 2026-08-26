@@ -15,7 +15,8 @@ fn sample_module_json() -> &'static str {
         "functions": [
             {
                 "name": "producer",
-                "kind": "closure",
+                "kind": "normal",
+                "form": "closure",
                 "body": [
                     {"sid": "s1", "statements": [{"kind": "mutex_lock", "resource": "mtx"}],
                      "terminator": {"kind": "goto", "target": "s2"}},

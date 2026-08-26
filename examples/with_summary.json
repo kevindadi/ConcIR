@@ -1,6 +1,6 @@
 {
   "program": "with_summary",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "modules": [
     {
       "name": "main",
@@ -86,7 +86,8 @@
         },
         {
           "name": "worker",
-          "kind": "closure",
+          "kind": "normal",
+          "form": "closure",
           "body": [
             {
               "sid": "s10",

@@ -55,7 +55,7 @@ src/
     types.rs           E2xx  Type checking
     compat.rs          E3xx  Resource–operation compatibility
     protection.rs      E7xx  Protection mapping
-    concurrency.rs     E4xx  Handle pairing (spawn/join, async_call/await)
+    concurrency.rs     E4xx  Handle pairing, scope fork-join, spawn_batch
     locks.rs           E5xx  Lock safety (includes E309)
     control.rs         E6xx  Control flow
     dataflow.rs        E9xx  Typed params / returns / call arity
