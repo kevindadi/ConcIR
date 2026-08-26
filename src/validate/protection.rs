@@ -51,7 +51,9 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                         diags.push(
                             Diagnostic::error(
                                 "E701",
-                                format!("protection target '{var_name}' is not a Var-typed resource"),
+                                format!(
+                                    "protection target '{var_name}' is not a Var-typed resource"
+                                ),
                             )
                             .with_path(format!("{prot_path}.var"))
                             .with_fix("use a Var-typed resource name"),

@@ -9,7 +9,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     check_branch_conditions(program, diags);
     check_switch_variables(program, diags, &resource_types);
     check_write_types(program, diags, &resource_types);
-    check_send_types(program, diags, &resource_types);
+    check_channel_payload_types(program, diags, &resource_types);
 }
 
 #[derive(Clone)]
@@ -66,8 +66,8 @@ pub(crate) fn build_resource_type_map(program: &Program) -> HashMap<String, ResT
 /// In the JSON format, conditions are strings. We check for the presence of
 /// a comparison operator (==, !=, >, <, >=, <=).
 fn check_branch_conditions(program: &Program, diags: &mut Vec<Diagnostic>) {
-    program.walk_blocks(|mi, fi, si, _, _, block| {
-        let Some(cond) = block.branch_cond() else {
+    program.walk_stmts(|mi, fi, si, _, _, stmt| {
+        let Some(cond) = stmt.branch_cond() else {
             return;
         };
         let has_cmp = cond.contains("==")
@@ -82,7 +82,7 @@ fn check_branch_conditions(program: &Program, diags: &mut Vec<Diagnostic>) {
                     "E201",
                     format!("branch condition \"{cond}\" is not a comparison expression"),
                 )
-                .with_path(format!("{}.terminator.cond", Program::block_path(mi, fi, si)))
+                .with_path(Program::stmt_path(mi, fi, si))
                 .with_fix("use a comparison operator: ==, !=, >, <, >=, <="),
             );
         }
@@ -95,11 +95,11 @@ fn check_switch_variables(
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    program.walk_blocks(|mi, fi, si, _, _, block| {
-        let Some((var, cases, _)) = block.switch() else {
+    program.walk_stmts(|mi, fi, si, _, _, stmt| {
+        let Some((var, cases, _)) = stmt.switch() else {
             return;
         };
-        let path = Program::block_path(mi, fi, si);
+        let path = Program::stmt_path(mi, fi, si);
         if let Some(rt) = resource_types.get(var) {
             let bt = res_type_to_base(rt);
             match bt {
@@ -114,7 +114,7 @@ fn check_switch_variables(
                                 "switch variable '{var}' is of type {other}, expected Enum or Int"
                             ),
                         )
-                        .with_path(format!("{path}.terminator.var"))
+                        .with_path(format!("{path}.var"))
                         .with_fix("use an Enum or Int typed resource, or use branch instead"),
                     );
                 }
@@ -130,7 +130,7 @@ fn check_switch_variables(
                                     "switch case label '{label}' is not a variant of enum '{var}'"
                                 ),
                             )
-                            .with_path(format!("{path}.terminator.cases"))
+                            .with_path(format!("{path}.cases"))
                             .with_fix("use a valid enum variant as the case label"),
                         );
                     }
@@ -146,30 +146,47 @@ fn check_write_types(
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    program.walk_blocks(|mi, fi, si, _, _, block| {
-        let path = Program::block_path(mi, fi, si);
-        for stmt in &block.statements {
-            if let Stmt::WriteShared { resource, expr } = stmt {
+    program.walk_stmts(|mi, fi, si, _, f, stmt| {
+        let path = Program::stmt_path(mi, fi, si);
+        match &stmt.op {
+            Op::WriteShared { resource, expr } => {
                 if let Some(ResType::Var(expected)) = resource_types.get(resource) {
-                    check_literal_type(diags, "E203", expr, expected, &format!("{path}.statements"));
+                    check_literal_type(diags, "E203", expr, expected, &path);
                 }
             }
-        }
-        match &block.call {
-            Some(Call::AtomicStore { resource, value, .. }) => {
+            Op::AtomicStore { resource, value } => {
                 if let Some(ResType::Atomic(expected)) = resource_types.get(resource) {
-                    check_literal_type(diags, "E204", value, expected, &format!("{path}.call"));
+                    check_literal_type(diags, "E204", value, expected, &path);
                 }
             }
-            Some(Call::AtomicCas {
+            Op::AtomicCas {
                 resource,
                 expected,
                 desired,
-                ..
-            }) => {
+                dst,
+            } => {
                 if let Some(ResType::Atomic(ty)) = resource_types.get(resource) {
-                    check_literal_type(diags, "E205", expected, ty, &format!("{path}.call"));
-                    check_literal_type(diags, "E205", desired, ty, &format!("{path}.call"));
+                    check_literal_type(diags, "E205", expected, ty, &path);
+                    check_literal_type(diags, "E205", desired, ty, &path);
+                    if let Some(dst_ty) = lookup_dst_type(f, resource_types, dst) {
+                        if dst_ty != ty {
+                            diags.push(
+                                Diagnostic::error(
+                                    "E205",
+                                    format!(
+                                        "atomic_cas dst '{dst}' has type {dst_ty}, but must \
+                                             hold the pre-CAS old value (Atomic base {ty}), not a \
+                                             Bool success flag"
+                                    ),
+                                )
+                                .with_path(path.to_string())
+                                .with_fix(
+                                    "bind dst to a local or Var/Atomic of the same base type; \
+                                         test success with branch(dst == expected)",
+                                ),
+                            );
+                        }
+                    }
                 }
             }
             _ => {}
@@ -177,25 +194,69 @@ fn check_write_types(
     });
 }
 
-/// E206: send type checking.
-fn check_send_types(
+/// E206: `channel_send` value and `channel_recv` `dst` must match Channel `base`.
+fn check_channel_payload_types(
     program: &Program,
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    program.walk_blocks(|mi, fi, si, _, _, block| {
-        if let Some(Call::ChannelSend { channel, value, .. }) = &block.call {
-            if let Some(ResType::Channel(expected)) = resource_types.get(channel) {
-                check_literal_type(
-                    diags,
-                    "E206",
-                    value,
-                    expected,
-                    &format!("{}.call", Program::block_path(mi, fi, si)),
-                );
+    program.walk_stmts(|mi, fi, si, _, f, stmt| {
+        let path = Program::stmt_path(mi, fi, si);
+        match &stmt.op {
+            Op::ChannelSend { channel, value } => {
+                if let Some(ResType::Channel(expected)) = resource_types.get(channel) {
+                    check_literal_type(diags, "E206", value, expected, &path);
+                }
             }
+            Op::ChannelRecv { channel, dst } => {
+                check_recv_dst(diags, f, resource_types, channel, dst, &path);
+            }
+            Op::Select { branches, .. } => {
+                for branch in branches {
+                    if let SelectGuard::ChannelRecv { channel, dst } = &branch.guard {
+                        check_recv_dst(diags, f, resource_types, channel, dst, &path);
+                    }
+                }
+            }
+            _ => {}
         }
     });
+}
+
+/// `dst` is the popped payload (Channel `base`). `"_"` discards. Unknown names
+/// are left to later passes (same as `atomic_cas` `dst`).
+fn check_recv_dst(
+    diags: &mut Vec<Diagnostic>,
+    f: &Function,
+    resource_types: &HashMap<String, ResType>,
+    channel: &str,
+    dst: &str,
+    path: &str,
+) {
+    if dst == "_" {
+        return;
+    }
+    let Some(ResType::Channel(expected)) = resource_types.get(channel) else {
+        return;
+    };
+    if let Some(dst_ty) = lookup_dst_type(f, resource_types, dst) {
+        if dst_ty != expected {
+            diags.push(
+                Diagnostic::error(
+                    "E206",
+                    format!(
+                        "channel_recv dst '{dst}' has type {dst_ty}, but Channel '{channel}' \
+                         payload type is {expected}"
+                    ),
+                )
+                .with_path(path.to_string())
+                .with_fix(
+                    "bind dst to a local or Var/Atomic of the Channel's base type, or use \
+                     \"_\" to discard the payload",
+                ),
+            );
+        }
+    }
 }
 
 /// Best-effort type check: only flags mismatches when the value is a recognizable literal.
@@ -234,15 +295,30 @@ fn check_literal_type(
                 diags.push(
                     Diagnostic::error(
                         code,
-                        format!(
-                            "value {v} is outside the declared Int range {lo}..={hi}"
-                        ),
+                        format!("value {v} is outside the declared Int range {lo}..={hi}"),
                     )
                     .with_path(path.to_string())
                     .with_fix(format!("use a value between {lo} and {hi}")),
                 );
             }
         }
+    }
+}
+
+fn lookup_dst_type<'a>(
+    f: &'a Function,
+    resource_types: &'a HashMap<String, ResType>,
+    dst: &str,
+) -> Option<&'a BaseType> {
+    if let Some(local) = f.locals.iter().find(|l| l.name == dst) {
+        return Some(&local.local_type);
+    }
+    if let Some(p) = f.params.iter().find(|p| p.name == dst) {
+        return Some(&p.param_type);
+    }
+    match resource_types.get(dst) {
+        Some(ResType::Var(bt) | ResType::Atomic(bt)) => Some(bt),
+        _ => None,
     }
 }
 

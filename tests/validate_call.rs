@@ -27,13 +27,13 @@ fn call_to_sync_bodied_function_is_valid() {
         r#"[{"name": "m1", "kind": "sync", "type": "Mutex", "mode": "Sync"}]"#,
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "call": {"kind": "call", "func": "helper", "args": [], "target": "s2"}},
-                {"sid": "s2", "terminator": {"kind": "return"}}
+                {"sid": "s1", "kind": "call", "func": "helper", "args": []},
+                {"sid": "s2", "kind": "return"}
             ]},
             {"name": "helper", "kind": "normal", "body": [
-                {"sid": "s1", "call": {"kind": "mutex_lock", "resource": "m1", "target": "s2"}},
-                {"sid": "s2", "call": {"kind": "mutex_unlock", "resource": "m1", "target": "s3"}},
-                {"sid": "s3", "terminator": {"kind": "return"}}
+                {"sid": "s1", "kind": "mutex_lock", "resource": "m1"},
+                {"sid": "s2", "kind": "mutex_unlock", "resource": "m1"},
+                {"sid": "s3", "kind": "return"}
             ]}
         ]"#,
     );
@@ -47,8 +47,8 @@ fn call_to_bodyless_function_is_valid() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "call": {"kind": "call", "func": "compute", "args": [], "target": "s2"}},
-                {"sid": "s2", "terminator": {"kind": "return"}}
+                {"sid": "s1", "kind": "call", "func": "compute", "args": []},
+                {"sid": "s2", "kind": "return"}
             ]},
             {"name": "compute", "kind": "normal", "body": [],
              "effects": {"reads": [], "writes": ["result"]}}
@@ -64,8 +64,8 @@ fn call_to_undefined_function_is_an_error() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "call": {"kind": "call", "func": "missing", "args": [], "target": "s2"}},
-                {"sid": "s2", "terminator": {"kind": "return"}}
+                {"sid": "s1", "kind": "call", "func": "missing", "args": []},
+                {"sid": "s2", "kind": "return"}
             ]}
         ]"#,
     );

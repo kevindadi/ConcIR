@@ -4,50 +4,62 @@ use crate::ast::*;
 use crate::diagnostic::Diagnostic;
 
 /// E4xx: Concurrency pairing — spawn/join and async_call/await pair on handles.
+/// `scope` spawns each listed function in one `thread::scope` and joins them
+/// before continuing.
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let mut spawns: HashMap<String, Vec<OpInfo>> = HashMap::new();
     let mut joins: HashMap<String, Vec<OpInfo>> = HashMap::new();
     let mut async_spawns: HashMap<String, Vec<OpInfo>> = HashMap::new();
     let mut awaits: HashMap<String, Vec<OpInfo>> = HashMap::new();
 
-    program.walk_blocks(|mi, fi, si, _, f, block| {
-        let Some(call) = &block.call else {
-            return;
-        };
+    program.walk_stmts(|mi, fi, si, _, f, stmt| {
+        let path = Program::stmt_path(mi, fi, si);
         let info = OpInfo {
             fn_kind: f.kind.clone(),
             fn_name: f.name.clone(),
-            path: format!("{}.call", Program::block_path(mi, fi, si)),
+            path: path.clone(),
         };
-        match call {
-            Call::Spawn { handle, .. } | Call::SpawnBatch { handle, .. } => {
+        match &stmt.op {
+            Op::Spawn { handle, .. } => {
                 spawns.entry(handle.clone()).or_default().push(info);
             }
-            Call::Join { handle, .. } | Call::JoinAll { handle, .. } => {
+            Op::Scope { funcs } => {
+                if funcs.is_empty() {
+                    diags.push(
+                        Diagnostic::error("E410", "scope funcs is empty".to_string())
+                            .with_path(path.clone())
+                            .with_fix("list at least one function to spawn in the scope"),
+                    );
+                }
+            }
+            Op::Join { handle, .. } => {
                 joins.entry(handle.clone()).or_default().push(info);
             }
-            Call::AsyncCall { handle, .. } => {
+            Op::AsyncCall { handle, .. } => {
                 async_spawns.entry(handle.clone()).or_default().push(info);
             }
-            Call::Await { handle, .. } => {
+            Op::Await { handle, .. } => {
                 awaits.entry(handle.clone()).or_default().push(info);
             }
             _ => {}
         }
     });
 
+    check_select_guards(program, diags);
+
     for (name, infos) in &spawns {
-        if !joins.contains_key(name) {
-            for info in infos {
-                diags.push(
-                    Diagnostic::warning(
-                        "E401",
-                        format!("spawn handle '{name}' has no matching join"),
-                    )
-                    .with_path(&info.path)
-                    .with_fix("add join/join_all on this handle or confirm fire-and-forget"),
-                );
-            }
+        if joins.contains_key(name) {
+            continue;
+        }
+        for info in infos {
+            diags.push(
+                Diagnostic::warning(
+                    "E401",
+                    format!("spawn handle '{name}' has no matching join"),
+                )
+                .with_path(&info.path)
+                .with_fix("add join on this handle, or use a scope statement (implicit join_all)"),
+            );
         }
     }
     for (name, infos) in &joins {
@@ -112,7 +124,9 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                 diags.push(
                     Diagnostic::error(
                         "E406",
-                        format!("async_call handle '{name}' is paired with join; use await instead"),
+                        format!(
+                            "async_call handle '{name}' is paired with join; use await instead"
+                        ),
                     )
                     .with_path(&info.path)
                     .with_fix("change join to await"),
@@ -139,7 +153,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     }
     for infos in awaits.values() {
         for info in infos {
-            if info.fn_kind == "normal" {
+            if info.fn_kind != "async" {
                 diags.push(
                     Diagnostic::error(
                         "E408",
@@ -157,4 +171,54 @@ struct OpInfo {
     fn_kind: String,
     fn_name: String,
     path: String,
+}
+
+/// E409: `condvar_wait` is not a `select!` candidate in sync Rust.
+/// Allowed only in an `async` function on an `Async`-mode Condvar; the
+/// translator maps that guard to `Notify` / `watch` or a timeout race.
+fn check_select_guards(program: &Program, diags: &mut Vec<Diagnostic>) {
+    program.walk_stmts(|mi, fi, si, m, f, stmt| {
+        let Op::Select { branches, .. } = &stmt.op else {
+            return;
+        };
+        let path = Program::stmt_path(mi, fi, si);
+        for branch in branches {
+            let SelectGuard::CondvarWait { condvar, .. } = &branch.guard else {
+                continue;
+            };
+            if !f.is_async() {
+                diags.push(
+                    Diagnostic::error(
+                        "E409",
+                        format!(
+                            "condvar_wait on '{condvar}' cannot be a select guard in non-async \
+                             function '{}'; Condvar::wait is a blocking primitive",
+                            f.name
+                        ),
+                    )
+                    .with_path(path.clone())
+                    .with_fix(
+                        "use condvar_wait as a statement in a wait loop, or make the function \
+                         async and use an Async-mode Condvar (codegen: Notify/watch)",
+                    ),
+                );
+                continue;
+            }
+            if let Some((_, res)) = program.lookup_resource(&m.name, condvar) {
+                if res.mode.as_deref() != Some("Async") {
+                    diags.push(
+                        Diagnostic::error(
+                            "E409",
+                            format!(
+                                "select guard condvar_wait on '{condvar}' requires mode Async \
+                                 (translator maps it to Notify/watch or a timeout race)"
+                            ),
+                        )
+                        .with_path(path.clone())
+                        .with_fix("set the Condvar's mode to Async, or wait outside select"),
+                    );
+                }
+            }
+        }
+    });
 }

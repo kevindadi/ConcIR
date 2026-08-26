@@ -24,8 +24,8 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
             let n = f.body.len();
             let mut successors = vec![Vec::new(); n];
 
-            for (i, block) in f.body.iter().enumerate() {
-                for t in block.successor_sids() {
+            for (i, _) in f.body.iter().enumerate() {
+                for t in f.successors(i) {
                     if let Some(&ti) = sid_to_idx.get(t) {
                         successors[i].push(ti);
                     }
@@ -112,10 +112,10 @@ fn check_return_paths(
 
 /// E603: branch with same true/false targets
 fn check_branch_targets_same(f: &Function, fn_path: &str, diags: &mut Vec<Diagnostic>) {
-    for (si, block) in f.body.iter().enumerate() {
-        if let Some(Terminator::Branch {
+    for (si, stmt) in f.body.iter().enumerate() {
+        if let Op::Branch {
             then, else_target, ..
-        }) = &block.terminator
+        } = &stmt.op
         {
             if then == else_target {
                 diags.push(
@@ -123,10 +123,10 @@ fn check_branch_targets_same(f: &Function, fn_path: &str, diags: &mut Vec<Diagno
                         "E603",
                         format!(
                             "branch at '{}' has identical then/else targets '{then}'",
-                            block.sid
+                            stmt.sid
                         ),
                     )
-                    .with_path(format!("{fn_path}.body[{si}].terminator"))
+                    .with_path(format!("{fn_path}.body[{si}]"))
                     .with_fix("use goto instead, or correct the branch targets"),
                 );
             }
@@ -141,8 +141,8 @@ fn check_switch_exhaustive(
     fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
-    for (si, block) in f.body.iter().enumerate() {
-        if let Some((var, cases, _)) = block.switch() {
+    for (si, stmt) in f.body.iter().enumerate() {
+        if let Some((var, cases, _)) = stmt.switch() {
             if let Some(rt) = rt_map.get(var) {
                 let bt = crate::validate::types::res_type_to_base(rt);
                 if let Some(BaseType::Complex(ComplexBaseType::Enum(ref variants))) = bt {
@@ -163,7 +163,7 @@ fn check_switch_exhaustive(
                                     missing.join(", ")
                                 ),
                             )
-                            .with_path(format!("{fn_path}.body[{si}].terminator.cases"))
+                            .with_path(format!("{fn_path}.body[{si}].cases"))
                             .with_fix("add case branches for the missing variants"),
                         );
                     }
@@ -201,21 +201,7 @@ fn check_infinite_loop(
             continue;
         }
 
-        let has_blocking = scc.iter().any(|&idx| {
-            let block = &f.body[idx];
-            matches!(
-                &block.call,
-                Some(
-                    Call::Await { .. }
-                        | Call::Join { .. }
-                        | Call::JoinAll { .. }
-                        | Call::ChannelRecv { .. }
-                        | Call::SemaphoreAcquire { .. }
-                        | Call::CondvarWait { .. }
-                        | Call::Select { .. }
-                )
-            )
-        });
+        let has_blocking = scc.iter().any(|&idx| f.body[idx].op.is_blocking());
 
         if !has_blocking {
             let first = scc[0];

@@ -89,7 +89,7 @@ fn check_sync_resource(r: &Resource, path: &str, diags: &mut Vec<Diagnostic>) {
         );
     }
 
-    // E001: Channel requires base
+    // E001: Channel requires base (payload type) and capacity (message store)
     if r.res_type == "Channel" && r.base.is_none() {
         diags.push(
             Diagnostic::error(
@@ -97,8 +97,36 @@ fn check_sync_resource(r: &Resource, path: &str, diags: &mut Vec<Diagnostic>) {
                 format!("Channel resource '{}' is missing 'base' field", r.name),
             )
             .with_path(path.to_string())
-            .with_fix("add \"base\": \"<type>\" to specify the channel data type"),
+            .with_fix("add \"base\": \"<type>\" to specify the channel payload type"),
         );
+    }
+    if r.res_type == "Channel" {
+        match r.capacity {
+            None => {
+                diags.push(
+                    Diagnostic::error(
+                        "E001",
+                        format!("Channel resource '{}' is missing 'capacity' field", r.name),
+                    )
+                    .with_path(path.to_string())
+                    .with_fix(
+                        "add \"capacity\": <n> (n ≥ 1 bounded buffer, 0 rendezvous); this is \
+                         the in-flight message store",
+                    ),
+                );
+            }
+            Some(c) if c < 0 => {
+                diags.push(
+                    Diagnostic::error(
+                        "E001",
+                        format!("Channel resource '{}' has negative capacity {c}", r.name),
+                    )
+                    .with_path(format!("{path}.capacity"))
+                    .with_fix("use capacity ≥ 0 (0 = rendezvous, n ≥ 1 = n payload slots)"),
+                );
+            }
+            _ => {}
+        }
     }
 }
 
@@ -198,15 +226,28 @@ fn check_functions(program: &Program, diags: &mut Vec<Diagnostic>) {
         for (fi, f) in m.functions.iter().enumerate() {
             let fn_path = Program::fn_path(mi, fi);
 
-            // E010: function kind must be normal/async/closure
-            if !["normal", "async", "closure"].contains(&f.kind.as_str()) {
+            // E010: function kind must be normal/async; form function/closure
+            if !["normal", "async"].contains(&f.kind.as_str()) {
                 diags.push(
                     Diagnostic::error(
                         "E010",
                         format!("function '{}' has invalid kind '{}'", f.name, f.kind),
                     )
                     .with_path(format!("{fn_path}.kind"))
-                    .with_fix("kind must be \"normal\", \"async\", or \"closure\""),
+                    .with_fix(
+                        "kind must be \"normal\" or \"async\" (structured fork-join is a \
+                         scope statement, not a function kind)",
+                    ),
+                );
+            }
+            if f.form != "function" && f.form != "closure" {
+                diags.push(
+                    Diagnostic::error(
+                        "E010",
+                        format!("function '{}' has invalid form '{}'", f.name, f.form),
+                    )
+                    .with_path(format!("{fn_path}.form"))
+                    .with_fix("form must be \"function\" or \"closure\""),
                 );
             }
 

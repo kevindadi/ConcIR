@@ -1,6 +1,6 @@
 {
   "program": "producer_consumer",
-  "version": "3.1.0",
+  "version": "3.4.0",
   "modules": [
     {
       "name": "main",
@@ -54,171 +54,98 @@
           "body": [
             {
               "sid": "s1",
-              "call": {
-                "kind": "spawn",
-                "func": "producer",
-                "handle": "h_producer",
-                "target": "s2"
-              }
+              "kind": "scope",
+              "funcs": ["producer", "consumer"]
             },
             {
               "sid": "s2",
-              "call": {
-                "kind": "spawn",
-                "func": "consumer",
-                "handle": "h_consumer",
-                "target": "s3"
-              }
-            },
-            {
-              "sid": "s3",
-              "call": {
-                "kind": "join",
-                "handle": "h_producer",
-                "target": "s4"
-              }
-            },
-            {
-              "sid": "s4",
-              "call": {
-                "kind": "join",
-                "handle": "h_consumer",
-                "target": "s5"
-              }
-            },
-            {
-              "sid": "s5",
-              "terminator": {
-                "kind": "return"
-              }
+              "kind": "return"
             }
           ]
         },
         {
           "name": "producer",
-          "kind": "closure",
+          "kind": "normal",
+          "form": "closure",
           "body": [
             {
               "sid": "s1",
-              "call": {
-                "kind": "mutex_lock",
-                "resource": "mtx",
-                "target": "s2"
-              }
+              "kind": "mutex_lock",
+              "resource": "mtx"
             },
             {
               "sid": "s2",
-              "statements": [
-                {
-                  "kind": "write_shared",
-                  "resource": "count",
-                  "expr": "count + 1"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s3"
-              }
+              "kind": "write_shared",
+              "resource": "count",
+              "expr": "count + 1"
             },
             {
               "sid": "s3",
-              "call": {
-                "kind": "condvar_notify_all",
-                "condvar": "cv",
-                "target": "s4"
-              }
+              "kind": "condvar_notify_all",
+              "condvar": "cv"
             },
             {
               "sid": "s4",
-              "call": {
-                "kind": "mutex_unlock",
-                "resource": "mtx",
-                "target": "s5"
-              }
+              "kind": "mutex_unlock",
+              "resource": "mtx"
             },
             {
               "sid": "s5",
-              "terminator": {
-                "kind": "return"
-              }
+              "kind": "return"
             }
           ]
         },
         {
           "name": "consumer",
-          "kind": "closure",
+          "kind": "normal",
+          "form": "closure",
           "body": [
             {
               "sid": "s1",
-              "call": {
-                "kind": "mutex_lock",
-                "resource": "mtx",
-                "target": "s2"
-              }
+              "kind": "mutex_lock",
+              "resource": "mtx"
             },
             {
               "sid": "s2",
-              "statements": [
-                {
-                  "kind": "read_shared",
-                  "resource": "count"
-                }
-              ],
-              "terminator": {
-                "kind": "branch",
-                "cond": "count > 0",
-                "then": "s5",
-                "else": "s3"
-              }
+              "kind": "read_shared",
+              "resource": "count"
             },
             {
               "sid": "s3",
-              "call": {
-                "kind": "condvar_wait",
-                "condvar": "cv",
-                "lock": "mtx",
-                "target": "s4"
-              }
+              "kind": "branch",
+              "cond": "count > 0",
+              "then": "s7",
+              "else": "s4"
             },
             {
               "sid": "s4",
-              "statements": [
-                {
-                  "kind": "nop"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s2"
-              }
+              "kind": "condvar_wait",
+              "condvar": "cv",
+              "lock": "mtx"
             },
             {
               "sid": "s5",
-              "statements": [
-                {
-                  "kind": "write_shared",
-                  "resource": "count",
-                  "expr": "count - 1"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s6"
-              }
+              "kind": "nop"
             },
             {
               "sid": "s6",
-              "call": {
-                "kind": "mutex_unlock",
-                "resource": "mtx",
-                "target": "s7"
-              }
+              "kind": "goto",
+              "target": "s2"
             },
             {
               "sid": "s7",
-              "terminator": {
-                "kind": "return"
-              }
+              "kind": "write_shared",
+              "resource": "count",
+              "expr": "count - 1"
+            },
+            {
+              "sid": "s8",
+              "kind": "mutex_unlock",
+              "resource": "mtx"
+            },
+            {
+              "sid": "s9",
+              "kind": "return"
             }
           ]
         }

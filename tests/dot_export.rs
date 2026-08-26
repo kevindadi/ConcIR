@@ -15,62 +15,47 @@ fn fn_named<'a>(prog: &'a Program, name: &str) -> &'a Function {
         .unwrap()
 }
 
-fn call_block(sid: &str, call: Call) -> Block {
-    Block {
+fn stmt(sid: &str, op: Op) -> Stmt {
+    Stmt {
         sid: sid.into(),
-        statements: vec![],
-        call: Some(call),
-        terminator: None,
+        op,
     }
 }
 
-fn data_block(sid: &str, statements: Vec<Stmt>, terminator: Terminator) -> Block {
-    Block {
-        sid: sid.into(),
-        statements,
-        call: None,
-        terminator: Some(terminator),
-    }
-}
-
-fn ret_block(sid: &str) -> Block {
-    data_block(sid, vec![], Terminator::Return { value: None })
+fn ret(sid: &str) -> Stmt {
+    stmt(sid, Op::Return { value: None })
 }
 
 fn make_linear_function() -> Function {
     Function {
         name: "linear".into(),
         kind: "normal".into(),
+        form: "function".into(),
         effects: None,
         params: vec![],
         returns: None,
         locals: vec![],
         body: vec![
-            call_block(
+            stmt(
                 "s1",
-                Call::MutexLock {
+                Op::MutexLock {
                     resource: "mtx".into(),
-                    target: "s2".into(),
                 },
             ),
-            data_block(
+            stmt(
                 "s2",
-                vec![Stmt::WriteShared {
+                Op::WriteShared {
                     resource: "x".into(),
                     expr: "42".into(),
-                }],
-                Terminator::Goto {
-                    target: "s3".into(),
                 },
             ),
-            call_block(
+            stmt(
                 "s3",
-                Call::MutexUnlock {
+                Op::MutexUnlock {
                     resource: "mtx".into(),
-                    target: "s4".into(),
                 },
             ),
-            ret_block("s4"),
+            ret("s4"),
         ],
     }
 }
@@ -79,44 +64,41 @@ fn make_branch_function() -> Function {
     Function {
         name: "branching".into(),
         kind: "normal".into(),
+        form: "function".into(),
         effects: None,
         params: vec![],
         returns: None,
         locals: vec![],
         body: vec![
-            data_block(
+            stmt(
                 "s1",
-                vec![Stmt::ReadShared {
-                    resource: "flag".into(),
-                    dst: None,
-                }],
-                Terminator::Branch {
+                Op::Branch {
                     cond: "flag == true".into(),
                     then: "s2".into(),
                     else_target: "s3".into(),
                 },
             ),
-            data_block(
+            stmt(
                 "s2",
-                vec![Stmt::WriteShared {
+                Op::WriteShared {
                     resource: "x".into(),
                     expr: "1".into(),
-                }],
-                Terminator::Goto {
+                },
+            ),
+            stmt(
+                "s5",
+                Op::Goto {
                     target: "s4".into(),
                 },
             ),
-            data_block(
+            stmt(
                 "s3",
-                vec![Stmt::WriteShared {
+                Op::WriteShared {
                     resource: "x".into(),
                     expr: "0".into(),
-                }],
-                Terminator::Goto {
-                    target: "s4".into(),
                 },
             ),
-            ret_block("s4"),
+            ret("s4"),
         ],
     }
 }
@@ -124,35 +106,28 @@ fn make_branch_function() -> Function {
 fn make_loop_function() -> Function {
     Function {
         name: "looping".into(),
-        kind: "closure".into(),
+        kind: "normal".into(),
+        form: "closure".into(),
         effects: None,
         params: vec![],
         returns: None,
         locals: vec![],
         body: vec![
-            data_block(
+            stmt(
                 "s1",
-                vec![Stmt::ReadShared {
-                    resource: "counter".into(),
-                    dst: None,
-                }],
-                Terminator::Branch {
+                Op::Branch {
                     cond: "counter < 10".into(),
                     then: "s2".into(),
                     else_target: "s3".into(),
                 },
             ),
-            data_block(
+            stmt(
                 "s2",
-                vec![Stmt::WriteShared {
-                    resource: "counter".into(),
-                    expr: "counter + 1".into(),
-                }],
-                Terminator::Goto {
+                Op::Goto {
                     target: "s1".into(),
                 },
             ),
-            ret_block("s3"),
+            ret("s3"),
         ],
     }
 }
@@ -224,8 +199,8 @@ fn switch_from_state_machine() {
     let worker = fn_named(&prog, "worker");
     let dot = worker.to_dot();
 
-    // s21 is the switch node (reads state, then switches)
-    assert!(dot.contains("worker_s21") && dot.contains("shape=diamond"));
+    // s3 is the switch node
+    assert!(dot.contains("worker_s3") && dot.contains("shape=diamond"));
     // Case labels
     assert!(dot.contains("label=\"Init\""));
     assert!(dot.contains("label=\"Running\""));
@@ -252,15 +227,15 @@ fn cross_function_spawn_join() {
     let prog = load_example("producer_consumer");
     let dot = prog.to_dot();
 
-    // spawn edges
+    // scope edges (one statement, two callees)
     assert!(dot.contains("main_s1 -> producer_s1"));
-    assert!(dot.contains("label=\"spawn\""));
-    assert!(dot.contains("main_s2 -> consumer_s1"));
+    assert!(dot.contains("label=\"scope\""));
+    assert!(dot.contains("main_s1 -> consumer_s1"));
 
-    // join edges (target_ret → join_node)
-    assert!(dot.contains("producer_ret -> main_s3"));
+    // implicit join_all back to the scope statement
+    assert!(dot.contains("producer_ret -> main_s1"));
     assert!(dot.contains("label=\"join\""));
-    assert!(dot.contains("consumer_ret -> main_s4"));
+    assert!(dot.contains("consumer_ret -> main_s1"));
 }
 
 #[test]
@@ -271,7 +246,7 @@ fn cross_function_call() {
     // worker s11 calls validate, but validate has no function body
     // so no cross-function edge emitted (target not in functions list)
     // The call node should still be rendered with rounded style
-    assert!(dot.contains("worker_s11"));
+    assert!(dot.contains("worker_s2"));
     assert!(dot.contains("style=\"filled,rounded\""));
 }
 
@@ -351,7 +326,7 @@ fn no_cross_function_when_disabled() {
     };
     let dot = prog.to_dot_with_options(&opts);
 
-    assert!(!dot.contains("label=\"spawn\""));
+    assert!(!dot.contains("label=\"scope\""));
     assert!(!dot.contains("label=\"join\""));
 }
 
@@ -362,10 +337,9 @@ fn spawn_join_node_shapes() {
     let prog = load_example("producer_consumer");
     let dot = prog.to_dot();
 
-    // Spawn should be doubleoctagon
+    // Scope is doubleoctagon; implicit join, return is ellipse
     assert!(dot.contains("main_s1") && dot.contains("shape=doubleoctagon"));
-    // Join should be doubleoctagon with dashed
-    assert!(dot.contains("main_s3") && dot.contains("shape=doubleoctagon"));
+    assert!(dot.contains("main_s2") && dot.contains("shape=ellipse"));
 }
 
 #[test]
@@ -374,7 +348,7 @@ fn condvar_node_styles() {
     let dot = prog.to_dot();
 
     // wait → purple, penwidth=2
-    assert!(dot.contains("consumer_s3") && dot.contains("color=purple"));
+    assert!(dot.contains("consumer_s4") && dot.contains("color=purple"));
     // notify_all → purple, dashed
     assert!(dot.contains("producer_s3") && dot.contains("color=purple"));
 }

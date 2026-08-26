@@ -1,6 +1,6 @@
 {
   "program": "complex_rwlock",
-  "version": "3.1.0",
+  "version": "3.4.0",
   "modules": [
     {
       "name": "main",
@@ -80,217 +80,125 @@
           "body": [
             {
               "sid": "s1",
-              "call": {
-                "kind": "spawn",
-                "func": "writer",
-                "handle": "h_writer",
-                "target": "s2"
-              }
+              "kind": "scope",
+              "funcs": ["writer", "reader"]
             },
             {
               "sid": "s2",
-              "call": {
-                "kind": "spawn",
-                "func": "reader",
-                "handle": "h_reader",
-                "target": "s3"
-              }
-            },
-            {
-              "sid": "s3",
-              "call": {
-                "kind": "join",
-                "handle": "h_writer",
-                "target": "s4"
-              }
-            },
-            {
-              "sid": "s4",
-              "call": {
-                "kind": "join",
-                "handle": "h_reader",
-                "target": "s5"
-              }
-            },
-            {
-              "sid": "s5",
-              "terminator": {
-                "kind": "return"
-              }
+              "kind": "return"
             }
           ]
         },
         {
           "name": "writer",
-          "kind": "closure",
+          "kind": "normal",
+          "form": "closure",
           "body": [
             {
-              "sid": "s10",
-              "call": {
-                "kind": "call",
-                "func": "prepare_data",
-                "args": [],
-                "target": "s11"
-              }
+              "sid": "s1",
+              "kind": "call",
+              "func": "prepare_data",
+              "args": []
             },
             {
-              "sid": "s11",
-              "call": {
-                "kind": "rwlock_write",
-                "resource": "rw",
-                "target": "s12"
-              }
+              "sid": "s2",
+              "kind": "rwlock_write",
+              "resource": "rw"
             },
             {
-              "sid": "s12",
-              "statements": [
-                {
-                  "kind": "write_shared",
-                  "resource": "shared_map",
-                  "expr": "{100, true}"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s13"
-              }
+              "sid": "s3",
+              "kind": "write_shared",
+              "resource": "shared_map",
+              "expr": "{100, true}"
             },
             {
-              "sid": "s13",
-              "call": {
-                "kind": "rwlock_unlock",
-                "resource": "rw",
-                "target": "s14"
-              }
+              "sid": "s4",
+              "kind": "rwlock_unlock",
+              "resource": "rw"
             },
             {
-              "sid": "s14",
-              "call": {
-                "kind": "mutex_lock",
-                "resource": "aux_mtx",
-                "target": "s15"
-              }
+              "sid": "s5",
+              "kind": "mutex_lock",
+              "resource": "aux_mtx"
             },
             {
-              "sid": "s15",
-              "call": {
-                "kind": "condvar_notify_all",
-                "condvar": "cv",
-                "target": "s16"
-              }
+              "sid": "s6",
+              "kind": "condvar_notify_all",
+              "condvar": "cv"
             },
             {
-              "sid": "s16",
-              "call": {
-                "kind": "mutex_unlock",
-                "resource": "aux_mtx",
-                "target": "s17"
-              }
+              "sid": "s7",
+              "kind": "mutex_unlock",
+              "resource": "aux_mtx"
             },
             {
-              "sid": "s17",
-              "terminator": {
-                "kind": "return"
-              }
+              "sid": "s8",
+              "kind": "return"
             }
           ]
         },
         {
           "name": "reader",
-          "kind": "closure",
+          "kind": "normal",
+          "form": "closure",
           "body": [
             {
-              "sid": "s20",
-              "call": {
-                "kind": "mutex_lock",
-                "resource": "aux_mtx",
-                "target": "s21"
-              }
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "aux_mtx"
             },
             {
-              "sid": "s21",
-              "call": {
-                "kind": "condvar_wait",
-                "condvar": "cv",
-                "lock": "aux_mtx",
-                "target": "s22"
-              }
+              "sid": "s2",
+              "kind": "condvar_wait",
+              "condvar": "cv",
+              "lock": "aux_mtx"
             },
             {
-              "sid": "s22",
-              "call": {
-                "kind": "mutex_unlock",
-                "resource": "aux_mtx",
-                "target": "s23"
-              }
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "aux_mtx"
             },
             {
-              "sid": "s23",
-              "call": {
-                "kind": "rwlock_read",
-                "resource": "rw",
-                "target": "s24"
-              }
+              "sid": "s4",
+              "kind": "rwlock_read",
+              "resource": "rw"
             },
             {
-              "sid": "s24",
-              "statements": [
-                {
-                  "kind": "read_shared",
-                  "resource": "shared_map"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s25"
-              }
+              "sid": "s5",
+              "kind": "read_shared",
+              "resource": "shared_map"
             },
             {
-              "sid": "s25",
-              "call": {
-                "kind": "call",
-                "func": "process_data",
-                "args": [],
-                "target": "s26"
-              }
+              "sid": "s6",
+              "kind": "call",
+              "func": "process_data",
+              "args": []
             },
             {
-              "sid": "s26",
-              "call": {
-                "kind": "rwlock_unlock",
-                "resource": "rw",
-                "target": "s27"
-              }
+              "sid": "s7",
+              "kind": "rwlock_unlock",
+              "resource": "rw"
             },
             {
-              "sid": "s27",
-              "call": {
-                "kind": "atomic_load",
-                "resource": "error_flag",
-                "dst": "_",
-                "target": "s30"
-              }
+              "sid": "s8",
+              "kind": "atomic_load",
+              "resource": "error_flag",
+              "dst": "_"
             },
             {
-              "sid": "s30",
-              "terminator": {
-                "kind": "branch",
-                "cond": "error_flag == true",
-                "then": "s28",
-                "else": "s29"
-              }
+              "sid": "s9",
+              "kind": "branch",
+              "cond": "error_flag == true",
+              "then": "s10",
+              "else": "s11"
             },
             {
-              "sid": "s28",
-              "terminator": {
-                "kind": "return"
-              }
+              "sid": "s10",
+              "kind": "return"
             },
             {
-              "sid": "s29",
-              "terminator": {
-                "kind": "return"
-              }
+              "sid": "s11",
+              "kind": "return"
             }
           ]
         },

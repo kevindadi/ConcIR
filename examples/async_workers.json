@@ -1,6 +1,6 @@
 {
   "program": "async_workers",
-  "version": "3.1.0",
+  "version": "3.4.0",
   "modules": [
     {
       "name": "main",
@@ -41,7 +41,8 @@
           "kind": "sync",
           "type": "Channel",
           "mode": "Async",
-          "base": "Int"
+          "base": "Int",
+          "capacity": 8
         },
         {
           "name": "result",
@@ -71,43 +72,29 @@
           "body": [
             {
               "sid": "s1",
-              "call": {
-                "kind": "async_call",
-                "func": "worker",
-                "handle": "h_worker",
-                "target": "s2"
-              }
+              "kind": "async_call",
+              "func": "worker",
+              "handle": "h_worker"
             },
             {
               "sid": "s2",
-              "call": {
-                "kind": "async_call",
-                "func": "collector",
-                "handle": "h_collector",
-                "target": "s3"
-              }
+              "kind": "async_call",
+              "func": "collector",
+              "handle": "h_collector"
             },
             {
               "sid": "s3",
-              "call": {
-                "kind": "await",
-                "handle": "h_worker",
-                "target": "s4"
-              }
+              "kind": "await",
+              "handle": "h_worker"
             },
             {
               "sid": "s4",
-              "call": {
-                "kind": "await",
-                "handle": "h_collector",
-                "target": "s5"
-              }
+              "kind": "await",
+              "handle": "h_collector"
             },
             {
               "sid": "s5",
-              "terminator": {
-                "kind": "return"
-              }
+              "kind": "return"
             }
           ]
         },
@@ -116,108 +103,74 @@
           "kind": "async",
           "body": [
             {
-              "sid": "s10",
-              "call": {
-                "kind": "semaphore_acquire",
-                "resource": "sem",
-                "target": "s11"
-              }
+              "sid": "s1",
+              "kind": "semaphore_acquire",
+              "resource": "sem"
             },
             {
-              "sid": "s11",
-              "call": {
-                "kind": "atomic_store",
-                "resource": "task_count",
-                "value": "task_count + 1",
-                "target": "s12"
-              }
+              "sid": "s2",
+              "kind": "atomic_store",
+              "resource": "task_count",
+              "value": "task_count + 1"
             },
             {
-              "sid": "s12",
-              "call": {
-                "kind": "channel_send",
-                "channel": "tx",
-                "value": "100",
-                "target": "s13"
-              }
+              "sid": "s3",
+              "kind": "channel_send",
+              "channel": "tx",
+              "value": "100"
             },
             {
-              "sid": "s13",
-              "call": {
-                "kind": "semaphore_release",
-                "resource": "sem",
-                "target": "s14"
-              }
+              "sid": "s4",
+              "kind": "semaphore_release",
+              "resource": "sem"
             },
             {
-              "sid": "s14",
-              "terminator": {
-                "kind": "return"
-              }
+              "sid": "s5",
+              "kind": "return"
             }
           ]
         },
         {
           "name": "collector",
           "kind": "async",
+          "locals": [
+            {
+              "name": "msg",
+              "type": "Int",
+              "modeled": true
+            }
+          ],
           "body": [
             {
-              "sid": "s20",
-              "call": {
-                "kind": "channel_recv",
-                "channel": "tx",
-                "dst": "_",
-                "target": "s21"
-              }
+              "sid": "s1",
+              "kind": "channel_recv",
+              "channel": "tx",
+              "dst": "msg"
             },
             {
-              "sid": "s21",
-              "call": {
-                "kind": "mutex_lock",
-                "resource": "async_mtx",
-                "target": "s22"
-              }
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "async_mtx"
             },
             {
-              "sid": "s22",
-              "statements": [
-                {
-                  "kind": "read_shared",
-                  "resource": "result"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s23"
-              }
+              "sid": "s3",
+              "kind": "read_shared",
+              "resource": "result"
             },
             {
-              "sid": "s23",
-              "statements": [
-                {
-                  "kind": "write_shared",
-                  "resource": "result",
-                  "expr": "result + 100"
-                }
-              ],
-              "terminator": {
-                "kind": "goto",
-                "target": "s24"
-              }
+              "sid": "s4",
+              "kind": "write_shared",
+              "resource": "result",
+              "expr": "result + 100"
             },
             {
-              "sid": "s24",
-              "call": {
-                "kind": "mutex_unlock",
-                "resource": "async_mtx",
-                "target": "s25"
-              }
+              "sid": "s5",
+              "kind": "mutex_unlock",
+              "resource": "async_mtx"
             },
             {
-              "sid": "s25",
-              "terminator": {
-                "kind": "return"
-              }
+              "sid": "s6",
+              "kind": "return"
             }
           ]
         }

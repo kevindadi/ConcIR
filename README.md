@@ -7,8 +7,10 @@ The downstream `cir2cvn` translator builds a CVN (Concurrency Verification Net)
 from a validated program for state-space exploration.
 
 ConcIR is language-neutral. A program is a set of modules; names are ConcIR
-FQNs (`module::entity`), not backend crate paths. Function bodies follow
-compiler IR: basic blocks with statements, then a call or a terminator.
+FQNs (`module::entity`), not backend crate paths. Function bodies are a
+flattened CFG: a list of statements. Non-control ops fall through to the
+next statement; `goto` / `branch` / `switch` / `return` / `select` are
+statement kinds that transfer control.
 
 ## Quick Start
 
@@ -33,7 +35,8 @@ items, and the process exits with exit code 1.
 
 | Document                         | Contents                                                        |
 | -------------------------------- | --------------------------------------------------------------- |
-| [`doc/syntax.md`](doc/syntax.md) | Grammar: FQN rules, modules, basic blocks, statements, calls, terminators, validation pipeline |
+| [`doc/syntax/`](doc/syntax/README.md) | Prose grammar, split by top-level construct |
+| [`doc/ebnf.md`](doc/ebnf.md)     | ISO EBNF abstract syntax                                             |
 | [`doc/error_codes.md`](doc/error_codes.md) | Validation error reference (E0xx–E9xx) and diagnostic output format |
 | [`doc/todo.md`](doc/todo.md)     | Roadmap: modeling scope, call semantics, modular generation     |
 
@@ -43,7 +46,7 @@ items, and the process exits with exit code 1.
 src/
   main.rs              Entry: read JSON → deserialize → validate → emit report
   lib.rs               Module declarations
-  ast.rs               IR types (Program, Module, Block, Stmt, Call, Terminator)
+  ast.rs               IR types (Program, Module, Stmt, Op)
   fqn.rs               Identifier and FQN rules
   diagnostic.rs        Diagnostic types (Diagnostic, ValidationReport)
   validate/
@@ -53,14 +56,15 @@ src/
     types.rs           E2xx  Type checking
     compat.rs          E3xx  Resource–operation compatibility
     protection.rs      E7xx  Protection mapping
-    concurrency.rs     E4xx  Handle pairing (spawn/join, async_call/await)
+    concurrency.rs     E4xx  Handle pairing, scope statement
     locks.rs           E5xx  Lock safety (includes E309)
     control.rs         E6xx  Control flow
     dataflow.rs        E9xx  Typed params / returns / call arity
   export/
-    dot.rs             Graphviz DOT from blocks / calls / terminators
+    dot.rs             Graphviz DOT from statements / calls / control edges
 doc/
-  syntax.md            ConcIR grammar reference
+  syntax/              ConcIR grammar (one page per top-level construct)
+  ebnf.md              ISO EBNF abstract syntax
   error_codes.md       Error code reference and diagnostic format
   todo.md              Roadmap
 examples/
