@@ -90,7 +90,7 @@ Pairing is by **handle**, not by function name.
 | E407 | JoinInAsyncContext       | warning  | join in an async function may block the runtime                                                                                                                                              |
 | E408 | AwaitInSyncContext       |  error   | await used in a non-async function                                                                                                                                                           |
 | E409 | CondvarWaitNotSelectable |  error   | `condvar_wait` as a `select` guard in a non-async function, or on a Sync-mode Condvar. Sync `Condvar::wait` cannot enter `select!`; async guards are codegen'd as Notify/watch/timeout race. |
-| E410 | ScopeCountInvalid        |  error   | `scope` `count` is less than 1                                                                                                                                                               |
+| E410 | ScopeEmptyFuncs          |  error   | `scope` `funcs` is empty                                                                                                                                                                     |
 
 ## E5xx — Lock safety
 

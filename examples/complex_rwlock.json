@@ -80,28 +80,11 @@
           "body": [
             {
               "sid": "s1",
-              "kind": "spawn",
-              "func": "writer",
-              "handle": "h_writer"
+              "kind": "scope",
+              "funcs": ["writer", "reader"]
             },
             {
               "sid": "s2",
-              "kind": "spawn",
-              "func": "reader",
-              "handle": "h_reader"
-            },
-            {
-              "sid": "s3",
-              "kind": "join",
-              "handle": "h_writer"
-            },
-            {
-              "sid": "s4",
-              "kind": "join",
-              "handle": "h_reader"
-            },
-            {
-              "sid": "s5",
               "kind": "return"
             }
           ]

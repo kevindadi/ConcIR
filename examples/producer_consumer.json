@@ -54,28 +54,11 @@
           "body": [
             {
               "sid": "s1",
-              "kind": "spawn",
-              "func": "producer",
-              "handle": "h_producer"
+              "kind": "scope",
+              "funcs": ["producer", "consumer"]
             },
             {
               "sid": "s2",
-              "kind": "spawn",
-              "func": "consumer",
-              "handle": "h_consumer"
-            },
-            {
-              "sid": "s3",
-              "kind": "join",
-              "handle": "h_producer"
-            },
-            {
-              "sid": "s4",
-              "kind": "join",
-              "handle": "h_consumer"
-            },
-            {
-              "sid": "s5",
               "kind": "return"
             }
           ]

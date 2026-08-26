@@ -32,16 +32,18 @@ fn scope_statement_joins_implicitly() {
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "kind": "scope", "func": "worker", "count": 4},
+                {"sid": "s1", "kind": "scope", "funcs": ["producer", "consumer"]},
                 {"sid": "s2", "kind": "return"}
             ]},
-            {"name": "worker", "kind": "normal", "form": "closure",
+            {"name": "producer", "kind": "normal", "form": "closure",
+             "body": [{"sid": "s1", "kind": "return"}]},
+            {"name": "consumer", "kind": "normal", "form": "closure",
              "body": [{"sid": "s1", "kind": "return"}]}
         ]"#,
     );
     assert!(
         report.valid,
-        "scope statement is spawn N + implicit join_all. got: {:?}",
+        "scope statement is spawn listed funcs + implicit join_all. got: {:?}",
         report.diagnostics
     );
     assert!(
@@ -77,16 +79,14 @@ fn spawn_without_join_is_e401_warning() {
 }
 
 #[test]
-fn scope_count_zero_is_e410() {
+fn scope_empty_funcs_is_e410() {
     let report = wrap(
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "kind": "scope", "func": "worker", "count": 0},
+                {"sid": "s1", "kind": "scope", "funcs": []},
                 {"sid": "s2", "kind": "return"}
-            ]},
-            {"name": "worker", "kind": "normal",
-             "body": [{"sid": "s1", "kind": "return"}]}
+            ]}
         ]"#,
     );
     assert!(!report.valid);

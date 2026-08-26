@@ -61,8 +61,7 @@
             {
               "sid": "s1",
               "kind": "scope",
-              "func": "worker",
-              "count": 1
+              "funcs": ["worker"]
             },
             {
               "sid": "s2",

@@ -13,7 +13,7 @@ Status legend: `[x]` done · `[ ]` planned · `[~]` in progress
 - `[x]` `assign_local` for writable intermediate values
 - `[x]` Bounded `Int` value ranges — `{"Int": [lo, hi]}`
 - `[x]` Channel `capacity` required on the resource (message store; `0` = rendezvous, `n ≥ 1` = bounded buffer of `n` payload slots)
-- `[x]` Structured concurrency: `scope` is a statement (`func` + `count`); implicit `join_all`; function `kind` is only `normal` / `async`
+- `[x]` Structured concurrency: `scope` is a statement (`funcs` array); implicit `join_all`; repeated copies use `branch`; function `kind` is only `normal` / `async`
 - `[ ]` Channel capacity in the CVN — bounded-buffer semantics from the `capacity` field
 - `[ ]` Dynamic thread identities / thread-local state — multiple spawns of the same function share control places (multi-token abstraction)
 

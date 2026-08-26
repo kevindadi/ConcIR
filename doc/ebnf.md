@@ -256,8 +256,8 @@ Call       = "call", Name, { Expr }, [ Name ] ;
 
 Spawn      = "spawn", Name, { Expr }, Ident ;
                (* func, args, handle *)
-Scope      = "scope", Name, Integer, { Expr } ;
-               (* func, count ≥ 1, optional args; implicit join_all (E410 if count < 1) *)
+Scope      = "scope", { Name }- ;
+               (* funcs (one or more); implicit join_all (E410 if empty) *)
 Join       = "join", Ident ;
 
 AsyncCall  = "async_call", Name, { Expr }, Ident ;

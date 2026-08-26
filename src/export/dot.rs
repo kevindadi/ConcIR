@@ -327,7 +327,7 @@ fn format_op_compact(op: &Op) -> String {
         Op::SemaphoreRelease { resource, .. } => format!("semaphore_release({resource})"),
         Op::Func { func, .. } => format!("call({func})"),
         Op::Spawn { func, .. } => format!("spawn({func})"),
-        Op::Scope { func, count, .. } => format!("scope({func}×{count})"),
+        Op::Scope { funcs } => format!("scope({})", funcs.join(", ")),
         Op::Join { handle } => format!("join({handle})"),
         Op::AsyncCall { func, .. } => format!("async_call({func})"),
         Op::Await { handle } => format!("await({handle})"),
@@ -454,14 +454,24 @@ fn write_cross_function_edges(out: &mut String, functions: &[&Function]) {
                 Op::Spawn { func: target, .. } => {
                     write_callee_edge(out, &src, target, &first_sids, "spawn", "dashed", "blue");
                 }
-                Op::Scope { func: target, .. } => {
-                    write_callee_edge(out, &src, target, &first_sids, "scope", "dashed", "blue");
-                    let name = target.rsplit("::").next().unwrap_or(target);
-                    writeln!(
-                        out,
-                        "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join\"];",
-                    )
-                    .unwrap();
+                Op::Scope { funcs } => {
+                    for target in funcs {
+                        write_callee_edge(
+                            out,
+                            &src,
+                            target,
+                            &first_sids,
+                            "scope",
+                            "dashed",
+                            "blue",
+                        );
+                        let name = target.rsplit("::").next().unwrap_or(target);
+                        writeln!(
+                            out,
+                            "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join\"];",
+                        )
+                        .unwrap();
+                    }
                 }
                 Op::AsyncCall { func: target, .. } => {
                     write_callee_edge(

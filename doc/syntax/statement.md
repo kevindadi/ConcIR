@@ -91,26 +91,26 @@ See [Resource](resource.md) and [`select` guards](#select).
 
 ## Threads and calls
 
-Unstructured `spawn` / `join` pair on **handles**, not function names.
-Homogeneous scoped threads are a `scope` statement: spawn `count` copies
-of `func` (`thread::scope`) and **implicitly** `join_all` before the next
-statement. `func` uses the [FQN rules](naming.md).
+Unstructured `spawn` / `join` pair on **handles**. A `scope` statement
+lists the functions to run together in one `thread::scope` and
+**implicitly** `join_all` before the next statement. `funcs` uses the
+[FQN rules](naming.md). Repeating one function N times is a `branch`
+loop of `spawn`, not a count on `scope`.
 
 | `kind`  | Key fields                     | Notes |
 | ------- | ------------------------------ | ----- |
 | `call`  | `func`, `args`, optional `dst` | Sequential call |
 | `spawn` | `func`, `args`, `handle`       | Unstructured fork; unpaired handle is E401 |
-| `scope` | `func`, `count`, optional `args` | Spawn `count` (≥ 1) copies and join them all (E410 if `count < 1`) |
+| `scope` | `funcs`                        | Spawn each listed function and join them all (E410 if `funcs` is empty) |
 | `join`  | `handle`                       | Join one unstructured spawn |
 | `async_call` | `func`, `args`, `handle`  | |
 | `await` | `handle`                       | |
 
 ```json
-{ "sid": "s1", "kind": "scope", "func": "worker", "count": 4 }
+{ "sid": "s1", "kind": "scope", "funcs": ["producer", "consumer"] }
 ```
 
-Codegen is `thread::scope` + a loop of `spawn` + implicit `handlers.join_all()`.
-Heterogeneous concurrent workers (producer + consumer) stay `spawn` + `join`.
+Codegen is `thread::scope` + one `spawn` per name + implicit `handlers.join_all()`.
 
 ## Control
 

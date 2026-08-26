@@ -7,7 +7,7 @@
   "params": [],
   "locals": [],
   "body": [
-    { "sid": "s1", "kind": "scope", "func": "worker", "count": 4 },
+    { "sid": "s1", "kind": "scope", "funcs": ["producer", "consumer"] },
     { "sid": "s2", "kind": "return" }
   ]
 }
@@ -28,8 +28,9 @@ element. Optionally attach `effects: { "reads": [...], "writes": [...] }`.
 
 The `body` is a list of [statements](statement.md) (CFG nodes; fallthrough
 plus explicit `goto` / `branch` / `switch` / `return` / `select`).
-Homogeneous scoped threads are a [`scope`](statement.md#threads-and-calls)
-statement (`func` + `count`, implicit `join_all`), not a function `kind`.
+A [`scope`](statement.md#threads-and-calls) statement lists the functions to
+spawn together (`funcs`); they join before the next statement. Repeating
+the same function N times is a `branch` loop, not a count field.
 
 ## Typed data flow (params / returns / locals)
 

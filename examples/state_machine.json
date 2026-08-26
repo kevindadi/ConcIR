@@ -61,28 +61,11 @@
           "body": [
             {
               "sid": "s1",
-              "kind": "spawn",
-              "func": "controller",
-              "handle": "h_controller"
+              "kind": "scope",
+              "funcs": ["controller", "worker"]
             },
             {
               "sid": "s2",
-              "kind": "spawn",
-              "func": "worker",
-              "handle": "h_worker"
-            },
-            {
-              "sid": "s3",
-              "kind": "join",
-              "handle": "h_controller"
-            },
-            {
-              "sid": "s4",
-              "kind": "join",
-              "handle": "h_worker"
-            },
-            {
-              "sid": "s5",
               "kind": "return"
             }
           ]

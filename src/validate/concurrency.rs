@@ -4,7 +4,8 @@ use crate::ast::*;
 use crate::diagnostic::Diagnostic;
 
 /// E4xx: Concurrency pairing — spawn/join and async_call/await pair on handles.
-/// `scope` spawns `count` copies of `func` and joins them before continuing.
+/// `scope` spawns each listed function in one `thread::scope` and joins them
+/// before continuing.
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let mut spawns: HashMap<String, Vec<OpInfo>> = HashMap::new();
     let mut joins: HashMap<String, Vec<OpInfo>> = HashMap::new();
@@ -22,15 +23,12 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
             Op::Spawn { handle, .. } => {
                 spawns.entry(handle.clone()).or_default().push(info);
             }
-            Op::Scope { count, .. } => {
-                if *count < 1 {
+            Op::Scope { funcs } => {
+                if funcs.is_empty() {
                     diags.push(
-                        Diagnostic::error(
-                            "E410",
-                            format!("scope count is {count}, expected a positive integer"),
-                        )
-                        .with_path(path.clone())
-                        .with_fix("set count to the number of scoped threads to spawn"),
+                        Diagnostic::error("E410", "scope funcs is empty".to_string())
+                            .with_path(path.clone())
+                            .with_fix("list at least one function to spawn in the scope"),
                     );
                 }
             }

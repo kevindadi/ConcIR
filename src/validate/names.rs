@@ -240,31 +240,31 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
 
 fn check_function_references(program: &Program, diags: &mut Vec<Diagnostic>) {
     program.walk_stmts(|mi, fi, si, m, _, stmt| {
-        let Some(func) = stmt.op.callee_func() else {
-            return;
-        };
-        if program.lookup_function(&m.name, func).is_none() {
-            diags.push(
-                Diagnostic::error("E102", format!("undefined function '{func}' referenced"))
-                    .with_path(Program::stmt_path(mi, fi, si))
-                    .with_fix("define the function or import it via requires"),
-            );
-        }
-        if is_fqn(func) {
-            let required: HashSet<&str> = m.requires.functions.iter().map(String::as_str).collect();
-            if split_fqn(func).map(|(mod_name, _)| mod_name) != Some(m.name.as_str())
-                && !required.contains(func)
-            {
+        for func in stmt.op.callee_funcs() {
+            if program.lookup_function(&m.name, func).is_none() {
                 diags.push(
-                    Diagnostic::error(
-                        "E108",
-                        format!(
-                            "cross-module reference '{func}' is not listed in requires.functions"
-                        ),
-                    )
-                    .with_path(Program::stmt_path(mi, fi, si))
-                    .with_fix("add this FQN to the module's requires.functions"),
+                    Diagnostic::error("E102", format!("undefined function '{func}' referenced"))
+                        .with_path(Program::stmt_path(mi, fi, si))
+                        .with_fix("define the function or import it via requires"),
                 );
+            }
+            if is_fqn(func) {
+                let required: HashSet<&str> =
+                    m.requires.functions.iter().map(String::as_str).collect();
+                if split_fqn(func).map(|(mod_name, _)| mod_name) != Some(m.name.as_str())
+                    && !required.contains(func)
+                {
+                    diags.push(
+                        Diagnostic::error(
+                            "E108",
+                            format!(
+                                "cross-module reference '{func}' is not listed in requires.functions"
+                            ),
+                        )
+                        .with_path(Program::stmt_path(mi, fi, si))
+                        .with_fix("add this FQN to the module's requires.functions"),
+                    );
+                }
             }
         }
     });

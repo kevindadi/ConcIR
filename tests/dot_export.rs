@@ -227,15 +227,15 @@ fn cross_function_spawn_join() {
     let prog = load_example("producer_consumer");
     let dot = prog.to_dot();
 
-    // spawn edges
+    // scope edges (one statement, two callees)
     assert!(dot.contains("main_s1 -> producer_s1"));
-    assert!(dot.contains("label=\"spawn\""));
-    assert!(dot.contains("main_s2 -> consumer_s1"));
+    assert!(dot.contains("label=\"scope\""));
+    assert!(dot.contains("main_s1 -> consumer_s1"));
 
-    // join edges
-    assert!(dot.contains("producer_ret -> main_s3"));
+    // implicit join_all back to the scope statement
+    assert!(dot.contains("producer_ret -> main_s1"));
     assert!(dot.contains("label=\"join\""));
-    assert!(dot.contains("consumer_ret -> main_s4"));
+    assert!(dot.contains("consumer_ret -> main_s1"));
 }
 
 #[test]
@@ -326,7 +326,7 @@ fn no_cross_function_when_disabled() {
     };
     let dot = prog.to_dot_with_options(&opts);
 
-    assert!(!dot.contains("label=\"spawn\""));
+    assert!(!dot.contains("label=\"scope\""));
     assert!(!dot.contains("label=\"join\""));
 }
 
@@ -337,11 +337,9 @@ fn spawn_join_node_shapes() {
     let prog = load_example("producer_consumer");
     let dot = prog.to_dot();
 
-    // Spawn should be doubleoctagon
+    // Scope is doubleoctagon; implicit join, return is ellipse
     assert!(dot.contains("main_s1") && dot.contains("shape=doubleoctagon"));
-    // Explicit join is dashed doubleoctagon; return is ellipse
-    assert!(dot.contains("main_s3") && dot.contains("style=\"filled,dashed\""));
-    assert!(dot.contains("main_s5") && dot.contains("shape=ellipse"));
+    assert!(dot.contains("main_s2") && dot.contains("shape=ellipse"));
 }
 
 #[test]

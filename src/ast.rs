@@ -403,15 +403,11 @@ pub enum Op {
         args: Vec<String>,
         handle: String,
     },
-    /// Spawn `count` copies of `func` in a `thread::scope` and join them all
-    /// before falling through (`handlers.join_all`).
+    /// Spawn each function in `funcs` in a `thread::scope` and join them all
+    /// before falling through (`handlers.join_all`). Repeat with `branch`, not
+    /// by listing the same name N times as a count.
     #[serde(rename = "scope")]
-    Scope {
-        func: String,
-        count: i64,
-        #[serde(default)]
-        args: Vec<String>,
-    },
+    Scope { funcs: Vec<String> },
     #[serde(rename = "join")]
     Join { handle: String },
     #[serde(rename = "async_call")]
@@ -607,13 +603,13 @@ impl Op {
         }
     }
 
-    pub fn callee_func(&self) -> Option<&str> {
+    pub fn callee_funcs(&self) -> Vec<&str> {
         match self {
-            Op::Func { func, .. }
-            | Op::Spawn { func, .. }
-            | Op::Scope { func, .. }
-            | Op::AsyncCall { func, .. } => Some(func),
-            _ => None,
+            Op::Func { func, .. } | Op::Spawn { func, .. } | Op::AsyncCall { func, .. } => {
+                vec![func.as_str()]
+            }
+            Op::Scope { funcs } => funcs.iter().map(String::as_str).collect(),
+            _ => vec![],
         }
     }
 

@@ -121,51 +121,84 @@ fn check_call_sites(
     diags: &mut Vec<Diagnostic>,
 ) {
     for (si, stmt) in f.body.iter().enumerate() {
-        let (op, func, args, dst) = match &stmt.op {
-            Op::Func { func, args, dst } => ("call", func, args, dst.as_ref()),
-            Op::Scope { func, args, .. } => ("scope", func, args, None),
-            _ => continue,
-        };
-        let Some(callee) = callees.get(func) else {
-            continue;
-        };
-
-        let modeled_params: Vec<&ParamDecl> = callee.params.iter().filter(|p| p.modeled).collect();
         let path = Program::stmt_path(mi, fi, si);
-
-        if args.len() != modeled_params.len() {
-            diags.push(
-                Diagnostic::error(
-                    "E920",
-                    format!(
-                        "{op}('{func}') expects {} argument(s) for its modeled parameters, \
-                             got {}",
-                        modeled_params.len(),
-                        args.len()
-                    ),
-                )
-                .with_path(path.clone())
-                .with_fix(
-                    "supply one argument per modeled parameter, or mark unused parameters \
-                     \"modeled\": false",
-                ),
-            );
-        }
-
-        if let Some(out_name) = dst {
-            if !var_resources.contains(out_name) {
-                diags.push(
-                    Diagnostic::error(
-                        "E921",
-                        format!(
-                            "{op}('{func}') captures its return into '{out_name}', which is \
-                                 not a writable Var/Atomic resource"
-                        ),
-                    )
-                    .with_path(path.clone())
-                    .with_fix("capture into a declared Var or Atomic resource"),
+        match &stmt.op {
+            Op::Func { func, args, dst } => {
+                check_arity_and_dst(
+                    "call",
+                    func,
+                    args,
+                    dst.as_ref(),
+                    callees,
+                    var_resources,
+                    &path,
+                    diags,
                 );
             }
+            Op::Scope { funcs } => {
+                for func in funcs {
+                    check_arity_and_dst(
+                        "scope",
+                        func,
+                        &[],
+                        None,
+                        callees,
+                        var_resources,
+                        &path,
+                        diags,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn check_arity_and_dst(
+    op: &str,
+    func: &str,
+    args: &[String],
+    dst: Option<&String>,
+    callees: &HashMap<String, &Function>,
+    var_resources: &HashSet<String>,
+    path: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let Some(callee) = callees.get(func) else {
+        return;
+    };
+    let modeled_params: Vec<&ParamDecl> = callee.params.iter().filter(|p| p.modeled).collect();
+    if args.len() != modeled_params.len() {
+        diags.push(
+            Diagnostic::error(
+                "E920",
+                format!(
+                    "{op}('{func}') expects {} argument(s) for its modeled parameters, \
+                             got {}",
+                    modeled_params.len(),
+                    args.len()
+                ),
+            )
+            .with_path(path.to_string())
+            .with_fix(
+                "supply one argument per modeled parameter, or mark unused parameters \
+                     \"modeled\": false",
+            ),
+        );
+    }
+    if let Some(out_name) = dst {
+        if !var_resources.contains(out_name) {
+            diags.push(
+                Diagnostic::error(
+                    "E921",
+                    format!(
+                        "{op}('{func}') captures its return into '{out_name}', which is \
+                                 not a writable Var/Atomic resource"
+                    ),
+                )
+                .with_path(path.to_string())
+                .with_fix("capture into a declared Var or Atomic resource"),
+            );
         }
     }
 }
@@ -182,10 +215,7 @@ fn param_referenced_in_body(f: &Function, param: &str) -> bool {
                 texts.push(expected);
                 texts.push(desired);
             }
-            Op::Func { args, .. }
-            | Op::Spawn { args, .. }
-            | Op::Scope { args, .. }
-            | Op::AsyncCall { args, .. } => {
+            Op::Func { args, .. } | Op::Spawn { args, .. } | Op::AsyncCall { args, .. } => {
                 texts.extend(args.iter().map(String::as_str));
             }
             Op::Return { value: Some(value) } => texts.push(value),
