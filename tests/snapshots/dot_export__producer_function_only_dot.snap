@@ -12,10 +12,10 @@ digraph "producer" {
     style=rounded;
     color=black;
 
-    producer_s1 [label="s1: lock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=red, penwidth=3];
-    producer_s2 [label="s2: write(count, count + 1)", shape=rect, style="filled", fillcolor="#f0f0f0", color=orange, penwidth=2];
-    producer_s3 [label="s3: notify_all(cv)", shape=rect, style="filled,dashed", fillcolor="#f0f0f0", color=purple, penwidth=2];
-    producer_s4 [label="s4: drop(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    producer_s1 [label="s1: mutex_lock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=red, penwidth=3];
+    producer_s2 [label="s2: write_shared(count, count + 1)", shape=rect, style="filled", fillcolor="#f0f0f0", color=orange, penwidth=2];
+    producer_s3 [label="s3: condvar_notify_all(cv)", shape=rect, style="filled", fillcolor="#f0f0f0", color=purple, penwidth=2];
+    producer_s4 [label="s4: mutex_unlock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
     producer_s5 [label="s5: return", shape=ellipse, style="filled", fillcolor="#a0a0a0", color=black, penwidth=1];
     producer_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
 

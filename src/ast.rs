@@ -1,34 +1,54 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use serde::de::{self, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::de::{self, Deserializer, Error};
+use serde::{Deserialize, Serialize, Serializer};
+
+use crate::fqn;
 
 // ──────────────────── Top-level ────────────────────
 
-/// Optional reachability goal for repair / verification (marking + variable values).
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BusinessGoal {
-    pub id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub desc: Option<String>,
-    #[serde(default)]
-    pub marking: BTreeMap<String, u32>,
-    #[serde(default)]
-    pub variables: BTreeMap<String, serde_json::Value>,
+fn default_version() -> String {
+    "3.1.0".to_string()
 }
 
+/// A complete ConcIR program: a set of [`Module`]s with a single entry FQN.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Program {
     pub program: String,
-    pub resources: Vec<Resource>,
-    pub protection: Vec<Protection>,
-    pub functions: Vec<Function>,
+    #[serde(default = "default_version")]
+    pub version: String,
+    pub modules: Vec<Module>,
+    /// Entry function as an FQN: `module::function`.
     pub entry: String,
+}
+
+/// Exported / imported names. `provides` uses short names; `requires` uses FQNs.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NameSet {
     #[serde(default)]
-    pub goals: Vec<BusinessGoal>,
+    pub resources: Vec<String>,
+    #[serde(default)]
+    pub functions: Vec<String>,
+}
+
+/// One ConcIR module: resources, protection, functions, and a name-resolution contract.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Module {
+    pub name: String,
+    #[serde(default)]
+    pub provides: NameSet,
+    #[serde(default)]
+    pub requires: NameSet,
+    #[serde(default)]
+    pub resources: Vec<Resource>,
+    #[serde(default)]
+    pub protection: Vec<Protection>,
+    #[serde(default)]
+    pub functions: Vec<Function>,
 }
 
 // ──────────────────── Resources ────────────────────
@@ -48,6 +68,8 @@ pub struct Resource {
     pub base: Option<BaseType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub init: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capacity: Option<i64>,
 }
 
 // ──────────────────── BaseType ────────────────────
@@ -67,7 +89,10 @@ pub enum ComplexBaseType {
     /// Bounded Int value domain `[lo, hi]`, serialized as `{"Int": [lo, hi]}`.
     /// Keeps counter loops decidable (updates leaving the domain disable the
     /// transition in the CVN).
-    BoundedInt { lo: i64, hi: i64 },
+    BoundedInt {
+        lo: i64,
+        hi: i64,
+    },
 }
 
 impl Serialize for ComplexBaseType {
@@ -76,9 +101,7 @@ impl Serialize for ComplexBaseType {
             ComplexBaseType::Enum(variants) => ("Enum", variants).serialize(serializer),
             ComplexBaseType::Struct(fields) => ("Struct", fields).serialize(serializer),
             ComplexBaseType::Array(def) => ("Array", def).serialize(serializer),
-            ComplexBaseType::BoundedInt { lo, hi } => {
-                ("Int", (lo, hi)).serialize(serializer)
-            }
+            ComplexBaseType::BoundedInt { lo, hi } => ("Int", (lo, hi)).serialize(serializer),
         }
     }
 }
@@ -86,11 +109,13 @@ impl Serialize for ComplexBaseType {
 impl<'de> Deserialize<'de> for ComplexBaseType {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = serde_json::Value::deserialize(deserializer)?;
-        let object = value.as_object().ok_or_else(|| {
-            de::Error::custom("complex base type must be a single-key object")
-        })?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| de::Error::custom("complex base type must be a single-key object"))?;
         if object.len() != 1 {
-            return Err(de::Error::custom("complex base type must have exactly one key"));
+            return Err(de::Error::custom(
+                "complex base type must have exactly one key",
+            ));
         }
         let (key, val) = object.iter().next().unwrap();
         match key.as_str() {
@@ -104,8 +129,8 @@ impl<'de> Deserialize<'de> for ComplexBaseType {
                 .map(ComplexBaseType::Array)
                 .map_err(de::Error::custom),
             "Int" => {
-                let bounds: Vec<i64> = serde_json::from_value(val.clone())
-                    .map_err(de::Error::custom)?;
+                let bounds: Vec<i64> =
+                    serde_json::from_value(val.clone()).map_err(de::Error::custom)?;
                 if bounds.len() != 2 || bounds[0] > bounds[1] {
                     return Err(de::Error::custom(
                         "bounded Int must be [lo, hi] with lo <= hi",
@@ -185,10 +210,10 @@ pub struct Protection {
 
 // ──────────────────── Function ────────────────────
 
-/// A typed data-flow declaration: a function parameter, local, or return
-/// value. `modeled` controls whether the value is materialized in the CVN
-/// variable store (see `doc/syntax.md`). Unmodeled values are codegen-only
-/// placeholders and never enter the net.
+/// A typed data-flow declaration: a function parameter or return value.
+/// `modeled` controls whether the value is materialized in the CVN variable
+/// store (see `doc/syntax.md`). Unmodeled values are codegen-only placeholders
+/// and never enter the net.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ParamDecl {
@@ -199,35 +224,33 @@ pub struct ParamDecl {
     pub modeled: bool,
 }
 
+/// A function-local slot. Same projection flag as [`ParamDecl`], plus optional init.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LocalDecl {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub local_type: BaseType,
+    #[serde(default)]
+    pub modeled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub init: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Function {
     pub name: String,
     pub kind: String,
-    /// Source module when the program was assembled from modular ConcIR
-    /// fragments. Used for cross-module repair attribution; absent for
-    /// single-fragment programs.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub module: Option<String>,
-    /// Typed parameters, bound at `call` sites (modeled ones) or carried for
-    /// codegen only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<ParamDecl>,
-    /// Optional typed return value, produced by `["return", <expr>]` and
-    /// captured by a caller's `call` out-var (modeled ones).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub returns: Option<ParamDecl>,
-    /// Statement body. An empty body marks a "nobody" function: it contains no
-    /// control flow and no callsites, so it is modeled as a trivial skeleton
-    /// (entry → single transition → return) when it is referenced by a
-    /// `spawn`/`join`/`call`. Optional [`Function::effects`] attach
-    /// computation hints (reads/writes) to that single transition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub locals: Vec<LocalDecl>,
+    /// Basic blocks. Empty body is a nobody function (codegen placeholder).
     #[serde(default)]
-    pub body: Vec<Statement>,
-    /// Optional computation hint for a body-less ("nobody") function. Reads and
-    /// writes are annotated on the single transition that bridges the
-    /// function's entry and return places, so codegen still sees the data
-    /// footprint without modeling internal control flow.
+    pub body: Vec<Block>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effects: Option<FunctionEffects>,
 }
@@ -242,313 +265,451 @@ pub struct FunctionEffects {
     pub writes: Vec<String>,
 }
 
+// ──────────────────── Block (MIR-style) ────────────────────
+
+/// One basic block: zero or more data [`Stmt`]s, then exactly one exit —
+/// either a [`Call`] (sync / thread / function, with a successor) or a
+/// [`Terminator`] (`goto` / `branch` / `switch` / `return`).
+#[derive(Debug, Clone, Serialize)]
+pub struct Block {
+    pub sid: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub statements: Vec<Stmt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub call: Option<Call>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminator: Option<Terminator>,
+}
+
+impl<'de> Deserialize<'de> for Block {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Helper {
+            sid: String,
+            #[serde(default)]
+            statements: Vec<Stmt>,
+            #[serde(default)]
+            call: Option<Call>,
+            #[serde(default)]
+            terminator: Option<Terminator>,
+        }
+        let h = Helper::deserialize(deserializer)?;
+        match (h.call.is_some(), h.terminator.is_some()) {
+            (true, false) | (false, true) => Ok(Block {
+                sid: h.sid,
+                statements: h.statements,
+                call: h.call,
+                terminator: h.terminator,
+            }),
+            (true, true) => Err(D::Error::custom(
+                "block must not have both call and terminator",
+            )),
+            (false, false) => Err(D::Error::custom(
+                "block requires exactly one of call or terminator",
+            )),
+        }
+    }
+}
+
+/// Data / structured statements (non-control, non-call). Analogous to MIR statements.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "kind", deny_unknown_fields)]
+pub enum Stmt {
+    #[serde(rename = "nop")]
+    Nop,
+    #[serde(rename = "assign_local")]
+    AssignLocal { target: String, expr: String },
+    #[serde(rename = "read_shared")]
+    ReadShared {
+        resource: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dst: Option<String>,
+    },
+    #[serde(rename = "write_shared")]
+    WriteShared { resource: String, expr: String },
+    #[serde(rename = "abstract_step")]
+    AbstractStep {
+        #[serde(default)]
+        reads: Vec<String>,
+        #[serde(default)]
+        writes: Vec<String>,
+        #[serde(default)]
+        desc: String,
+    },
+    /// Structured loop header: body starts at `body`, break target is `exit`.
+    #[serde(rename = "loop")]
+    Loop { body: String, exit: String },
+}
+
+/// Sync, thread, and function operations. Each (except `select`) names the
+/// successor block in `target` — the analogue of MIR `Call { ..., target }`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "kind", deny_unknown_fields)]
+pub enum Call {
+    #[serde(rename = "mutex_lock")]
+    MutexLock { resource: String, target: String },
+    #[serde(rename = "mutex_unlock")]
+    MutexUnlock { resource: String, target: String },
+    #[serde(rename = "rwlock_read")]
+    RwLockRead { resource: String, target: String },
+    #[serde(rename = "rwlock_write")]
+    RwLockWrite { resource: String, target: String },
+    #[serde(rename = "rwlock_unlock")]
+    RwLockUnlock { resource: String, target: String },
+    #[serde(rename = "channel_send")]
+    ChannelSend {
+        channel: String,
+        value: String,
+        target: String,
+    },
+    #[serde(rename = "channel_recv")]
+    ChannelRecv {
+        channel: String,
+        dst: String,
+        target: String,
+    },
+    #[serde(rename = "condvar_wait")]
+    CondvarWait {
+        condvar: String,
+        lock: String,
+        target: String,
+    },
+    #[serde(rename = "condvar_notify")]
+    CondvarNotify { condvar: String, target: String },
+    #[serde(rename = "condvar_notify_all")]
+    CondvarNotifyAll { condvar: String, target: String },
+    #[serde(rename = "semaphore_acquire")]
+    SemaphoreAcquire {
+        resource: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        count: Option<i64>,
+        target: String,
+    },
+    #[serde(rename = "semaphore_release")]
+    SemaphoreRelease {
+        resource: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        count: Option<i64>,
+        target: String,
+    },
+    #[serde(rename = "atomic_load")]
+    AtomicLoad {
+        resource: String,
+        dst: String,
+        target: String,
+    },
+    #[serde(rename = "atomic_store")]
+    AtomicStore {
+        resource: String,
+        value: String,
+        target: String,
+    },
+    #[serde(rename = "atomic_cas")]
+    AtomicCas {
+        resource: String,
+        expected: String,
+        desired: String,
+        dst: String,
+        target: String,
+    },
+    #[serde(rename = "call")]
+    Func {
+        func: String,
+        #[serde(default)]
+        args: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dst: Option<String>,
+        target: String,
+    },
+    #[serde(rename = "spawn")]
+    Spawn {
+        func: String,
+        #[serde(default)]
+        args: Vec<String>,
+        handle: String,
+        target: String,
+    },
+    #[serde(rename = "spawn_batch")]
+    SpawnBatch {
+        func: String,
+        count: i64,
+        handle: String,
+        target: String,
+    },
+    #[serde(rename = "join")]
+    Join { handle: String, target: String },
+    #[serde(rename = "join_all")]
+    JoinAll { handle: String, target: String },
+    #[serde(rename = "async_call")]
+    AsyncCall {
+        func: String,
+        #[serde(default)]
+        args: Vec<String>,
+        handle: String,
+        target: String,
+    },
+    #[serde(rename = "await")]
+    Await { handle: String, target: String },
+    #[serde(rename = "select")]
+    Select {
+        branches: Vec<SelectBranch>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        default: Option<String>,
+    },
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct Statement {
-    pub sid: String,
-    pub op: Op,
-    pub transfer: Transfer,
+pub struct SelectBranch {
+    pub guard: SelectGuard,
+    pub target: String,
 }
 
-// ──────────────────── Operations ────────────────────
-
-#[derive(Debug, Clone)]
-pub enum Op {
-    ResOp {
-        resource: String,
-        action: String,
-        args: Vec<String>,
-    },
-    Spawn(String),
-    SpawnAsync(String),
-    Join(String),
-    Await(String),
-    /// Synchronous call. `extras` holds the raw extra array elements after the
-    /// callee name; validation interprets them as (optional out-var, then
-    /// arguments) based on the callee's signature.
-    Call {
-        target: String,
-        extras: Vec<String>,
-    },
-    /// Function return, optionally carrying a value expression that binds a
-    /// modeled `returns` declaration: `"return"` or `["return", "<expr>"]`.
-    Return(Option<String>),
-    Nop,
+/// Blocking operations allowed as `select` guards.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "kind", deny_unknown_fields)]
+pub enum SelectGuard {
+    #[serde(rename = "channel_recv")]
+    ChannelRecv { channel: String, dst: String },
+    #[serde(rename = "condvar_wait")]
+    CondvarWait { condvar: String, lock: String },
+    #[serde(rename = "semaphore_acquire")]
+    SemaphoreAcquire { resource: String },
 }
 
-impl Serialize for Op {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Op::Return(None) => serializer.serialize_str("return"),
-            Op::Return(Some(value)) => ("return", value).serialize(serializer),
-            Op::Nop => serializer.serialize_str("nop"),
-            Op::ResOp {
-                resource,
-                action,
-                args,
-            } => {
-                let mut v: Vec<&str> = vec!["res_op", resource, action];
-                for a in args {
-                    v.push(a);
-                }
-                v.serialize(serializer)
-            }
-            Op::Spawn(f) => ("spawn", f).serialize(serializer),
-            Op::SpawnAsync(f) => ("spawn_async", f).serialize(serializer),
-            Op::Join(f) => ("join", f).serialize(serializer),
-            Op::Await(f) => ("await", f).serialize(serializer),
-            Op::Call { target, extras } => {
-                let mut v: Vec<&str> = vec!["call", target];
-                v.extend(extras.iter().map(String::as_str));
-                v.serialize(serializer)
-            }
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Op {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct OpVisitor;
-
-        impl<'de> Visitor<'de> for OpVisitor {
-            type Value = Op;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("\"return\" or an array like [\"res_op\", ...]")
-            }
-
-            fn visit_str<E: de::Error>(self, v: &str) -> Result<Op, E> {
-                match v {
-                    "return" => Ok(Op::Return(None)),
-                    "nop" => Ok(Op::Nop),
-                    _ => Err(E::custom(format!("unknown op string: \"{v}\""))),
-                }
-            }
-
-            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Op, A::Error> {
-                let op_type: String = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(0, &"at least 1 element"))?;
-
-                match op_type.as_str() {
-                    "res_op" => {
-                        let resource: String = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(1, &"resource name"))?;
-                        let action: String = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(2, &"action name"))?;
-                        let mut args = Vec::new();
-                        while let Some(a) = seq.next_element::<String>()? {
-                            args.push(a);
-                        }
-                        Ok(Op::ResOp {
-                            resource,
-                            action,
-                            args,
-                        })
-                    }
-                    "spawn" => {
-                        let name: String = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(1, &"function name"))?;
-                        reject_extra_elements(&mut seq, "spawn")?;
-                        Ok(Op::Spawn(name))
-                    }
-                    "spawn_async" => {
-                        let name: String = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(1, &"function name"))?;
-                        reject_extra_elements(&mut seq, "spawn_async")?;
-                        Ok(Op::SpawnAsync(name))
-                    }
-                    "join" => {
-                        let name: String = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(1, &"function name"))?;
-                        reject_extra_elements(&mut seq, "join")?;
-                        Ok(Op::Join(name))
-                    }
-                    "await" => {
-                        let name: String = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(1, &"function name"))?;
-                        reject_extra_elements(&mut seq, "await")?;
-                        Ok(Op::Await(name))
-                    }
-                    "call" => {
-                        let target: String = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(1, &"function name"))?;
-                        let mut extras = Vec::new();
-                        while let Some(a) = seq.next_element::<String>()? {
-                            extras.push(a);
-                        }
-                        Ok(Op::Call { target, extras })
-                    }
-                    "return" => {
-                        let value: Option<String> = seq.next_element()?;
-                        reject_extra_elements(&mut seq, "return")?;
-                        Ok(Op::Return(value))
-                    }
-                    other => Err(de::Error::custom(format!("unknown op type: \"{other}\""))),
-                }
-            }
-        }
-
-        deserializer.deserialize_any(OpVisitor)
-    }
-}
-
-// ──────────────────── Transfer ────────────────────
-
-#[derive(Debug, Clone)]
-pub enum Transfer {
-    Next(String),
+/// CFG terminator: the only place `return` appears.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "kind", deny_unknown_fields)]
+pub enum Terminator {
+    #[serde(rename = "goto")]
+    Goto { target: String },
+    #[serde(rename = "branch")]
     Branch {
         cond: String,
-        true_target: String,
-        false_target: String,
+        then: String,
+        #[serde(rename = "else")]
+        else_target: String,
     },
+    #[serde(rename = "switch")]
     Switch {
         var: String,
-        cases: Vec<(String, String)>,
+        cases: BTreeMap<String, String>,
+        default: String,
     },
-    Return,
-}
-
-impl Serialize for Transfer {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Transfer::Return => serializer.serialize_str("return"),
-            Transfer::Next(sid) => ("next", sid).serialize(serializer),
-            Transfer::Branch {
-                cond,
-                true_target,
-                false_target,
-            } => ("branch", cond, true_target, false_target).serialize(serializer),
-            Transfer::Switch { var, cases } => {
-                use serde::ser::SerializeSeq;
-                let map: BTreeMap<&str, &str> = cases
-                    .iter()
-                    .map(|(k, v)| (k.as_str(), v.as_str()))
-                    .collect();
-                let mut seq = serializer.serialize_seq(Some(3))?;
-                seq.serialize_element("switch")?;
-                seq.serialize_element(var)?;
-                seq.serialize_element(&map)?;
-                seq.end()
-            }
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Transfer {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct TransferVisitor;
-
-        impl<'de> Visitor<'de> for TransferVisitor {
-            type Value = Transfer;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("\"return\" or an array like [\"next\", \"s1\"]")
-            }
-
-            fn visit_str<E: de::Error>(self, v: &str) -> Result<Transfer, E> {
-                if v == "return" {
-                    Ok(Transfer::Return)
-                } else {
-                    Err(E::custom(format!("unknown transfer string: \"{v}\"")))
-                }
-            }
-
-            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Transfer, A::Error> {
-                let kind: String = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(0, &"at least 1 element"))?;
-
-                match kind.as_str() {
-                    "next" => {
-                        let sid: String = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(1, &"target sid"))?;
-                        reject_extra_elements(&mut seq, "next")?;
-                        Ok(Transfer::Next(sid))
-                    }
-                    "branch" => {
-                        let cond: String = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(1, &"condition"))?;
-                        let true_target: String = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(2, &"true target sid"))?;
-                        let false_target: String = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(3, &"false target sid"))?;
-                        reject_extra_elements(&mut seq, "branch")?;
-                        Ok(Transfer::Branch {
-                            cond,
-                            true_target,
-                            false_target,
-                        })
-                    }
-                    "switch" => {
-                        let var: String = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(1, &"variable name"))?;
-                        let map: BTreeMap<String, String> = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(2, &"case mapping"))?;
-                        let cases: Vec<(String, String)> = map.into_iter().collect();
-                        reject_extra_elements(&mut seq, "switch")?;
-                        Ok(Transfer::Switch { var, cases })
-                    }
-                    other => Err(de::Error::custom(format!(
-                        "unknown transfer type: \"{other}\""
-                    ))),
-                }
-            }
-        }
-
-        deserializer.deserialize_any(TransferVisitor)
-    }
-}
-
-fn reject_extra_elements<'de, A: SeqAccess<'de>>(
-    seq: &mut A,
-    shape: &str,
-) -> Result<(), A::Error> {
-    if seq.next_element::<de::IgnoredAny>()?.is_some() {
-        return Err(de::Error::custom(format!(
-            "{shape} tuple has extra elements"
-        )));
-    }
-    Ok(())
+    #[serde(rename = "return")]
+    Return {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value: Option<String>,
+    },
 }
 
 // ──────────────────── Helpers ────────────────────
 
-impl Op {
-    pub fn target_name(&self) -> Option<&str> {
-        match self {
-            Op::Spawn(n) | Op::SpawnAsync(n) | Op::Join(n) | Op::Await(n) => Some(n),
-            Op::Call { target, .. } => Some(target),
+impl Program {
+    pub fn lookup_module(&self, name: &str) -> Option<&Module> {
+        self.modules.iter().find(|m| m.name == name)
+    }
+
+    /// Visit every basic block: `(module_idx, fn_idx, block_idx, module, function, block)`.
+    pub fn walk_blocks<F>(&self, mut visit: F)
+    where
+        F: FnMut(usize, usize, usize, &Module, &Function, &Block),
+    {
+        for (mi, m) in self.modules.iter().enumerate() {
+            for (fi, f) in m.functions.iter().enumerate() {
+                for (si, b) in f.body.iter().enumerate() {
+                    visit(mi, fi, si, m, f, b);
+                }
+            }
+        }
+    }
+
+    pub fn fn_path(mi: usize, fi: usize) -> String {
+        format!("modules[{mi}].functions[{fi}]")
+    }
+
+    pub fn block_path(mi: usize, fi: usize, si: usize) -> String {
+        format!("modules[{mi}].functions[{fi}].body[{si}]")
+    }
+
+    /// Resolve a function name from `from_module` (short or FQN).
+    pub fn lookup_function(&self, from_module: &str, name: &str) -> Option<(&Module, &Function)> {
+        let (module, entity) = if let Some(pair) = fqn::split_fqn(name) {
+            pair
+        } else {
+            (from_module, name)
+        };
+        let m = self.lookup_module(module)?;
+        let f = m.functions.iter().find(|f| f.name == entity)?;
+        Some((m, f))
+    }
+
+    pub fn lookup_resource(&self, from_module: &str, name: &str) -> Option<(&Module, &Resource)> {
+        let (module, entity) = if let Some(pair) = fqn::split_fqn(name) {
+            pair
+        } else {
+            (from_module, name)
+        };
+        let m = self.lookup_module(module)?;
+        let r = m.resources.iter().find(|r| r.name == entity)?;
+        Some((m, r))
+    }
+}
+
+impl Block {
+    pub fn successor_sids(&self) -> Vec<&str> {
+        let mut v = Vec::new();
+        for stmt in &self.statements {
+            if let Stmt::Loop { body, exit } = stmt {
+                v.push(body.as_str());
+                v.push(exit.as_str());
+            }
+        }
+        if let Some(call) = &self.call {
+            v.extend(call.successor_sids());
+            return v;
+        }
+        match &self.terminator {
+            Some(Terminator::Goto { target }) => v.push(target),
+            Some(Terminator::Branch {
+                then, else_target, ..
+            }) => {
+                v.push(then);
+                v.push(else_target);
+            }
+            Some(Terminator::Switch { cases, default, .. }) => {
+                v.extend(cases.values().map(String::as_str));
+                v.push(default);
+            }
+            Some(Terminator::Return { .. }) | None => {}
+        }
+        v
+    }
+
+    pub fn is_return(&self) -> bool {
+        matches!(self.terminator, Some(Terminator::Return { .. }))
+    }
+
+    pub fn branch_cond(&self) -> Option<&str> {
+        match &self.terminator {
+            Some(Terminator::Branch { cond, .. }) => Some(cond),
+            _ => None,
+        }
+    }
+
+    pub fn switch(&self) -> Option<(&str, &BTreeMap<String, String>, &str)> {
+        match &self.terminator {
+            Some(Terminator::Switch {
+                var,
+                cases,
+                default,
+            }) => Some((var, cases, default)),
             _ => None,
         }
     }
 }
 
-impl Transfer {
-    pub fn target_sids(&self) -> Vec<&str> {
+impl Call {
+    pub fn successor_sids(&self) -> Vec<&str> {
         match self {
-            Transfer::Next(s) => vec![s],
-            Transfer::Branch {
-                true_target,
-                false_target,
-                ..
-            } => vec![true_target, false_target],
-            Transfer::Switch { cases, .. } => cases.iter().map(|(_, s)| s.as_str()).collect(),
-            Transfer::Return => vec![],
+            Call::Select { branches, default } => {
+                let mut v: Vec<&str> = branches.iter().map(|b| b.target.as_str()).collect();
+                if let Some(d) = default {
+                    v.push(d);
+                }
+                v
+            }
+            Call::MutexLock { target, .. }
+            | Call::MutexUnlock { target, .. }
+            | Call::RwLockRead { target, .. }
+            | Call::RwLockWrite { target, .. }
+            | Call::RwLockUnlock { target, .. }
+            | Call::ChannelSend { target, .. }
+            | Call::ChannelRecv { target, .. }
+            | Call::CondvarWait { target, .. }
+            | Call::CondvarNotify { target, .. }
+            | Call::CondvarNotifyAll { target, .. }
+            | Call::SemaphoreAcquire { target, .. }
+            | Call::SemaphoreRelease { target, .. }
+            | Call::AtomicLoad { target, .. }
+            | Call::AtomicStore { target, .. }
+            | Call::AtomicCas { target, .. }
+            | Call::Func { target, .. }
+            | Call::Spawn { target, .. }
+            | Call::SpawnBatch { target, .. }
+            | Call::Join { target, .. }
+            | Call::JoinAll { target, .. }
+            | Call::AsyncCall { target, .. }
+            | Call::Await { target, .. } => vec![target],
+        }
+    }
+
+    pub fn callee_func(&self) -> Option<&str> {
+        match self {
+            Call::Func { func, .. }
+            | Call::Spawn { func, .. }
+            | Call::SpawnBatch { func, .. }
+            | Call::AsyncCall { func, .. } => Some(func),
+            _ => None,
+        }
+    }
+
+    pub fn resource_name(&self) -> Option<&str> {
+        match self {
+            Call::MutexLock { resource, .. }
+            | Call::MutexUnlock { resource, .. }
+            | Call::RwLockRead { resource, .. }
+            | Call::RwLockWrite { resource, .. }
+            | Call::RwLockUnlock { resource, .. }
+            | Call::SemaphoreAcquire { resource, .. }
+            | Call::SemaphoreRelease { resource, .. }
+            | Call::AtomicLoad { resource, .. }
+            | Call::AtomicStore { resource, .. }
+            | Call::AtomicCas { resource, .. } => Some(resource),
+            Call::ChannelSend { channel, .. } | Call::ChannelRecv { channel, .. } => Some(channel),
+            Call::CondvarWait { condvar, .. }
+            | Call::CondvarNotify { condvar, .. }
+            | Call::CondvarNotifyAll { condvar, .. } => Some(condvar),
+            _ => None,
+        }
+    }
+
+    pub fn is_lock_acquire(&self) -> Option<&str> {
+        match self {
+            Call::MutexLock { resource, .. }
+            | Call::RwLockRead { resource, .. }
+            | Call::RwLockWrite { resource, .. } => Some(resource),
+            _ => None,
+        }
+    }
+
+    pub fn is_lock_release(&self) -> Option<&str> {
+        match self {
+            Call::MutexUnlock { resource, .. } | Call::RwLockUnlock { resource, .. } => {
+                Some(resource)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn is_await_like(&self) -> bool {
+        matches!(self, Call::Await { .. })
+    }
+
+    pub fn is_join_like(&self) -> bool {
+        matches!(
+            self,
+            Call::Join { .. } | Call::JoinAll { .. } | Call::Await { .. }
+        )
+    }
+}
+
+impl Stmt {
+    pub fn shared_var_access(&self) -> Option<(&str, bool)> {
+        match self {
+            Stmt::ReadShared { resource, .. } => Some((resource, false)),
+            Stmt::WriteShared { resource, .. } => Some((resource, true)),
+            _ => None,
         }
     }
 }

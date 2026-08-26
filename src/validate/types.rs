@@ -12,6 +12,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     check_send_types(program, diags, &resource_types);
 }
 
+#[derive(Clone)]
 pub(crate) enum ResType {
     Var(BaseType),
     Atomic(BaseType),
@@ -24,36 +25,39 @@ pub(crate) enum ResType {
 
 pub(crate) fn build_resource_type_map(program: &Program) -> HashMap<String, ResType> {
     let mut map = HashMap::new();
-    for r in &program.resources {
-        let rt = match (r.kind.as_str(), r.res_type.as_str()) {
-            ("var", "Var") => {
-                if let Some(ref bt) = r.base {
-                    ResType::Var(bt.clone())
-                } else {
-                    continue;
+    for m in &program.modules {
+        for r in &m.resources {
+            let rt = match (r.kind.as_str(), r.res_type.as_str()) {
+                ("var", "Var") => {
+                    if let Some(ref bt) = r.base {
+                        ResType::Var(bt.clone())
+                    } else {
+                        continue;
+                    }
                 }
-            }
-            ("var", "Atomic") => {
-                if let Some(ref bt) = r.base {
-                    ResType::Atomic(bt.clone())
-                } else {
-                    continue;
+                ("var", "Atomic") => {
+                    if let Some(ref bt) = r.base {
+                        ResType::Atomic(bt.clone())
+                    } else {
+                        continue;
+                    }
                 }
-            }
-            ("sync", "Mutex") => ResType::Mutex,
-            ("sync", "RwLock") => ResType::RwLock,
-            ("sync", "Condvar") => ResType::Condvar,
-            ("sync", "Semaphore") => ResType::Semaphore,
-            ("sync", "Channel") => {
-                if let Some(ref bt) = r.base {
-                    ResType::Channel(bt.clone())
-                } else {
-                    continue;
+                ("sync", "Mutex") => ResType::Mutex,
+                ("sync", "RwLock") => ResType::RwLock,
+                ("sync", "Condvar") => ResType::Condvar,
+                ("sync", "Semaphore") => ResType::Semaphore,
+                ("sync", "Channel") => {
+                    if let Some(ref bt) = r.base {
+                        ResType::Channel(bt.clone())
+                    } else {
+                        continue;
+                    }
                 }
-            }
-            _ => continue,
-        };
-        map.insert(r.name.clone(), rt);
+                _ => continue,
+            };
+            map.insert(r.name.clone(), rt.clone());
+            map.insert(crate::fqn::fqn(&m.name, &r.name), rt);
+        }
     }
     map
 }
@@ -62,28 +66,27 @@ pub(crate) fn build_resource_type_map(program: &Program) -> HashMap<String, ResT
 /// In the JSON format, conditions are strings. We check for the presence of
 /// a comparison operator (==, !=, >, <, >=, <=).
 fn check_branch_conditions(program: &Program, diags: &mut Vec<Diagnostic>) {
-    for (fi, f) in program.functions.iter().enumerate() {
-        for (si, stmt) in f.body.iter().enumerate() {
-            if let Transfer::Branch { ref cond, .. } = stmt.transfer {
-                let has_cmp = cond.contains("==")
-                    || cond.contains("!=")
-                    || cond.contains(">=")
-                    || cond.contains("<=")
-                    || cond.contains('>')
-                    || cond.contains('<');
-                if !has_cmp {
-                    diags.push(
-                        Diagnostic::error(
-                            "E201",
-                            format!("branch condition \"{cond}\" is not a comparison expression"),
-                        )
-                        .with_path(format!("functions[{fi}].body[{si}].transfer[1]"))
-                        .with_fix("use a comparison operator: ==, !=, >, <, >=, <="),
-                    );
-                }
-            }
+    program.walk_blocks(|mi, fi, si, _, _, block| {
+        let Some(cond) = block.branch_cond() else {
+            return;
+        };
+        let has_cmp = cond.contains("==")
+            || cond.contains("!=")
+            || cond.contains(">=")
+            || cond.contains("<=")
+            || cond.contains('>')
+            || cond.contains('<');
+        if !has_cmp {
+            diags.push(
+                Diagnostic::error(
+                    "E201",
+                    format!("branch condition \"{cond}\" is not a comparison expression"),
+                )
+                .with_path(format!("{}.terminator.cond", Program::block_path(mi, fi, si)))
+                .with_fix("use a comparison operator: ==, !=, >, <, >=, <="),
+            );
         }
-    }
+    });
 }
 
 /// E202, E207: switch variable type and case label validation.
@@ -92,49 +95,49 @@ fn check_switch_variables(
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    for (fi, f) in program.functions.iter().enumerate() {
-        for (si, stmt) in f.body.iter().enumerate() {
-            if let Transfer::Switch { ref var, ref cases } = stmt.transfer {
-                if let Some(rt) = resource_types.get(var) {
-                    let bt = res_type_to_base(rt);
-                    match bt {
-                        Some(BaseType::Primitive(ref p)) if p == "Int" => {}
-                        Some(BaseType::Complex(ComplexBaseType::BoundedInt { .. })) => {}
-                        Some(BaseType::Complex(ComplexBaseType::Enum(_))) => {}
-                        Some(ref other) => {
-                            diags.push(
-                                Diagnostic::error(
-                                    "E202",
-                                    format!(
-                                        "switch variable '{var}' is of type {other}, expected Enum or Int"
-                                    ),
-                                )
-                                .with_path(format!("functions[{fi}].body[{si}].transfer[1]"))
-                                .with_fix("use an Enum or Int typed resource, or use branch instead"),
-                            );
-                        }
-                        None => {}
-                    }
-                    if let Some(BaseType::Complex(ComplexBaseType::Enum(ref variants))) = bt {
-                        for (label, _) in cases {
-                            if !variants.contains(label) {
-                                diags.push(
-                                    Diagnostic::error(
-                                        "E207",
-                                        format!(
-                                            "switch case label '{label}' is not a variant of enum '{var}'"
-                                        ),
-                                    )
-                                    .with_path(format!("functions[{fi}].body[{si}].transfer[2]"))
-                                    .with_fix("use a valid enum variant as the case label"),
-                                );
-                            }
-                        }
+    program.walk_blocks(|mi, fi, si, _, _, block| {
+        let Some((var, cases, _)) = block.switch() else {
+            return;
+        };
+        let path = Program::block_path(mi, fi, si);
+        if let Some(rt) = resource_types.get(var) {
+            let bt = res_type_to_base(rt);
+            match bt {
+                Some(BaseType::Primitive(ref p)) if p == "Int" => {}
+                Some(BaseType::Complex(ComplexBaseType::BoundedInt { .. })) => {}
+                Some(BaseType::Complex(ComplexBaseType::Enum(_))) => {}
+                Some(ref other) => {
+                    diags.push(
+                        Diagnostic::error(
+                            "E202",
+                            format!(
+                                "switch variable '{var}' is of type {other}, expected Enum or Int"
+                            ),
+                        )
+                        .with_path(format!("{path}.terminator.var"))
+                        .with_fix("use an Enum or Int typed resource, or use branch instead"),
+                    );
+                }
+                None => {}
+            }
+            if let Some(BaseType::Complex(ComplexBaseType::Enum(ref variants))) = bt {
+                for label in cases.keys() {
+                    if !variants.contains(label) {
+                        diags.push(
+                            Diagnostic::error(
+                                "E207",
+                                format!(
+                                    "switch case label '{label}' is not a variant of enum '{var}'"
+                                ),
+                            )
+                            .with_path(format!("{path}.terminator.cases"))
+                            .with_fix("use a valid enum variant as the case label"),
+                        );
                     }
                 }
             }
         }
-    }
+    });
 }
 
 /// E203, E204, E205: write/store/cas type checking (best-effort on literal values).
@@ -143,68 +146,35 @@ fn check_write_types(
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    for (fi, f) in program.functions.iter().enumerate() {
-        for (si, stmt) in f.body.iter().enumerate() {
-            if let Op::ResOp {
-                ref resource,
-                ref action,
-                ref args,
-            } = stmt.op
-            {
-                let rt = match resource_types.get(resource) {
-                    Some(r) => r,
-                    None => continue,
-                };
-                match action.as_str() {
-                    "write" => {
-                        if let (ResType::Var(ref expected), Some(val)) = (rt, args.first()) {
-                            check_literal_type(
-                                diags,
-                                "E203",
-                                val,
-                                expected,
-                                &format!("functions[{fi}].body[{si}].op[3]"),
-                            );
-                        }
-                    }
-                    "store" => {
-                        if let (ResType::Atomic(ref expected), Some(val)) = (rt, args.first()) {
-                            check_literal_type(
-                                diags,
-                                "E204",
-                                val,
-                                expected,
-                                &format!("functions[{fi}].body[{si}].op[3]"),
-                            );
-                        }
-                    }
-                    "cas" => {
-                        if let ResType::Atomic(ref expected) = rt {
-                            if let Some(val) = args.first() {
-                                check_literal_type(
-                                    diags,
-                                    "E205",
-                                    val,
-                                    expected,
-                                    &format!("functions[{fi}].body[{si}].op[3]"),
-                                );
-                            }
-                            if let Some(val) = args.get(1) {
-                                check_literal_type(
-                                    diags,
-                                    "E205",
-                                    val,
-                                    expected,
-                                    &format!("functions[{fi}].body[{si}].op[4]"),
-                                );
-                            }
-                        }
-                    }
-                    _ => {}
+    program.walk_blocks(|mi, fi, si, _, _, block| {
+        let path = Program::block_path(mi, fi, si);
+        for stmt in &block.statements {
+            if let Stmt::WriteShared { resource, expr } = stmt {
+                if let Some(ResType::Var(expected)) = resource_types.get(resource) {
+                    check_literal_type(diags, "E203", expr, expected, &format!("{path}.statements"));
                 }
             }
         }
-    }
+        match &block.call {
+            Some(Call::AtomicStore { resource, value, .. }) => {
+                if let Some(ResType::Atomic(expected)) = resource_types.get(resource) {
+                    check_literal_type(diags, "E204", value, expected, &format!("{path}.call"));
+                }
+            }
+            Some(Call::AtomicCas {
+                resource,
+                expected,
+                desired,
+                ..
+            }) => {
+                if let Some(ResType::Atomic(ty)) = resource_types.get(resource) {
+                    check_literal_type(diags, "E205", expected, ty, &format!("{path}.call"));
+                    check_literal_type(diags, "E205", desired, ty, &format!("{path}.call"));
+                }
+            }
+            _ => {}
+        }
+    });
 }
 
 /// E206: send type checking.
@@ -213,30 +183,19 @@ fn check_send_types(
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    for (fi, f) in program.functions.iter().enumerate() {
-        for (si, stmt) in f.body.iter().enumerate() {
-            if let Op::ResOp {
-                ref resource,
-                ref action,
-                ref args,
-            } = stmt.op
-            {
-                if action == "send" {
-                    if let Some(ResType::Channel(ref expected)) = resource_types.get(resource) {
-                        if let Some(val) = args.first() {
-                            check_literal_type(
-                                diags,
-                                "E206",
-                                val,
-                                expected,
-                                &format!("functions[{fi}].body[{si}].op[3]"),
-                            );
-                        }
-                    }
-                }
+    program.walk_blocks(|mi, fi, si, _, _, block| {
+        if let Some(Call::ChannelSend { channel, value, .. }) = &block.call {
+            if let Some(ResType::Channel(expected)) = resource_types.get(channel) {
+                check_literal_type(
+                    diags,
+                    "E206",
+                    value,
+                    expected,
+                    &format!("{}.call", Program::block_path(mi, fi, si)),
+                );
             }
         }
-    }
+    });
 }
 
 /// Best-effort type check: only flags mismatches when the value is a recognizable literal.

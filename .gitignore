@@ -1,5 +1,8 @@
 target/**
 Cargo.lock
 
-.vscode/
-.cursor/
+.vscode
+.cursor
+.claude
+
+.DS_Store

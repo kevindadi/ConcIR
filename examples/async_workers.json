@@ -1,120 +1,228 @@
 {
   "program": "async_workers",
-  "resources": [
-    { "name": "async_mtx", "kind": "sync", "type": "Mutex", "mode": "Async" },
-    {
-      "name": "sem",
-      "kind": "sync",
-      "type": "Semaphore",
-      "mode": "Async",
-      "count": 3
-    },
-    {
-      "name": "tx",
-      "kind": "sync",
-      "type": "Channel",
-      "mode": "Async",
-      "base": "Int"
-    },
-    {
-      "name": "result",
-      "kind": "var",
-      "type": "Var",
-      "base": "Int",
-      "init": 0
-    },
-    {
-      "name": "task_count",
-      "kind": "var",
-      "type": "Atomic",
-      "base": "Int",
-      "init": 0
-    }
-  ],
-  "protection": [{ "var": "result", "lock": "async_mtx" }],
-  "functions": [
+  "version": "3.1.0",
+  "modules": [
     {
       "name": "main",
-      "kind": "async",
-      "body": [
+      "provides": {
+        "resources": [
+          "async_mtx",
+          "sem",
+          "tx",
+          "result",
+          "task_count"
+        ],
+        "functions": [
+          "main",
+          "worker",
+          "collector"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
         {
-          "sid": "s1",
-          "op": ["spawn_async", "worker"],
-          "transfer": ["next", "s2"]
+          "name": "async_mtx",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Async"
         },
         {
-          "sid": "s2",
-          "op": ["spawn_async", "collector"],
-          "transfer": ["next", "s3"]
-        },
-        { "sid": "s3", "op": ["await", "worker"], "transfer": ["next", "s4"] },
-        {
-          "sid": "s4",
-          "op": ["await", "collector"],
-          "transfer": ["next", "s5"]
-        },
-        { "sid": "s5", "op": "return", "transfer": "return" }
-      ]
-    },
-    {
-      "name": "worker",
-      "kind": "async",
-      "body": [
-        {
-          "sid": "s10",
-          "op": ["res_op", "sem", "acquire"],
-          "transfer": ["next", "s11"]
+          "name": "sem",
+          "kind": "sync",
+          "type": "Semaphore",
+          "mode": "Async",
+          "count": 3
         },
         {
-          "sid": "s11",
-          "op": ["res_op", "task_count", "store", "task_count + 1"],
-          "transfer": ["next", "s12"]
+          "name": "tx",
+          "kind": "sync",
+          "type": "Channel",
+          "mode": "Async",
+          "base": "Int"
         },
         {
-          "sid": "s12",
-          "op": ["res_op", "tx", "send", "100"],
-          "transfer": ["next", "s13"]
+          "name": "result",
+          "kind": "var",
+          "type": "Var",
+          "base": "Int",
+          "init": 0
         },
         {
-          "sid": "s13",
-          "op": ["res_op", "sem", "release"],
-          "transfer": ["next", "s14"]
-        },
-        { "sid": "s14", "op": "return", "transfer": "return" }
-      ]
-    },
-    {
-      "name": "collector",
-      "kind": "async",
-      "body": [
+          "name": "task_count",
+          "kind": "var",
+          "type": "Atomic",
+          "base": "Int",
+          "init": 0
+        }
+      ],
+      "protection": [
         {
-          "sid": "s20",
-          "op": ["res_op", "tx", "recv"],
-          "transfer": ["next", "s21"]
+          "var": "result",
+          "lock": "async_mtx"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "async",
+          "body": [
+            {
+              "sid": "s1",
+              "call": {
+                "kind": "async_call",
+                "func": "worker",
+                "handle": "h_worker",
+                "target": "s2"
+              }
+            },
+            {
+              "sid": "s2",
+              "call": {
+                "kind": "async_call",
+                "func": "collector",
+                "handle": "h_collector",
+                "target": "s3"
+              }
+            },
+            {
+              "sid": "s3",
+              "call": {
+                "kind": "await",
+                "handle": "h_worker",
+                "target": "s4"
+              }
+            },
+            {
+              "sid": "s4",
+              "call": {
+                "kind": "await",
+                "handle": "h_collector",
+                "target": "s5"
+              }
+            },
+            {
+              "sid": "s5",
+              "terminator": {
+                "kind": "return"
+              }
+            }
+          ]
         },
         {
-          "sid": "s21",
-          "op": ["res_op", "async_mtx", "lock"],
-          "transfer": ["next", "s22"]
+          "name": "worker",
+          "kind": "async",
+          "body": [
+            {
+              "sid": "s10",
+              "call": {
+                "kind": "semaphore_acquire",
+                "resource": "sem",
+                "target": "s11"
+              }
+            },
+            {
+              "sid": "s11",
+              "call": {
+                "kind": "atomic_store",
+                "resource": "task_count",
+                "value": "task_count + 1",
+                "target": "s12"
+              }
+            },
+            {
+              "sid": "s12",
+              "call": {
+                "kind": "channel_send",
+                "channel": "tx",
+                "value": "100",
+                "target": "s13"
+              }
+            },
+            {
+              "sid": "s13",
+              "call": {
+                "kind": "semaphore_release",
+                "resource": "sem",
+                "target": "s14"
+              }
+            },
+            {
+              "sid": "s14",
+              "terminator": {
+                "kind": "return"
+              }
+            }
+          ]
         },
         {
-          "sid": "s22",
-          "op": ["res_op", "result", "read"],
-          "transfer": ["next", "s23"]
-        },
-        {
-          "sid": "s23",
-          "op": ["res_op", "result", "write", "result + 100"],
-          "transfer": ["next", "s24"]
-        },
-        {
-          "sid": "s24",
-          "op": ["res_op", "async_mtx", "drop"],
-          "transfer": ["next", "s25"]
-        },
-        { "sid": "s25", "op": "return", "transfer": "return" }
+          "name": "collector",
+          "kind": "async",
+          "body": [
+            {
+              "sid": "s20",
+              "call": {
+                "kind": "channel_recv",
+                "channel": "tx",
+                "dst": "_",
+                "target": "s21"
+              }
+            },
+            {
+              "sid": "s21",
+              "call": {
+                "kind": "mutex_lock",
+                "resource": "async_mtx",
+                "target": "s22"
+              }
+            },
+            {
+              "sid": "s22",
+              "statements": [
+                {
+                  "kind": "read_shared",
+                  "resource": "result"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
+                "target": "s23"
+              }
+            },
+            {
+              "sid": "s23",
+              "statements": [
+                {
+                  "kind": "write_shared",
+                  "resource": "result",
+                  "expr": "result + 100"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
+                "target": "s24"
+              }
+            },
+            {
+              "sid": "s24",
+              "call": {
+                "kind": "mutex_unlock",
+                "resource": "async_mtx",
+                "target": "s25"
+              }
+            },
+            {
+              "sid": "s25",
+              "terminator": {
+                "kind": "return"
+              }
+            }
+          ]
+        }
       ]
     }
   ],
-  "entry": "main"
+  "entry": "main::main"
 }

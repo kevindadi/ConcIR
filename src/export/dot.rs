@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use crate::ast::{Function, Op, Program, Statement, Transfer};
+use crate::ast::{Block, Call, Function, Program, Terminator};
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -54,16 +54,22 @@ pub(crate) fn program_to_dot(program: &Program, opts: &DotOptions) -> String {
     writeln!(out, "  edge [fontname=\"Courier\", fontsize=9];").unwrap();
     writeln!(out).unwrap();
 
-    if opts.show_resources && !program.resources.is_empty() {
+    let has_resources = program.modules.iter().any(|m| !m.resources.is_empty());
+    if opts.show_resources && has_resources {
         write_resource_panel(&mut out, program);
     }
 
-    for func in &program.functions {
+    let functions: Vec<&Function> = program
+        .modules
+        .iter()
+        .flat_map(|m| m.functions.iter())
+        .collect();
+    for func in &functions {
         write_function_subgraph(&mut out, func, opts);
     }
 
     if opts.show_cross_function {
-        write_cross_function_edges(&mut out, &program.functions);
+        write_cross_function_edges(&mut out, &functions);
     }
 
     writeln!(out, "}}").unwrap();
@@ -99,34 +105,38 @@ fn write_resource_panel(out: &mut String, program: &Program) {
     writeln!(out, "    color=gray;").unwrap();
     writeln!(out).unwrap();
 
-    for res in &program.resources {
-        let (shape, fill) = match res.res_type.as_str() {
-            "Mutex" | "RwLock" => ("hexagon", "#ffe0e0"),
-            "Condvar" => ("triangle", "#f0e0ff"),
-            "Semaphore" => ("house", "#e0ffe0"),
-            "Channel" => ("parallelogram", "#e0f0ff"),
-            _ => ("rect", "#f0f0f0"), // Var, Atomic
-        };
+    for m in &program.modules {
+        for res in &m.resources {
+            let (shape, fill) = match res.res_type.as_str() {
+                "Mutex" | "RwLock" => ("hexagon", "#ffe0e0"),
+                "Condvar" => ("triangle", "#f0e0ff"),
+                "Semaphore" => ("house", "#e0ffe0"),
+                "Channel" => ("parallelogram", "#e0f0ff"),
+                _ => ("rect", "#f0f0f0"), // Var, Atomic
+            };
 
-        writeln!(
+            writeln!(
             out,
             "    res_{name} [label=\"{name}\\n({typ})\", shape={shape}, style=filled, fillcolor=\"{fill}\"];",
             name = escape(&res.name),
             typ = escape(&res.res_type),
         )
         .unwrap();
+        }
     }
 
     writeln!(out).unwrap();
 
-    for prot in &program.protection {
-        writeln!(
-            out,
-            "    res_{var} -> res_{lock} [style=dotted, dir=both, color=gray50];",
-            var = escape(&prot.var),
-            lock = escape(&prot.lock),
-        )
-        .unwrap();
+    for m in &program.modules {
+        for prot in &m.protection {
+            writeln!(
+                out,
+                "    res_{var} -> res_{lock} [style=dotted, dir=both, color=gray50];",
+                var = escape(&prot.var),
+                lock = escape(&prot.lock),
+            )
+            .unwrap();
+        }
     }
 
     writeln!(out, "  }}").unwrap();
@@ -138,11 +148,7 @@ fn write_resource_panel(out: &mut String, program: &Program) {
 fn write_function_subgraph(out: &mut String, func: &Function, opts: &DotOptions) {
     let prefix = &func.name;
 
-    writeln!(
-        out,
-        "  subgraph cluster_{prefix} {{",
-    )
-    .unwrap();
+    writeln!(out, "  subgraph cluster_{prefix} {{",).unwrap();
     writeln!(
         out,
         "    label=\"{name} ({kind})\";",
@@ -200,14 +206,14 @@ impl Default for NodeStyle {
     }
 }
 
-fn node_style(stmt: &Statement) -> NodeStyle {
-    let transfer_override = match &stmt.transfer {
-        Transfer::Branch { .. } => Some(NodeStyle {
+fn node_style(stmt: &Block) -> NodeStyle {
+    let terminator_style = match &stmt.terminator {
+        Some(Terminator::Branch { .. }) => Some(NodeStyle {
             shape: "diamond",
             fillcolor: "#ffffcc",
             ..Default::default()
         }),
-        Transfer::Switch { .. } => Some(NodeStyle {
+        Some(Terminator::Switch { .. }) => Some(NodeStyle {
             shape: "diamond",
             fillcolor: "#ffe8cc",
             ..Default::default()
@@ -215,59 +221,67 @@ fn node_style(stmt: &Statement) -> NodeStyle {
         _ => None,
     };
 
-    if let Some(s) = transfer_override {
+    if let Some(s) = terminator_style {
         return s;
     }
 
-    match &stmt.op {
-        Op::ResOp { action, .. } => {
-            let (color, extra_style) = match action.as_str() {
-                "lock" | "acquire" => ("red", None),
-                "drop" | "release" => ("green", None),
-                "read" | "load" => ("blue", None),
-                "write" | "store" | "cas" => ("orange", None),
-                "wait" => ("purple", None),
-                "notify" | "notify_all" => ("purple", Some("filled,dashed")),
-                "send" | "recv" => ("cyan4", None),
-                _ => ("black", None),
-            };
+    match &stmt.call {
+        Some(Call::MutexLock { .. } | Call::RwLockWrite { .. } | Call::SemaphoreAcquire { .. }) => {
             NodeStyle {
-                color,
+                color: "red",
                 penwidth: 2,
-                style: extra_style.unwrap_or("filled").to_string(),
                 ..Default::default()
             }
         }
-        Op::Spawn(_) | Op::SpawnAsync(_) => NodeStyle {
+        Some(
+            Call::MutexUnlock { .. } | Call::RwLockUnlock { .. } | Call::SemaphoreRelease { .. },
+        ) => NodeStyle {
+            color: "green",
+            penwidth: 2,
+            ..Default::default()
+        },
+        Some(
+            Call::CondvarWait { .. } | Call::CondvarNotify { .. } | Call::CondvarNotifyAll { .. },
+        ) => NodeStyle {
+            color: "purple",
+            penwidth: 2,
+            ..Default::default()
+        },
+        Some(Call::Spawn { .. } | Call::SpawnBatch { .. } | Call::AsyncCall { .. }) => NodeStyle {
             shape: "doubleoctagon",
             ..Default::default()
         },
-        Op::Join(_) | Op::Await(_) => NodeStyle {
+        Some(Call::Join { .. } | Call::JoinAll { .. } | Call::Await { .. }) => NodeStyle {
             shape: "doubleoctagon",
             style: "filled,dashed".to_string(),
             ..Default::default()
         },
-        Op::Call { .. } => NodeStyle {
+        Some(Call::Func { .. }) => NodeStyle {
             shape: "rect",
             style: "filled,rounded".to_string(),
             ..Default::default()
         },
-        Op::Return(_) => NodeStyle {
+        _ if stmt
+            .statements
+            .iter()
+            .any(|s| matches!(s, crate::ast::Stmt::WriteShared { .. })) =>
+        {
+            NodeStyle {
+                color: "orange",
+                penwidth: 2,
+                ..Default::default()
+            }
+        }
+        _ if stmt.is_return() => NodeStyle {
             shape: "ellipse",
             fillcolor: "#a0a0a0",
             ..Default::default()
         },
-        Op::Nop => NodeStyle::default(),
+        _ => NodeStyle::default(),
     }
 }
 
-fn write_node(
-    out: &mut String,
-    prefix: &str,
-    stmt: &Statement,
-    is_entry: bool,
-    opts: &DotOptions,
-) {
+fn write_node(out: &mut String, prefix: &str, stmt: &Block, is_entry: bool, opts: &DotOptions) {
     let label = if opts.verbose_labels {
         format_label_verbose(stmt)
     } else {
@@ -295,171 +309,158 @@ fn write_node(
 
 // ── Label formatting ────────────────────────────────────────────────────────
 
-fn format_label_compact(stmt: &Statement) -> String {
-    let op_str = match &stmt.op {
-        Op::ResOp {
-            resource,
-            action,
-            args,
-        } => {
-            let args_str = if args.is_empty() {
-                String::new()
-            } else {
-                format!(", {}", compact_args(args))
-            };
-            format!("{action}({resource}{args_str})")
-        }
-        Op::Spawn(f) => format!("spawn({f})"),
-        Op::SpawnAsync(f) => format!("spawn_async({f})"),
-        Op::Join(f) => format!("join({f})"),
-        Op::Await(f) => format!("await({f})"),
-        Op::Call { target: f, .. } => format!("call({f})"),
-        Op::Return(_) => "return".to_string(),
-        Op::Nop => "nop".to_string(),
+fn format_label_compact(block: &Block) -> String {
+    let op_str = if let Some(call) = &block.call {
+        format_call_compact(call)
+    } else if matches!(
+        block.terminator,
+        Some(Terminator::Branch { .. } | Terminator::Switch { .. } | Terminator::Return { .. })
+    ) {
+        format_terminator_compact(block)
+    } else if let Some(stmt) = block.statements.first() {
+        format_stmt_compact(stmt)
+    } else {
+        format_terminator_compact(block)
     };
-    escape(&format!("{}: {}", stmt.sid, op_str))
+    escape(&format!("{}: {}", block.sid, op_str))
 }
 
-fn compact_args(args: &[String]) -> String {
-    if args.len() == 1 {
-        return escape(&args[0]);
-    }
-    // For CAS-like: "false", "true" → "F→T"
-    if args.len() == 2 {
-        let a = compact_val(&args[0]);
-        let b = compact_val(&args[1]);
-        return format!("{a}\\u2192{b}"); // →
-    }
-    args.iter()
-        .map(|a| escape(a))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn compact_val(v: &str) -> String {
-    match v {
-        "true" => "T".to_string(),
-        "false" => "F".to_string(),
-        other => escape(other),
-    }
-}
-
-fn format_label_verbose(stmt: &Statement) -> String {
-    let op_line = match &stmt.op {
-        Op::ResOp {
-            resource,
-            action,
-            args,
-        } => {
-            if args.is_empty() {
-                format!("res_op(\\\"{resource}\\\", {action})")
+fn format_stmt_compact(stmt: &crate::ast::Stmt) -> String {
+    use crate::ast::Stmt;
+    match stmt {
+        Stmt::Nop => "nop".into(),
+        Stmt::AssignLocal { target, expr } => format!("assign({target}, {expr})"),
+        Stmt::ReadShared { resource, .. } => format!("read_shared({resource})"),
+        Stmt::WriteShared { resource, expr } => format!("write_shared({resource}, {expr})"),
+        Stmt::AbstractStep { desc, .. } => {
+            if desc.is_empty() {
+                "abstract_step".into()
             } else {
-                let a: Vec<_> = args.iter().map(|s| format!("\\\"{}\\\"", escape(s))).collect();
-                format!("res_op(\\\"{resource}\\\", {action}, [{}])", a.join(","))
+                format!("abstract_step({desc})")
             }
         }
-        Op::Spawn(f) => format!("spawn(\\\"{f}\\\")"),
-        Op::SpawnAsync(f) => format!("spawn_async(\\\"{f}\\\")"),
-        Op::Join(f) => format!("join(\\\"{f}\\\")"),
-        Op::Await(f) => format!("await(\\\"{f}\\\")"),
-        Op::Call { target: f, .. } => format!("call(\\\"{f}\\\")"),
-        Op::Return(_) => "return".to_string(),
-        Op::Nop => "nop".to_string(),
-    };
+        Stmt::Loop { body, exit } => format!("loop({body}..{exit})"),
+    }
+}
 
-    let transfer_line = match &stmt.transfer {
-        Transfer::Next(sid) => format!("\\u2192 next {sid}"),
-        Transfer::Branch {
-            cond,
-            true_target,
-            false_target,
-        } => {
-            format!(
-                "\\u2192 branch [{cond}] T:{true_target} F:{false_target}",
-                cond = escape(cond),
-            )
-        }
-        Transfer::Switch { var, cases } => {
-            let arms: Vec<_> = cases.iter().map(|(l, s)| format!("{l}:{s}")).collect();
-            format!("\\u2192 switch({var}) {}", arms.join(" "))
-        }
-        Transfer::Return => "\\u2192 return".to_string(),
-    };
+fn format_call_compact(call: &Call) -> String {
+    match call {
+        Call::MutexLock { resource, .. } => format!("mutex_lock({resource})"),
+        Call::MutexUnlock { resource, .. } => format!("mutex_unlock({resource})"),
+        Call::RwLockRead { resource, .. } => format!("rwlock_read({resource})"),
+        Call::RwLockWrite { resource, .. } => format!("rwlock_write({resource})"),
+        Call::RwLockUnlock { resource, .. } => format!("rwlock_unlock({resource})"),
+        Call::ChannelSend { channel, .. } => format!("channel_send({channel})"),
+        Call::ChannelRecv { channel, .. } => format!("channel_recv({channel})"),
+        Call::CondvarWait { condvar, lock, .. } => format!("condvar_wait({condvar}, {lock})"),
+        Call::CondvarNotify { condvar, .. } => format!("condvar_notify({condvar})"),
+        Call::CondvarNotifyAll { condvar, .. } => format!("condvar_notify_all({condvar})"),
+        Call::SemaphoreAcquire { resource, .. } => format!("semaphore_acquire({resource})"),
+        Call::SemaphoreRelease { resource, .. } => format!("semaphore_release({resource})"),
+        Call::AtomicLoad { resource, .. } => format!("atomic_load({resource})"),
+        Call::AtomicStore { resource, .. } => format!("atomic_store({resource})"),
+        Call::AtomicCas { resource, .. } => format!("atomic_cas({resource})"),
+        Call::Func { func, .. } => format!("call({func})"),
+        Call::Spawn { func, .. } => format!("spawn({func})"),
+        Call::SpawnBatch { func, .. } => format!("spawn_batch({func})"),
+        Call::Join { handle, .. } => format!("join({handle})"),
+        Call::JoinAll { handle, .. } => format!("join_all({handle})"),
+        Call::AsyncCall { func, .. } => format!("async_call({func})"),
+        Call::Await { handle, .. } => format!("await({handle})"),
+        Call::Select { .. } => "select".into(),
+    }
+}
 
-    escape(&format!("{}: {}", stmt.sid, op_line)) + "\\n" + &transfer_line
+fn format_terminator_compact(block: &Block) -> String {
+    match &block.terminator {
+        Some(Terminator::Goto { .. }) => "goto".into(),
+        Some(Terminator::Branch { .. }) => "branch".into(),
+        Some(Terminator::Switch { .. }) => "switch".into(),
+        Some(Terminator::Return { .. }) => "return".into(),
+        None => "block".into(),
+    }
+}
+
+fn format_label_verbose(stmt: &Block) -> String {
+    format_label_compact(stmt)
 }
 
 // ── Edge generation ─────────────────────────────────────────────────────────
 
-fn write_edges(out: &mut String, prefix: &str, stmt: &Statement, opts: &DotOptions) {
+fn write_edges(out: &mut String, prefix: &str, stmt: &Block, opts: &DotOptions) {
     let src = format!("{prefix}_{}", stmt.sid);
 
-    match &stmt.transfer {
-        Transfer::Next(target) => {
+    if stmt.is_return() {
+        let dst = format!("{prefix}_ret");
+        writeln!(out, "    {src} -> {dst};").unwrap();
+        return;
+    }
+
+    match &stmt.terminator {
+        Some(Terminator::Goto { target }) => {
             let dst = format!("{prefix}_{target}");
             if opts.highlight_back_edges && is_back_edge(&stmt.sid, target) {
-                writeln!(
-                    out,
-                    "    {src} -> {dst} [color=blue, penwidth=2];",
-                )
-                .unwrap();
+                writeln!(out, "    {src} -> {dst} [color=blue, penwidth=2];").unwrap();
             } else {
                 writeln!(out, "    {src} -> {dst};").unwrap();
             }
         }
-        Transfer::Branch {
-            true_target,
-            false_target,
-            ..
-        } => {
-            let dst_t = format!("{prefix}_{true_target}");
-            let dst_f = format!("{prefix}_{false_target}");
-
-            let back_t = opts.highlight_back_edges && is_back_edge(&stmt.sid, true_target);
-            let back_f = opts.highlight_back_edges && is_back_edge(&stmt.sid, false_target);
-
+        Some(Terminator::Branch {
+            then, else_target, ..
+        }) => {
+            let dst_t = format!("{prefix}_{then}");
+            let dst_f = format!("{prefix}_{else_target}");
+            let back_t = opts.highlight_back_edges && is_back_edge(&stmt.sid, then);
+            let back_f = opts.highlight_back_edges && is_back_edge(&stmt.sid, else_target);
             if back_t {
-                writeln!(out, "    {src} -> {dst_t} [label=\"T\", color=blue, penwidth=2];").unwrap();
+                writeln!(
+                    out,
+                    "    {src} -> {dst_t} [label=\"T\", color=blue, penwidth=2];"
+                )
+                .unwrap();
             } else {
                 writeln!(out, "    {src} -> {dst_t} [label=\"T\", color=green];").unwrap();
             }
             if back_f {
-                writeln!(out, "    {src} -> {dst_f} [label=\"F\", color=blue, penwidth=2, style=dashed];").unwrap();
+                writeln!(
+                    out,
+                    "    {src} -> {dst_f} [label=\"F\", color=blue, penwidth=2, style=dashed];"
+                )
+                .unwrap();
             } else {
-                writeln!(out, "    {src} -> {dst_f} [label=\"F\", style=dashed, color=red];").unwrap();
+                writeln!(
+                    out,
+                    "    {src} -> {dst_f} [label=\"F\", style=dashed, color=red];"
+                )
+                .unwrap();
             }
         }
-        Transfer::Switch { cases, .. } => {
+        Some(Terminator::Switch { cases, default, .. }) => {
             for (label, target) in cases {
                 let dst = format!("{prefix}_{target}");
-                let back = opts.highlight_back_edges && is_back_edge(&stmt.sid, target);
-                if back {
-                    writeln!(
-                        out,
-                        "    {src} -> {dst} [label=\"{lbl}\", color=blue, penwidth=2];",
-                        lbl = escape(label),
-                    )
-                    .unwrap();
-                } else {
-                    writeln!(
-                        out,
-                        "    {src} -> {dst} [label=\"{lbl}\"];",
-                        lbl = escape(label),
-                    )
-                    .unwrap();
+                writeln!(out, "    {src} -> {dst} [label=\"{label}\"];").unwrap();
+            }
+            let dst = format!("{prefix}_{default}");
+            writeln!(out, "    {src} -> {dst} [label=\"default\", style=dashed];").unwrap();
+        }
+        Some(Terminator::Return { .. }) | None => {
+            if let Some(call) = &stmt.call {
+                for t in call.successor_sids() {
+                    let dst = format!("{prefix}_{t}");
+                    if opts.highlight_back_edges && is_back_edge(&stmt.sid, t) {
+                        writeln!(out, "    {src} -> {dst} [color=blue, penwidth=2];").unwrap();
+                    } else {
+                        writeln!(out, "    {src} -> {dst};").unwrap();
+                    }
                 }
             }
-        }
-        Transfer::Return => {
-            let dst = format!("{prefix}_ret");
-            writeln!(out, "    {src} -> {dst};").unwrap();
         }
     }
 }
 
 // ── Cross-function edges ────────────────────────────────────────────────────
 
-fn write_cross_function_edges(out: &mut String, functions: &[Function]) {
+fn write_cross_function_edges(out: &mut String, functions: &[&Function]) {
     writeln!(out, "  // Cross-function edges").unwrap();
 
     // Build a map: fn_name → first sid
@@ -471,44 +472,42 @@ fn write_cross_function_edges(out: &mut String, functions: &[Function]) {
     for func in functions {
         for stmt in &func.body {
             let src = format!("{}_{}", func.name, stmt.sid);
-            match &stmt.op {
-                Op::Spawn(target) => {
-                    if let Some(first) = first_sids.get(target.as_str()) {
+            match &stmt.call {
+                Some(Call::Spawn { func: target, .. } | Call::SpawnBatch { func: target, .. }) => {
+                    let name = target.rsplit("::").next().unwrap_or(target);
+                    if let Some(first) = first_sids.get(name) {
                         writeln!(
                             out,
-                            "  {src} -> {target}_{first} [style=dashed, color=blue, label=\"spawn\"];",
+                            "  {src} -> {name}_{first} [style=dashed, color=blue, label=\"spawn\"];",
                         )
                         .unwrap();
                     }
                 }
-                Op::SpawnAsync(target) => {
-                    if let Some(first) = first_sids.get(target.as_str()) {
+                Some(Call::AsyncCall { func: target, .. }) => {
+                    let name = target.rsplit("::").next().unwrap_or(target);
+                    if let Some(first) = first_sids.get(name) {
                         writeln!(
                             out,
-                            "  {src} -> {target}_{first} [style=dashed, color=blue, label=\"spawn_async\"];",
+                            "  {src} -> {name}_{first} [style=dashed, color=blue, label=\"async_call\"];",
                         )
                         .unwrap();
                     }
                 }
-                Op::Join(target) => {
-                    writeln!(
-                        out,
-                        "  {target}_ret -> {src} [style=dashed, color=purple, label=\"join\"];",
-                    )
-                    .unwrap();
-                }
-                Op::Await(target) => {
-                    writeln!(
-                        out,
-                        "  {target}_ret -> {src} [style=dashed, color=purple, label=\"await\"];",
-                    )
-                    .unwrap();
-                }
-                Op::Call { target, .. } => {
-                    if let Some(first) = first_sids.get(target.as_str()) {
+                Some(Call::Join { handle, .. } | Call::JoinAll { handle, .. }) => {
+                    if let Some(name) = handle.strip_prefix("h_") {
                         writeln!(
                             out,
-                            "  {src} -> {target}_{first} [style=dotted, color=gray50, label=\"call\"];",
+                            "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join\"];",
+                        )
+                        .unwrap();
+                    }
+                }
+                Some(Call::Func { func: target, .. }) => {
+                    let name = target.rsplit("::").next().unwrap_or(target);
+                    if let Some(first) = first_sids.get(name) {
+                        writeln!(
+                            out,
+                            "  {src} -> {name}_{first} [style=dotted, color=gray50, label=\"call\"];",
                         )
                         .unwrap();
                     }
