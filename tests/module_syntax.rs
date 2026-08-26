@@ -1,13 +1,13 @@
-//! `Module` is a first-class grammar declaration: same payload as `Program`,
-//! identified by `name`. Concatenation into a `Program` is not covered here.
+//! Module + FQN + Block/Call/Terminator grammar.
 
-use concir::ast::{Function, Module, Program};
+use concir::ast::{Block, Call, Function, Module, Program, Terminator};
+use concir::fqn;
 
 fn sample_module_json() -> &'static str {
     r#"{
         "name": "producer",
-        "provides": ["producer"],
-        "requires": [],
+        "provides": { "resources": ["mtx"], "functions": ["producer"] },
+        "requires": { "resources": [], "functions": [] },
         "resources": [
             {"name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync"}
         ],
@@ -17,9 +17,9 @@ fn sample_module_json() -> &'static str {
                 "name": "producer",
                 "kind": "closure",
                 "body": [
-                    {"sid": "s1", "op": ["res_op", "mtx", "lock"], "transfer": ["next", "s2"]},
-                    {"sid": "s2", "op": ["res_op", "mtx", "drop"], "transfer": ["next", "s3"]},
-                    {"sid": "s3", "op": "return", "transfer": "return"}
+                    {"sid": "s1", "call": {"kind": "mutex_lock", "resource": "mtx", "target": "s2"}},
+                    {"sid": "s2", "call": {"kind": "mutex_unlock", "resource": "mtx", "target": "s3"}},
+                    {"sid": "s3", "terminator": {"kind": "return"}}
                 ]
             }
         ]
@@ -27,69 +27,65 @@ fn sample_module_json() -> &'static str {
 }
 
 #[test]
-fn module_deserializes_with_program_payload() {
-    let module: Module = serde_json::from_str(sample_module_json()).expect("module must parse");
-
-    assert_eq!(module.name, "producer");
-    assert_eq!(module.provides, vec!["producer"]);
-    assert!(module.requires.is_empty());
-    assert_eq!(module.resources.len(), 1);
-    assert_eq!(module.resources[0].name, "mtx");
-    assert!(module.protection.is_empty());
-    assert_eq!(module.functions.len(), 1);
-    assert_eq!(module.functions[0].name, "producer");
-    assert!(module.entry.is_none());
-    assert!(module.goals.is_empty());
-}
-
-#[test]
-fn module_defaults_omitted_payload_fields() {
-    let module: Module = serde_json::from_str(r#"{"name": "main"}"#).expect("minimal module");
-
-    assert_eq!(module.name, "main");
-    assert!(module.provides.is_empty());
-    assert!(module.requires.is_empty());
-    assert!(module.resources.is_empty());
-    assert!(module.protection.is_empty());
-    assert!(module.functions.is_empty());
-    assert!(module.entry.is_none());
-    assert!(module.goals.is_empty());
-}
-
-#[test]
-fn module_roundtrips_through_json() {
-    let original: Module = serde_json::from_str(sample_module_json()).unwrap();
-    let encoded = serde_json::to_string(&original).unwrap();
-    let again: Module = serde_json::from_str(&encoded).unwrap();
-
-    assert_eq!(again.name, original.name);
-    assert_eq!(again.provides, original.provides);
-    assert_eq!(again.functions[0].name, original.functions[0].name);
-}
-
-#[test]
-fn module_rejects_unknown_fields() {
-    let result: Result<Module, _> = serde_json::from_str(r#"{"name": "x", "extra": 1}"#);
-    assert!(result.is_err(), "deny_unknown_fields must reject extra keys");
-}
-
-#[test]
-fn program_and_module_share_function_shape() {
+fn module_deserializes() {
     let module: Module = serde_json::from_str(sample_module_json()).unwrap();
-    let function: &Function = &module.functions[0];
+    assert_eq!(module.name, "producer");
+    assert_eq!(module.provides.functions, vec!["producer"]);
+    assert_eq!(module.functions[0].body.len(), 3);
+    assert!(matches!(
+        module.functions[0].body[2].terminator,
+        Some(Terminator::Return { value: None })
+    ));
+}
 
-    let program: Program = serde_json::from_str(&format!(
+#[test]
+fn program_uses_modules_and_fqn_entry() {
+    let json = format!(
         r#"{{
             "program": "assembled",
-            "resources": [],
-            "protection": [],
-            "functions": [{}],
-            "entry": "producer"
+            "modules": [{}],
+            "entry": "producer::producer"
         }}"#,
-        serde_json::to_string(function).unwrap()
-    ))
-    .expect("function JSON from a module must be valid inside a Program");
+        sample_module_json()
+    );
+    let program: Program = serde_json::from_str(&json).unwrap();
+    assert_eq!(program.entry, "producer::producer");
+    assert_eq!(fqn::split_fqn(&program.entry), Some(("producer", "producer")));
+    assert!(program.lookup_function("producer", "producer").is_some());
+}
 
-    assert_eq!(program.functions[0].name, "producer");
-    assert!(program.functions[0].module.is_none());
+#[test]
+fn block_rejects_both_call_and_terminator() {
+    let json = r#"{
+        "sid": "s1",
+        "call": {"kind": "mutex_lock", "resource": "m", "target": "s2"},
+        "terminator": {"kind": "return"}
+    }"#;
+    let result: Result<Block, _> = serde_json::from_str(json);
+    assert!(result.is_err());
+}
+
+#[test]
+fn return_lives_only_on_terminator() {
+    let f: Function = serde_json::from_str(
+        r#"{
+            "name": "f",
+            "kind": "normal",
+            "body": [{"sid": "s1", "terminator": {"kind": "return"}}]
+        }"#,
+    )
+    .unwrap();
+    assert!(f.body[0].is_return());
+    assert!(f.body[0].call.is_none());
+}
+
+#[test]
+fn fqn_helpers() {
+    assert_eq!(fqn::fqn("core", "main"), "core::main");
+    assert_eq!(fqn::split_fqn("core::main"), Some(("core", "main")));
+    assert_eq!(
+        fqn::split_location("core::main.s3"),
+        Some(("core", "main", "s3"))
+    );
+    assert!(!fqn::is_fqn("crate::main::entry"));
 }

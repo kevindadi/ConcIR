@@ -8,8 +8,9 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
 }
 
 fn check_resources(program: &Program, diags: &mut Vec<Diagnostic>) {
-    for (i, r) in program.resources.iter().enumerate() {
-        let path_prefix = format!("resources[{i}]");
+    for (mi, m) in program.modules.iter().enumerate() {
+        for (i, r) in m.resources.iter().enumerate() {
+            let path_prefix = format!("modules[{mi}].resources[{i}]");
 
         // E008: kind must be "sync" or "var"
         if r.kind != "sync" && r.kind != "var" {
@@ -28,6 +29,7 @@ fn check_resources(program: &Program, diags: &mut Vec<Diagnostic>) {
             check_sync_resource(r, &path_prefix, diags);
         } else {
             check_var_resource(r, &path_prefix, diags);
+        }
         }
     }
 }
@@ -192,8 +194,9 @@ fn check_init_type_match(
 }
 
 fn check_functions(program: &Program, diags: &mut Vec<Diagnostic>) {
-    for (fi, f) in program.functions.iter().enumerate() {
-        let fn_path = format!("functions[{fi}]");
+    for (mi, m) in program.modules.iter().enumerate() {
+        for (fi, f) in m.functions.iter().enumerate() {
+        let fn_path = Program::fn_path(mi, fi);
 
         // E010: function kind must be normal/async/closure
         if !["normal", "async", "closure"].contains(&f.kind.as_str()) {
@@ -219,6 +222,7 @@ fn check_functions(program: &Program, diags: &mut Vec<Diagnostic>) {
                     .with_fix("sid must be \"s\" followed by a number, e.g. \"s1\", \"s10\""),
                 );
             }
+        }
         }
     }
 }

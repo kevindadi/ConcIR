@@ -1,110 +1,232 @@
 {
   "program": "state_machine",
-  "resources": [
-    { "name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync" },
-    { "name": "cv", "kind": "sync", "type": "Condvar", "mode": "Sync" },
-    {
-      "name": "state",
-      "kind": "var",
-      "type": "Var",
-      "base": { "Enum": ["Init", "Running", "Paused", "Stopped"] },
-      "init": "Init"
-    }
-  ],
-  "protection": [{ "var": "state", "lock": "mtx" }],
-  "functions": [
+  "version": "3.1.0",
+  "modules": [
     {
       "name": "main",
-      "kind": "normal",
-      "body": [
+      "provides": {
+        "resources": [
+          "mtx",
+          "cv",
+          "state"
+        ],
+        "functions": [
+          "main",
+          "controller",
+          "worker"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
         {
-          "sid": "s1",
-          "op": ["spawn", "controller"],
-          "transfer": ["next", "s2"]
-        },
-        { "sid": "s2", "op": ["spawn", "worker"], "transfer": ["next", "s3"] },
-        {
-          "sid": "s3",
-          "op": ["join", "controller"],
-          "transfer": ["next", "s4"]
-        },
-        { "sid": "s4", "op": ["join", "worker"], "transfer": ["next", "s5"] },
-        { "sid": "s5", "op": "return", "transfer": "return" }
-      ]
-    },
-    {
-      "name": "controller",
-      "kind": "closure",
-      "body": [
-        {
-          "sid": "s10",
-          "op": ["res_op", "mtx", "lock"],
-          "transfer": ["next", "s11"]
+          "name": "mtx",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
         },
         {
-          "sid": "s11",
-          "op": ["res_op", "state", "write", "Running"],
-          "transfer": ["next", "s12"]
+          "name": "cv",
+          "kind": "sync",
+          "type": "Condvar",
+          "mode": "Sync"
         },
         {
-          "sid": "s12",
-          "op": ["res_op", "cv", "notify_all"],
-          "transfer": ["next", "s13"]
-        },
+          "name": "state",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Enum": [
+              "Init",
+              "Running",
+              "Paused",
+              "Stopped"
+            ]
+          },
+          "init": "Init"
+        }
+      ],
+      "protection": [
         {
-          "sid": "s13",
-          "op": ["res_op", "mtx", "drop"],
-          "transfer": ["next", "s14"]
-        },
-        { "sid": "s14", "op": "return", "transfer": "return" }
-      ]
-    },
-    {
-      "name": "worker",
-      "kind": "closure",
-      "body": [
+          "var": "state",
+          "lock": "mtx"
+        }
+      ],
+      "functions": [
         {
-          "sid": "s20",
-          "op": ["res_op", "mtx", "lock"],
-          "transfer": ["next", "s21"]
-        },
-        {
-          "sid": "s21",
-          "op": ["res_op", "state", "read"],
-          "transfer": [
-            "switch",
-            "state",
+          "name": "main",
+          "kind": "normal",
+          "body": [
             {
-              "Init": "s22",
-              "Running": "s23",
-              "Paused": "s24",
-              "Stopped": "s25"
+              "sid": "s1",
+              "call": {
+                "kind": "spawn",
+                "func": "controller",
+                "handle": "h_controller",
+                "target": "s2"
+              }
+            },
+            {
+              "sid": "s2",
+              "call": {
+                "kind": "spawn",
+                "func": "worker",
+                "handle": "h_worker",
+                "target": "s3"
+              }
+            },
+            {
+              "sid": "s3",
+              "call": {
+                "kind": "join",
+                "handle": "h_controller",
+                "target": "s4"
+              }
+            },
+            {
+              "sid": "s4",
+              "call": {
+                "kind": "join",
+                "handle": "h_worker",
+                "target": "s5"
+              }
+            },
+            {
+              "sid": "s5",
+              "terminator": {
+                "kind": "return"
+              }
             }
           ]
         },
         {
-          "sid": "s22",
-          "op": ["res_op", "cv", "wait", "mtx"],
-          "transfer": ["next", "s21"]
+          "name": "controller",
+          "kind": "closure",
+          "body": [
+            {
+              "sid": "s10",
+              "call": {
+                "kind": "mutex_lock",
+                "resource": "mtx",
+                "target": "s11"
+              }
+            },
+            {
+              "sid": "s11",
+              "statements": [
+                {
+                  "kind": "write_shared",
+                  "resource": "state",
+                  "expr": "Running"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
+                "target": "s12"
+              }
+            },
+            {
+              "sid": "s12",
+              "call": {
+                "kind": "condvar_notify_all",
+                "condvar": "cv",
+                "target": "s13"
+              }
+            },
+            {
+              "sid": "s13",
+              "call": {
+                "kind": "mutex_unlock",
+                "resource": "mtx",
+                "target": "s14"
+              }
+            },
+            {
+              "sid": "s14",
+              "terminator": {
+                "kind": "return"
+              }
+            }
+          ]
         },
         {
-          "sid": "s23",
-          "op": ["res_op", "mtx", "drop"],
-          "transfer": ["next", "s26"]
-        },
-        {
-          "sid": "s24",
-          "op": ["res_op", "cv", "wait", "mtx"],
-          "transfer": ["next", "s21"]
-        },
-        {
-          "sid": "s25",
-          "op": ["res_op", "mtx", "drop"],
-          "transfer": ["next", "s26"]
-        },
-        { "sid": "s26", "op": "return", "transfer": "return" }
+          "name": "worker",
+          "kind": "closure",
+          "body": [
+            {
+              "sid": "s20",
+              "call": {
+                "kind": "mutex_lock",
+                "resource": "mtx",
+                "target": "s21"
+              }
+            },
+            {
+              "sid": "s21",
+              "statements": [
+                {
+                  "kind": "read_shared",
+                  "resource": "state"
+                }
+              ],
+              "terminator": {
+                "kind": "switch",
+                "var": "state",
+                "cases": {
+                  "Init": "s22",
+                  "Running": "s23",
+                  "Paused": "s24",
+                  "Stopped": "s25"
+                },
+                "default": "s22"
+              }
+            },
+            {
+              "sid": "s22",
+              "call": {
+                "kind": "condvar_wait",
+                "condvar": "cv",
+                "lock": "mtx",
+                "target": "s21"
+              }
+            },
+            {
+              "sid": "s23",
+              "call": {
+                "kind": "mutex_unlock",
+                "resource": "mtx",
+                "target": "s26"
+              }
+            },
+            {
+              "sid": "s24",
+              "call": {
+                "kind": "condvar_wait",
+                "condvar": "cv",
+                "lock": "mtx",
+                "target": "s21"
+              }
+            },
+            {
+              "sid": "s25",
+              "call": {
+                "kind": "mutex_unlock",
+                "resource": "mtx",
+                "target": "s26"
+              }
+            },
+            {
+              "sid": "s26",
+              "terminator": {
+                "kind": "return"
+              }
+            }
+          ]
+        }
       ]
     }
   ],
-  "entry": "main"
+  "entry": "main::main"
 }

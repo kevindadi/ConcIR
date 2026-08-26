@@ -7,47 +7,70 @@ fn load_example(name: &str) -> Program {
     serde_json::from_str(&json).expect(&format!("parse {path}"))
 }
 
+fn fn_named<'a>(prog: &'a Program, name: &str) -> &'a Function {
+    prog.modules
+        .iter()
+        .flat_map(|m| m.functions.iter())
+        .find(|f| f.name == name)
+        .unwrap()
+}
+
+fn call_block(sid: &str, call: Call) -> Block {
+    Block {
+        sid: sid.into(),
+        statements: vec![],
+        call: Some(call),
+        terminator: None,
+    }
+}
+
+fn data_block(sid: &str, statements: Vec<Stmt>, terminator: Terminator) -> Block {
+    Block {
+        sid: sid.into(),
+        statements,
+        call: None,
+        terminator: Some(terminator),
+    }
+}
+
+fn ret_block(sid: &str) -> Block {
+    data_block(sid, vec![], Terminator::Return { value: None })
+}
+
 fn make_linear_function() -> Function {
     Function {
         name: "linear".into(),
         kind: "normal".into(),
         effects: None,
-        module: None,
         params: vec![],
         returns: None,
+        locals: vec![],
         body: vec![
-            Statement {
-                sid: "s1".into(),
-                op: Op::ResOp {
+            call_block(
+                "s1",
+                Call::MutexLock {
                     resource: "mtx".into(),
-                    action: "lock".into(),
-                    args: vec![],
+                    target: "s2".into(),
                 },
-                transfer: Transfer::Next("s2".into()),
-            },
-            Statement {
-                sid: "s2".into(),
-                op: Op::ResOp {
+            ),
+            data_block(
+                "s2",
+                vec![Stmt::WriteShared {
                     resource: "x".into(),
-                    action: "write".into(),
-                    args: vec!["42".into()],
+                    expr: "42".into(),
+                }],
+                Terminator::Goto {
+                    target: "s3".into(),
                 },
-                transfer: Transfer::Next("s3".into()),
-            },
-            Statement {
-                sid: "s3".into(),
-                op: Op::ResOp {
+            ),
+            call_block(
+                "s3",
+                Call::MutexUnlock {
                     resource: "mtx".into(),
-                    action: "drop".into(),
-                    args: vec![],
+                    target: "s4".into(),
                 },
-                transfer: Transfer::Next("s4".into()),
-            },
-            Statement {
-                sid: "s4".into(),
-                op: Op::Return(None),
-                transfer: Transfer::Return,
-            },
+            ),
+            ret_block("s4"),
         ],
     }
 }
@@ -57,46 +80,43 @@ fn make_branch_function() -> Function {
         name: "branching".into(),
         kind: "normal".into(),
         effects: None,
-        module: None,
         params: vec![],
         returns: None,
+        locals: vec![],
         body: vec![
-            Statement {
-                sid: "s1".into(),
-                op: Op::ResOp {
+            data_block(
+                "s1",
+                vec![Stmt::ReadShared {
                     resource: "flag".into(),
-                    action: "read".into(),
-                    args: vec![],
-                },
-                transfer: Transfer::Branch {
+                    dst: None,
+                }],
+                Terminator::Branch {
                     cond: "flag == true".into(),
-                    true_target: "s2".into(),
-                    false_target: "s3".into(),
+                    then: "s2".into(),
+                    else_target: "s3".into(),
                 },
-            },
-            Statement {
-                sid: "s2".into(),
-                op: Op::ResOp {
+            ),
+            data_block(
+                "s2",
+                vec![Stmt::WriteShared {
                     resource: "x".into(),
-                    action: "write".into(),
-                    args: vec!["1".into()],
+                    expr: "1".into(),
+                }],
+                Terminator::Goto {
+                    target: "s4".into(),
                 },
-                transfer: Transfer::Next("s4".into()),
-            },
-            Statement {
-                sid: "s3".into(),
-                op: Op::ResOp {
+            ),
+            data_block(
+                "s3",
+                vec![Stmt::WriteShared {
                     resource: "x".into(),
-                    action: "write".into(),
-                    args: vec!["0".into()],
+                    expr: "0".into(),
+                }],
+                Terminator::Goto {
+                    target: "s4".into(),
                 },
-                transfer: Transfer::Next("s4".into()),
-            },
-            Statement {
-                sid: "s4".into(),
-                op: Op::Return(None),
-                transfer: Transfer::Return,
-            },
+            ),
+            ret_block("s4"),
         ],
     }
 }
@@ -106,37 +126,33 @@ fn make_loop_function() -> Function {
         name: "looping".into(),
         kind: "closure".into(),
         effects: None,
-        module: None,
         params: vec![],
         returns: None,
+        locals: vec![],
         body: vec![
-            Statement {
-                sid: "s1".into(),
-                op: Op::ResOp {
+            data_block(
+                "s1",
+                vec![Stmt::ReadShared {
                     resource: "counter".into(),
-                    action: "read".into(),
-                    args: vec![],
-                },
-                transfer: Transfer::Branch {
+                    dst: None,
+                }],
+                Terminator::Branch {
                     cond: "counter < 10".into(),
-                    true_target: "s2".into(),
-                    false_target: "s3".into(),
+                    then: "s2".into(),
+                    else_target: "s3".into(),
                 },
-            },
-            Statement {
-                sid: "s2".into(),
-                op: Op::ResOp {
+            ),
+            data_block(
+                "s2",
+                vec![Stmt::WriteShared {
                     resource: "counter".into(),
-                    action: "write".into(),
-                    args: vec!["counter + 1".into()],
+                    expr: "counter + 1".into(),
+                }],
+                Terminator::Goto {
+                    target: "s1".into(),
                 },
-                transfer: Transfer::Next("s1".into()),
-            },
-            Statement {
-                sid: "s3".into(),
-                op: Op::Return(None),
-                transfer: Transfer::Return,
-            },
+            ),
+            ret_block("s3"),
         ],
     }
 }
@@ -205,7 +221,7 @@ fn branch_function_dot() {
 #[test]
 fn switch_from_state_machine() {
     let prog = load_example("state_machine");
-    let worker = prog.functions.iter().find(|f| f.name == "worker").unwrap();
+    let worker = fn_named(&prog, "worker");
     let dot = worker.to_dot();
 
     // s21 is the switch node (reads state, then switches)
@@ -323,8 +339,7 @@ fn verbose_labels() {
     };
     let dot = prog.to_dot_with_options(&opts);
 
-    // Verbose labels contain full op type like "res_op(...)"
-    assert!(dot.contains("res_op("));
+    assert!(dot.contains("mutex_lock") || dot.contains("spawn(") || dot.contains("call("));
 }
 
 #[test]
@@ -390,11 +405,7 @@ fn snapshot_with_summary_dot() {
 #[test]
 fn snapshot_function_only() {
     let prog = load_example("producer_consumer");
-    let producer = prog
-        .functions
-        .iter()
-        .find(|f| f.name == "producer")
-        .unwrap();
+    let producer = fn_named(&prog, "producer");
     let dot = producer.to_dot();
     insta::assert_snapshot!("producer_function_only_dot", dot);
 }

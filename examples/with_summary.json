@@ -1,153 +1,164 @@
 {
   "program": "with_summary",
-  "resources": [
-    {
-      "name": "mtx",
-      "kind": "sync",
-      "type": "Mutex",
-      "mode": "Sync"
-    },
-    {
-      "name": "counter",
-      "kind": "var",
-      "type": "Var",
-      "base": "Int",
-      "init": 0
-    },
-    {
-      "name": "threshold",
-      "kind": "var",
-      "type": "Var",
-      "base": "Int",
-      "init": 100
-    }
-  ],
-  "protection": [
-    {
-      "var": "counter",
-      "lock": "mtx"
-    },
-    {
-      "var": "threshold",
-      "lock": "mtx"
-    }
-  ],
-  "functions": [
+  "version": "3.1.0",
+  "modules": [
     {
       "name": "main",
-      "kind": "normal",
-      "body": [
-        {
-          "sid": "s1",
-          "op": [
-            "spawn",
-            "worker"
-          ],
-          "transfer": [
-            "next",
-            "s2"
-          ]
-        },
-        {
-          "sid": "s2",
-          "op": [
-            "join",
-            "worker"
-          ],
-          "transfer": [
-            "next",
-            "s3"
-          ]
-        },
-        {
-          "sid": "s3",
-          "op": "return",
-          "transfer": "return"
-        }
-      ]
-    },
-    {
-      "name": "worker",
-      "kind": "closure",
-      "body": [
-        {
-          "sid": "s10",
-          "op": [
-            "res_op",
-            "mtx",
-            "lock"
-          ],
-          "transfer": [
-            "next",
-            "s11"
-          ]
-        },
-        {
-          "sid": "s11",
-          "op": [
-            "call",
-            "validate"
-          ],
-          "transfer": [
-            "next",
-            "s12"
-          ]
-        },
-        {
-          "sid": "s12",
-          "op": [
-            "res_op",
-            "counter",
-            "write",
-            "counter + 1"
-          ],
-          "transfer": [
-            "next",
-            "s13"
-          ]
-        },
-        {
-          "sid": "s13",
-          "op": [
-            "res_op",
-            "mtx",
-            "drop"
-          ],
-          "transfer": [
-            "next",
-            "s14"
-          ]
-        },
-        {
-          "sid": "s14",
-          "op": "return",
-          "transfer": "return"
-        }
-      ]
-    },
-    {
-      "name": "validate",
-      "kind": "normal",
-      "body": [],
-      "effects": {
-        "reads": [
+      "provides": {
+        "resources": [
+          "mtx",
           "counter",
           "threshold"
         ],
-        "writes": []
-      }
-    },
-    {
-      "name": "helper_compare",
-      "kind": "normal",
-      "body": [],
-      "effects": {
-        "reads": [
-          "threshold"
-        ],
-        "writes": []
-      }
+        "functions": [
+          "main",
+          "worker",
+          "validate",
+          "helper_compare"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "mtx",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "counter",
+          "kind": "var",
+          "type": "Var",
+          "base": "Int",
+          "init": 0
+        },
+        {
+          "name": "threshold",
+          "kind": "var",
+          "type": "Var",
+          "base": "Int",
+          "init": 100
+        }
+      ],
+      "protection": [
+        {
+          "var": "counter",
+          "lock": "mtx"
+        },
+        {
+          "var": "threshold",
+          "lock": "mtx"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "call": {
+                "kind": "spawn",
+                "func": "worker",
+                "handle": "h_worker",
+                "target": "s2"
+              }
+            },
+            {
+              "sid": "s2",
+              "call": {
+                "kind": "join",
+                "handle": "h_worker",
+                "target": "s3"
+              }
+            },
+            {
+              "sid": "s3",
+              "terminator": {
+                "kind": "return"
+              }
+            }
+          ]
+        },
+        {
+          "name": "worker",
+          "kind": "closure",
+          "body": [
+            {
+              "sid": "s10",
+              "call": {
+                "kind": "mutex_lock",
+                "resource": "mtx",
+                "target": "s11"
+              }
+            },
+            {
+              "sid": "s11",
+              "call": {
+                "kind": "call",
+                "func": "validate",
+                "args": [],
+                "target": "s12"
+              }
+            },
+            {
+              "sid": "s12",
+              "statements": [
+                {
+                  "kind": "write_shared",
+                  "resource": "counter",
+                  "expr": "counter + 1"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
+                "target": "s13"
+              }
+            },
+            {
+              "sid": "s13",
+              "call": {
+                "kind": "mutex_unlock",
+                "resource": "mtx",
+                "target": "s14"
+              }
+            },
+            {
+              "sid": "s14",
+              "terminator": {
+                "kind": "return"
+              }
+            }
+          ]
+        },
+        {
+          "name": "validate",
+          "kind": "normal",
+          "body": [],
+          "effects": {
+            "reads": [
+              "counter",
+              "threshold"
+            ],
+            "writes": []
+          }
+        },
+        {
+          "name": "helper_compare",
+          "kind": "normal",
+          "body": [],
+          "effects": {
+            "reads": [
+              "threshold"
+            ],
+            "writes": []
+          }
+        }
+      ]
     }
   ],
-  "entry": "main"
+  "entry": "main::main"
 }

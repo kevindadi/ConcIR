@@ -3,129 +3,123 @@ use std::collections::HashMap;
 use crate::ast::*;
 use crate::diagnostic::Diagnostic;
 
-/// E4xx: Concurrency pairing checks.
+/// E4xx: Concurrency pairing — spawn/join and async_call/await pair on handles.
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let mut spawns: HashMap<String, Vec<OpInfo>> = HashMap::new();
     let mut joins: HashMap<String, Vec<OpInfo>> = HashMap::new();
     let mut async_spawns: HashMap<String, Vec<OpInfo>> = HashMap::new();
     let mut awaits: HashMap<String, Vec<OpInfo>> = HashMap::new();
 
-    for (fi, f) in program.functions.iter().enumerate() {
-        for (si, stmt) in f.body.iter().enumerate() {
-            let info = OpInfo {
-                fn_kind: f.kind.clone(),
-                fn_name: f.name.clone(),
-                path: format!("functions[{fi}].body[{si}].op"),
-            };
-            match &stmt.op {
-                Op::Spawn(t) => spawns.entry(t.clone()).or_default().push(info),
-                Op::Join(t) => joins.entry(t.clone()).or_default().push(info),
-                Op::SpawnAsync(t) => async_spawns.entry(t.clone()).or_default().push(info),
-                Op::Await(t) => awaits.entry(t.clone()).or_default().push(info),
-                _ => {}
+    program.walk_blocks(|mi, fi, si, _, f, block| {
+        let Some(call) = &block.call else {
+            return;
+        };
+        let info = OpInfo {
+            fn_kind: f.kind.clone(),
+            fn_name: f.name.clone(),
+            path: format!("{}.call", Program::block_path(mi, fi, si)),
+        };
+        match call {
+            Call::Spawn { handle, .. } | Call::SpawnBatch { handle, .. } => {
+                spawns.entry(handle.clone()).or_default().push(info);
             }
+            Call::Join { handle, .. } | Call::JoinAll { handle, .. } => {
+                joins.entry(handle.clone()).or_default().push(info);
+            }
+            Call::AsyncCall { handle, .. } => {
+                async_spawns.entry(handle.clone()).or_default().push(info);
+            }
+            Call::Await { handle, .. } => {
+                awaits.entry(handle.clone()).or_default().push(info);
+            }
+            _ => {}
         }
-    }
+    });
 
-    // E401: spawn without join
     for (name, infos) in &spawns {
         if !joins.contains_key(name) {
             for info in infos {
                 diags.push(
                     Diagnostic::warning(
                         "E401",
-                        format!("spawn('{name}') has no matching join('{name}')"),
+                        format!("spawn handle '{name}' has no matching join"),
                     )
                     .with_path(&info.path)
-                    .with_fix("add join() or confirm this is fire-and-forget"),
+                    .with_fix("add join/join_all on this handle or confirm fire-and-forget"),
                 );
             }
         }
     }
-
-    // E402: join without spawn
     for (name, infos) in &joins {
         if !spawns.contains_key(name) {
             for info in infos {
                 diags.push(
                     Diagnostic::error(
                         "E402",
-                        format!("join('{name}') has no matching spawn('{name}')"),
+                        format!("join handle '{name}' has no matching spawn"),
                     )
                     .with_path(&info.path)
-                    .with_fix("add spawn() before join, or remove the join"),
+                    .with_fix("spawn onto this handle before join"),
                 );
             }
         }
     }
-
-    // E403: spawn_async without await
     for (name, infos) in &async_spawns {
         if !awaits.contains_key(name) {
             for info in infos {
                 diags.push(
                     Diagnostic::warning(
                         "E403",
-                        format!("spawn_async('{name}') has no matching await('{name}')"),
+                        format!("async_call handle '{name}' has no matching await"),
                     )
                     .with_path(&info.path)
-                    .with_fix("add await() or change to spawn+join"),
+                    .with_fix("add await on this handle"),
                 );
             }
         }
     }
-
-    // E404: await without spawn_async
     for (name, infos) in &awaits {
         if !async_spawns.contains_key(name) {
             for info in infos {
                 diags.push(
                     Diagnostic::error(
                         "E404",
-                        format!("await('{name}') has no matching spawn_async('{name}')"),
+                        format!("await handle '{name}' has no matching async_call"),
                     )
                     .with_path(&info.path)
-                    .with_fix("add spawn_async() before await, or remove the await"),
+                    .with_fix("async_call onto this handle before await"),
                 );
             }
         }
     }
-
-    // E405: spawn paired with await (should be join)
     for (name, infos) in &awaits {
         if spawns.contains_key(name) && !async_spawns.contains_key(name) {
             for info in infos {
                 diags.push(
                     Diagnostic::error(
                         "E405",
-                        format!("spawn('{name}') is paired with await('{name}'); use join instead"),
+                        format!("spawn handle '{name}' is paired with await; use join instead"),
                     )
                     .with_path(&info.path)
-                    .with_fix("change await() to join()"),
+                    .with_fix("change await to join"),
                 );
             }
         }
     }
-
-    // E406: spawn_async paired with join (should be await)
     for (name, infos) in &joins {
         if async_spawns.contains_key(name) && !spawns.contains_key(name) {
             for info in infos {
                 diags.push(
                     Diagnostic::error(
                         "E406",
-                        format!(
-                            "spawn_async('{name}') is paired with join('{name}'); use await instead"
-                        ),
+                        format!("async_call handle '{name}' is paired with join; use await instead"),
                     )
                     .with_path(&info.path)
-                    .with_fix("change join() to await()"),
+                    .with_fix("change join to await"),
                 );
             }
         }
     }
-
-    // E407: join in async context
     for infos in joins.values() {
         for info in infos {
             if info.fn_kind == "async" {
@@ -138,13 +132,11 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                         ),
                     )
                     .with_path(&info.path)
-                    .with_fix("use spawn_async + await, or use spawn_blocking"),
+                    .with_fix("use async_call + await"),
                 );
             }
         }
     }
-
-    // E408: await in sync context
     for infos in awaits.values() {
         for info in infos {
             if info.fn_kind == "normal" {
@@ -154,7 +146,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                         format!("await() in non-async function '{}'", info.fn_name),
                     )
                     .with_path(&info.path)
-                    .with_fix("change the function to async, or use join instead"),
+                    .with_fix("change the function to async, or use join"),
                 );
             }
         }

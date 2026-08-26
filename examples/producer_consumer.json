@@ -1,91 +1,229 @@
 {
   "program": "producer_consumer",
-  "resources": [
-    { "name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync" },
-    { "name": "cv", "kind": "sync", "type": "Condvar", "mode": "Sync" },
-    { "name": "count", "kind": "var", "type": "Var", "base": "Int", "init": 0 }
-  ],
-  "protection": [{ "var": "count", "lock": "mtx" }],
-  "functions": [
+  "version": "3.1.0",
+  "modules": [
     {
       "name": "main",
-      "kind": "normal",
-      "body": [
+      "provides": {
+        "resources": [
+          "mtx",
+          "cv",
+          "count"
+        ],
+        "functions": [
+          "main",
+          "producer",
+          "consumer"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
         {
-          "sid": "s1",
-          "op": ["spawn", "producer"],
-          "transfer": ["next", "s2"]
+          "name": "mtx",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
         },
         {
-          "sid": "s2",
-          "op": ["spawn", "consumer"],
-          "transfer": ["next", "s3"]
-        },
-        { "sid": "s3", "op": ["join", "producer"], "transfer": ["next", "s4"] },
-        { "sid": "s4", "op": ["join", "consumer"], "transfer": ["next", "s5"] },
-        { "sid": "s5", "op": "return", "transfer": "return" }
-      ]
-    },
-    {
-      "name": "producer",
-      "kind": "closure",
-      "body": [
-        {
-          "sid": "s1",
-          "op": ["res_op", "mtx", "lock"],
-          "transfer": ["next", "s2"]
+          "name": "cv",
+          "kind": "sync",
+          "type": "Condvar",
+          "mode": "Sync"
         },
         {
-          "sid": "s2",
-          "op": ["res_op", "count", "write", "count + 1"],
-          "transfer": ["next", "s3"]
+          "name": "count",
+          "kind": "var",
+          "type": "Var",
+          "base": "Int",
+          "init": 0
+        }
+      ],
+      "protection": [
+        {
+          "var": "count",
+          "lock": "mtx"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "call": {
+                "kind": "spawn",
+                "func": "producer",
+                "handle": "h_producer",
+                "target": "s2"
+              }
+            },
+            {
+              "sid": "s2",
+              "call": {
+                "kind": "spawn",
+                "func": "consumer",
+                "handle": "h_consumer",
+                "target": "s3"
+              }
+            },
+            {
+              "sid": "s3",
+              "call": {
+                "kind": "join",
+                "handle": "h_producer",
+                "target": "s4"
+              }
+            },
+            {
+              "sid": "s4",
+              "call": {
+                "kind": "join",
+                "handle": "h_consumer",
+                "target": "s5"
+              }
+            },
+            {
+              "sid": "s5",
+              "terminator": {
+                "kind": "return"
+              }
+            }
+          ]
         },
         {
-          "sid": "s3",
-          "op": ["res_op", "cv", "notify_all"],
-          "transfer": ["next", "s4"]
+          "name": "producer",
+          "kind": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "call": {
+                "kind": "mutex_lock",
+                "resource": "mtx",
+                "target": "s2"
+              }
+            },
+            {
+              "sid": "s2",
+              "statements": [
+                {
+                  "kind": "write_shared",
+                  "resource": "count",
+                  "expr": "count + 1"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
+                "target": "s3"
+              }
+            },
+            {
+              "sid": "s3",
+              "call": {
+                "kind": "condvar_notify_all",
+                "condvar": "cv",
+                "target": "s4"
+              }
+            },
+            {
+              "sid": "s4",
+              "call": {
+                "kind": "mutex_unlock",
+                "resource": "mtx",
+                "target": "s5"
+              }
+            },
+            {
+              "sid": "s5",
+              "terminator": {
+                "kind": "return"
+              }
+            }
+          ]
         },
         {
-          "sid": "s4",
-          "op": ["res_op", "mtx", "drop"],
-          "transfer": ["next", "s5"]
-        },
-        { "sid": "s5", "op": "return", "transfer": "return" }
-      ]
-    },
-    {
-      "name": "consumer",
-      "kind": "closure",
-      "body": [
-        {
-          "sid": "s1",
-          "op": ["res_op", "mtx", "lock"],
-          "transfer": ["next", "s2"]
-        },
-        {
-          "sid": "s2",
-          "op": ["res_op", "count", "read"],
-          "transfer": ["branch", "count > 0", "s5", "s3"]
-        },
-        {
-          "sid": "s3",
-          "op": ["res_op", "cv", "wait", "mtx"],
-          "transfer": ["next", "s4"]
-        },
-        { "sid": "s4", "op": "nop", "transfer": ["next", "s2"] },
-        {
-          "sid": "s5",
-          "op": ["res_op", "count", "write", "count - 1"],
-          "transfer": ["next", "s6"]
-        },
-        {
-          "sid": "s6",
-          "op": ["res_op", "mtx", "drop"],
-          "transfer": ["next", "s7"]
-        },
-        { "sid": "s7", "op": "return", "transfer": "return" }
+          "name": "consumer",
+          "kind": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "call": {
+                "kind": "mutex_lock",
+                "resource": "mtx",
+                "target": "s2"
+              }
+            },
+            {
+              "sid": "s2",
+              "statements": [
+                {
+                  "kind": "read_shared",
+                  "resource": "count"
+                }
+              ],
+              "terminator": {
+                "kind": "branch",
+                "cond": "count > 0",
+                "then": "s5",
+                "else": "s3"
+              }
+            },
+            {
+              "sid": "s3",
+              "call": {
+                "kind": "condvar_wait",
+                "condvar": "cv",
+                "lock": "mtx",
+                "target": "s4"
+              }
+            },
+            {
+              "sid": "s4",
+              "statements": [
+                {
+                  "kind": "nop"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
+                "target": "s2"
+              }
+            },
+            {
+              "sid": "s5",
+              "statements": [
+                {
+                  "kind": "write_shared",
+                  "resource": "count",
+                  "expr": "count - 1"
+                }
+              ],
+              "terminator": {
+                "kind": "goto",
+                "target": "s6"
+              }
+            },
+            {
+              "sid": "s6",
+              "call": {
+                "kind": "mutex_unlock",
+                "resource": "mtx",
+                "target": "s7"
+              }
+            },
+            {
+              "sid": "s7",
+              "terminator": {
+                "kind": "return"
+              }
+            }
+          ]
+        }
       ]
     }
   ],
-  "entry": "main"
+  "entry": "main::main"
 }

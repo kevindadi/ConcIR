@@ -8,7 +8,8 @@ use crate::validate::types::{build_resource_type_map, ResType};
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let rt_map = build_resource_type_map(program);
 
-    for (fi, f) in program.functions.iter().enumerate() {
+    for (mi, m) in program.modules.iter().enumerate() {
+        for (fi, f) in m.functions.iter().enumerate() {
         if f.body.is_empty() {
             continue;
         }
@@ -23,42 +24,21 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
         let n = f.body.len();
         let mut successors = vec![Vec::new(); n];
 
-        for (i, stmt) in f.body.iter().enumerate() {
-            match &stmt.transfer {
-                Transfer::Next(ref target) => {
-                    if let Some(&ti) = sid_to_idx.get(target.as_str()) {
-                        successors[i].push(ti);
-                    }
+        for (i, block) in f.body.iter().enumerate() {
+            for t in block.successor_sids() {
+                if let Some(&ti) = sid_to_idx.get(t) {
+                    successors[i].push(ti);
                 }
-                Transfer::Branch {
-                    true_target,
-                    false_target,
-                    ..
-                } => {
-                    if let Some(&ti) = sid_to_idx.get(true_target.as_str()) {
-                        successors[i].push(ti);
-                    }
-                    if let Some(&fli) = sid_to_idx.get(false_target.as_str()) {
-                        successors[i].push(fli);
-                    }
-                }
-                Transfer::Switch { cases, .. } => {
-                    for (_, target) in cases {
-                        if let Some(&ci) = sid_to_idx.get(target.as_str()) {
-                            successors[i].push(ci);
-                        }
-                    }
-                }
-                Transfer::Return => {}
             }
         }
 
-        let fn_path = format!("functions[{fi}]");
+        let fn_path = Program::fn_path(mi, fi);
         check_reachability(f, &successors, n, &fn_path, diags);
         check_return_paths(f, &successors, n, &fn_path, diags);
         check_branch_targets_same(f, &fn_path, diags);
         check_switch_exhaustive(f, &rt_map, &fn_path, diags);
         check_infinite_loop(f, &successors, n, &fn_path, diags);
+        }
     }
 }
 
@@ -111,7 +91,7 @@ fn check_return_paths(
 ) {
     for (i, succs) in successors.iter().enumerate().take(n) {
         let stmt = &f.body[i];
-        let is_return = matches!(stmt.op, Op::Return(_)) || matches!(stmt.transfer, Transfer::Return);
+        let is_return = stmt.is_return();
         let has_no_successors = succs.is_empty();
 
         if has_no_successors && !is_return {
@@ -132,24 +112,22 @@ fn check_return_paths(
 
 /// E603: branch with same true/false targets
 fn check_branch_targets_same(f: &Function, fn_path: &str, diags: &mut Vec<Diagnostic>) {
-    for (si, stmt) in f.body.iter().enumerate() {
-        if let Transfer::Branch {
-            ref true_target,
-            ref false_target,
-            ..
-        } = stmt.transfer
+    for (si, block) in f.body.iter().enumerate() {
+        if let Some(Terminator::Branch {
+            then, else_target, ..
+        }) = &block.terminator
         {
-            if true_target == false_target {
+            if then == else_target {
                 diags.push(
                     Diagnostic::warning(
                         "E603",
                         format!(
-                            "branch at '{}' has identical true/false targets '{true_target}'",
-                            stmt.sid
+                            "branch at '{}' has identical then/else targets '{then}'",
+                            block.sid
                         ),
                     )
-                    .with_path(format!("{fn_path}.body[{si}].transfer"))
-                    .with_fix("use 'next' instead, or correct the branch targets"),
+                    .with_path(format!("{fn_path}.body[{si}].terminator"))
+                    .with_fix("use goto instead, or correct the branch targets"),
                 );
             }
         }
@@ -163,13 +141,12 @@ fn check_switch_exhaustive(
     fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
-    for (si, stmt) in f.body.iter().enumerate() {
-        if let Transfer::Switch { ref var, ref cases } = stmt.transfer {
+    for (si, block) in f.body.iter().enumerate() {
+        if let Some((var, cases, _)) = block.switch() {
             if let Some(rt) = rt_map.get(var) {
                 let bt = crate::validate::types::res_type_to_base(rt);
                 if let Some(BaseType::Complex(ComplexBaseType::Enum(ref variants))) = bt {
-                    let covered: HashSet<&str> =
-                        cases.iter().map(|(label, _)| label.as_str()).collect();
+                    let covered: HashSet<&str> = cases.keys().map(String::as_str).collect();
 
                     let missing: Vec<&str> = variants
                         .iter()
@@ -186,7 +163,7 @@ fn check_switch_exhaustive(
                                     missing.join(", ")
                                 ),
                             )
-                            .with_path(format!("{fn_path}.body[{si}].transfer[2]"))
+                            .with_path(format!("{fn_path}.body[{si}].terminator.cases"))
                             .with_fix("add case branches for the missing variants"),
                         );
                     }
@@ -217,9 +194,7 @@ fn check_infinite_loop(
         let scc_set: HashSet<usize> = scc.iter().copied().collect();
 
         let has_exit = scc.iter().any(|&idx| {
-            successors[idx].iter().any(|s| !scc_set.contains(s))
-                || matches!(f.body[idx].transfer, Transfer::Return)
-                || matches!(f.body[idx].op, Op::Return(_))
+            successors[idx].iter().any(|s| !scc_set.contains(s)) || f.body[idx].is_return()
         });
 
         if has_exit {
@@ -227,14 +202,19 @@ fn check_infinite_loop(
         }
 
         let has_blocking = scc.iter().any(|&idx| {
-            let stmt = &f.body[idx];
-            match &stmt.op {
-                Op::Await(_) | Op::Join(_) => true,
-                Op::ResOp { ref action, .. } => {
-                    matches!(action.as_str(), "recv" | "acquire" | "wait")
-                }
-                _ => false,
-            }
+            let block = &f.body[idx];
+            matches!(
+                &block.call,
+                Some(
+                    Call::Await { .. }
+                        | Call::Join { .. }
+                        | Call::JoinAll { .. }
+                        | Call::ChannelRecv { .. }
+                        | Call::SemaphoreAcquire { .. }
+                        | Call::CondvarWait { .. }
+                        | Call::Select { .. }
+                )
+            )
         });
 
         if !has_blocking {

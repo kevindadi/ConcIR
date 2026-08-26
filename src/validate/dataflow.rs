@@ -1,44 +1,50 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::*;
 use crate::diagnostic::Diagnostic;
+use crate::fqn;
 
 /// E9xx: Typed data-flow checks (params, returns, call sites).
-///
-/// Data-flow follows the projection principle: only `modeled: true` params and
-/// returns enter the CVN variable store. Unmodeled values are codegen-only
-/// placeholders and must never be referenced by the model's expressions.
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
-    let resource_names: HashSet<&str> = program.resources.iter().map(|r| r.name.as_str()).collect();
-    let var_resources: HashSet<&str> = program
-        .resources
-        .iter()
-        .filter(|r| r.kind == "var")
-        .map(|r| r.name.as_str())
-        .collect();
-    let callees: std::collections::HashMap<&str, &Function> = program
-        .functions
-        .iter()
-        .map(|f| (f.name.as_str(), f))
-        .collect();
+    let mut resource_names: HashSet<String> = HashSet::new();
+    let mut var_resources: HashSet<String> = HashSet::new();
+    let mut callees: HashMap<String, &Function> = HashMap::new();
 
-    for (fi, f) in program.functions.iter().enumerate() {
-        check_param_decls(f, &resource_names, fi, diags);
-        check_return_decl(f, fi, diags);
-        check_call_sites(f, &callees, &var_resources, fi, diags);
+    for m in &program.modules {
+        for r in &m.resources {
+            resource_names.insert(r.name.clone());
+            resource_names.insert(fqn::fqn(&m.name, &r.name));
+            if r.kind == "var" {
+                var_resources.insert(r.name.clone());
+                var_resources.insert(fqn::fqn(&m.name, &r.name));
+            }
+        }
+        for f in &m.functions {
+            callees.insert(f.name.clone(), f);
+            callees.insert(fqn::fqn(&m.name, &f.name), f);
+        }
+    }
+
+    for (mi, m) in program.modules.iter().enumerate() {
+        for (fi, f) in m.functions.iter().enumerate() {
+            check_param_decls(f, &resource_names, mi, fi, diags);
+            check_return_decl(f, mi, fi, diags);
+            check_call_sites(f, &callees, &var_resources, mi, fi, diags);
+        }
     }
 }
 
 fn check_param_decls(
     f: &Function,
-    resource_names: &HashSet<&str>,
+    resource_names: &HashSet<String>,
+    mi: usize,
     fi: usize,
     diags: &mut Vec<Diagnostic>,
 ) {
     let mut seen: HashSet<&str> = HashSet::new();
     for (pi, p) in f.params.iter().enumerate() {
-        let path = format!("functions[{fi}].params[{pi}]");
-        if resource_names.contains(p.name.as_str()) {
+        let path = format!("{}.params[{pi}]", Program::fn_path(mi, fi));
+        if resource_names.contains(&p.name) {
             diags.push(
                 Diagnostic::error(
                     "E910",
@@ -61,8 +67,6 @@ fn check_param_decls(
                 .with_fix("assign a unique parameter name"),
             );
         }
-        // E912: an unmodeled param must not be referenced by the model's
-        // expressions (it is not in the CVN variable store).
         if !p.modeled && param_referenced_in_body(f, &p.name) {
             diags.push(
                 Diagnostic::error(
@@ -80,84 +84,65 @@ fn check_param_decls(
     }
 }
 
-fn check_return_decl(f: &Function, fi: usize, diags: &mut Vec<Diagnostic>) {
+fn check_return_decl(f: &Function, mi: usize, fi: usize, diags: &mut Vec<Diagnostic>) {
     let Some(ret) = &f.returns else {
         return;
     };
     if !ret.modeled {
         return;
     }
-    // E913: a modeled return should be produced by every return statement;
-    // a bare `return` binds Unknown.
     let bare_returns = f
         .body
         .iter()
-        .filter(|s| matches!(&s.op, Op::Return(None)))
+        .filter(|b| matches!(&b.terminator, Some(Terminator::Return { value: None })))
         .count();
     if bare_returns > 0 {
         diags.push(
             Diagnostic::warning(
                 "E913",
                 format!(
-                    "function '{}' declares a modeled return '{}' but {} return statement(s) \
+                    "function '{}' declares a modeled return '{}' but {} return terminator(s) \
                      carry no value; those paths bind Unknown",
                     f.name, ret.name, bare_returns
                 ),
             )
-            .with_path(format!("functions[{fi}].returns"))
-            .with_fix("give every return statement a value expression"),
+            .with_path(format!("{}.returns", Program::fn_path(mi, fi)))
+            .with_fix("give every return terminator a value expression"),
         );
     }
 }
 
 fn check_call_sites(
     f: &Function,
-    callees: &std::collections::HashMap<&str, &Function>,
-    var_resources: &HashSet<&str>,
+    callees: &HashMap<String, &Function>,
+    var_resources: &HashSet<String>,
+    mi: usize,
     fi: usize,
     diags: &mut Vec<Diagnostic>,
 ) {
-    for (si, stmt) in f.body.iter().enumerate() {
-        let Op::Call { target, extras } = &stmt.op else {
+    for (si, block) in f.body.iter().enumerate() {
+        let Some(Call::Func {
+            func,
+            args,
+            dst,
+            ..
+        }) = &block.call
+        else {
             continue;
         };
-        let Some(callee) = callees.get(target.as_str()) else {
-            continue; // undefined target is already E102
+        let Some(callee) = callees.get(func) else {
+            continue;
         };
 
         let modeled_params: Vec<&ParamDecl> = callee.params.iter().filter(|p| p.modeled).collect();
-        let has_modeled_return = callee
-            .returns
-            .as_ref()
-            .map(|r| r.modeled)
-            .unwrap_or(false);
+        let path = format!("{}.call", Program::block_path(mi, fi, si));
 
-        // Interpret extras: optional out-var (only when the callee models a
-        // return), then the argument list.
-        let (out, args): (Option<&String>, &[String]) = if has_modeled_return {
-            if extras.is_empty() {
-                (None, &[])
-            } else {
-                let out = if extras[0].is_empty() {
-                    None
-                } else {
-                    Some(&extras[0])
-                };
-                (out, &extras[1..])
-            }
-        } else {
-            (None, extras.as_slice())
-        };
-
-        let path = format!("functions[{fi}].body[{si}].op");
-
-        // E920: argument count must match the callee's modeled params.
         if args.len() != modeled_params.len() {
             diags.push(
                 Diagnostic::error(
                     "E920",
                     format!(
-                        "call('{target}') expects {} argument(s) for its modeled parameters, got {}",
+                        "call('{func}') expects {} argument(s) for its modeled parameters, got {}",
                         modeled_params.len(),
                         args.len()
                     ),
@@ -170,14 +155,13 @@ fn check_call_sites(
             );
         }
 
-        // E921: the capture out-var must be a writable Var/Atomic resource.
-        if let Some(out_name) = out {
-            if !var_resources.contains(out_name.as_str()) {
+        if let Some(out_name) = dst {
+            if !var_resources.contains(out_name) {
                 diags.push(
                     Diagnostic::error(
                         "E921",
                         format!(
-                            "call('{target}') captures its return into '{out_name}', which is not \
+                            "call('{func}') captures its return into '{out_name}', which is not \
                              a writable Var/Atomic resource"
                         ),
                     )
@@ -189,27 +173,46 @@ fn check_call_sites(
     }
 }
 
-/// Does the body reference `param` in any model expression (branch condition,
-/// switch variable, write/store/send/cas value, or return value)?
 fn param_referenced_in_body(f: &Function, param: &str) -> bool {
-    f.body.iter().any(|s| {
-        let value_texts: Vec<&str> = match &s.op {
-            Op::ResOp {
-                action, args, ..
-            } if matches!(action.as_str(), "write" | "store" | "send" | "cas") => {
-                args.iter().map(String::as_str).collect()
+    f.body.iter().any(|b| {
+        let mut texts: Vec<&str> = Vec::new();
+        for s in &b.statements {
+            match s {
+                Stmt::AssignLocal { expr, .. } | Stmt::WriteShared { expr, .. } => texts.push(expr),
+                _ => {}
             }
-            Op::Return(Some(value)) => vec![value.as_str()],
-            _ => Vec::new(),
-        };
-        value_texts.iter().any(|t| contains_word(t, param))
-            || matches!(&s.transfer, Transfer::Branch { cond, .. } if contains_word(cond, param))
-            || matches!(&s.transfer, Transfer::Switch { var, .. } if contains_word(var, param))
+        }
+        match &b.call {
+            Some(Call::ChannelSend { value, .. } | Call::AtomicStore { value, .. }) => {
+                texts.push(value);
+            }
+            Some(Call::AtomicCas {
+                expected, desired, ..
+            }) => {
+                texts.push(expected);
+                texts.push(desired);
+            }
+            Some(Call::Func { args, .. }) | Some(Call::Spawn { args, .. }) => {
+                texts.extend(args.iter().map(String::as_str));
+            }
+            _ => {}
+        }
+        if let Some(Terminator::Return {
+            value: Some(value),
+        }) = &b.terminator
+        {
+            texts.push(value);
+        }
+        if let Some(cond) = b.branch_cond() {
+            texts.push(cond);
+        }
+        if let Some((var, _, _)) = b.switch() {
+            texts.push(var);
+        }
+        texts.iter().any(|t| contains_word(t, param))
     })
 }
 
-/// True when `param` appears as a whole word in `text` (split on non-identifier
-/// characters).
 fn contains_word(text: &str, param: &str) -> bool {
     text.split(|c: char| !(c.is_alphanumeric() || c == '_'))
         .any(|tok| tok == param)
