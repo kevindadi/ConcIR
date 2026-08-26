@@ -34,7 +34,8 @@ items, and the process exits with exit code 1.
 
 | Document                         | Contents                                                        |
 | -------------------------------- | --------------------------------------------------------------- |
-| [`doc/syntax.md`](doc/syntax.md) | Grammar: FQN rules, modules, flattened CFG (statements + terminator), validation pipeline |
+| [`doc/syntax.md`](doc/syntax.md) | Prose grammar: FQN rules, modules, flattened CFG, validation pipeline |
+| [`doc/ebnf.md`](doc/ebnf.md)     | ISO EBNF abstract syntax                                             |
 | [`doc/error_codes.md`](doc/error_codes.md) | Validation error reference (E0xx–E9xx) and diagnostic output format |
 | [`doc/todo.md`](doc/todo.md)     | Roadmap: modeling scope, call semantics, modular generation     |
 
@@ -61,7 +62,8 @@ src/
   export/
     dot.rs             Graphviz DOT from blocks / calls / terminators
 doc/
-  syntax.md            ConcIR grammar reference
+  syntax.md            ConcIR grammar reference (prose)
+  ebnf.md              ISO EBNF abstract syntax
   error_codes.md       Error code reference and diagnostic format
   todo.md              Roadmap
 examples/
