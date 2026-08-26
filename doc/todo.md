@@ -37,4 +37,4 @@ Status legend: `[x]` done · `[ ]` planned · `[~]` in progress
 
 ## Repo hygiene
 
-- `[ ]` Doc auto-check in CI: verify `syntax.md`/`error_codes.md` stay in sync with `src/ast.rs` and `src/validate/`
+- `[ ]` Doc auto-check in CI: verify `doc/syntax/`/`error_codes.md` stay in sync with `src/ast.rs` and `src/validate/`

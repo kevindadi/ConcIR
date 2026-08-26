@@ -3,7 +3,7 @@
 The validator emits structured diagnostics. Locations use JSON paths, e.g.
 `modules[0].functions[1].body[3].call`.
 
-See [`syntax.md`](syntax.md) for the grammar and [`todo.md`](todo.md) for the roadmap.
+See [`syntax/`](syntax/README.md) for the grammar and [`todo.md`](todo.md) for the roadmap.
 
 ## E0xx — Structural errors
 

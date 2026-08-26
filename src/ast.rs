@@ -223,7 +223,7 @@ pub struct Protection {
 
 /// A typed data-flow declaration: a function parameter or return value.
 /// `modeled` controls whether the value is materialized in the CVN variable
-/// store (see `doc/syntax.md`). Unmodeled values are codegen-only placeholders
+/// store (see `doc/syntax/function.md`). Unmodeled values are codegen-only placeholders
 /// and never enter the net.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -481,7 +481,7 @@ pub struct SelectBranch {
 /// `condvar_wait` is not a `select!` candidate in sync Rust (`Condvar::wait`
 /// is a blocking primitive). It is only legal in an `async` function on an
 /// `Async`-mode Condvar; the translator maps it to `Notify` / `watch` or a
-/// timeout race. See `doc/syntax.md`.
+/// timeout race. See `doc/syntax/terminator.md`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum SelectGuard {

@@ -4,7 +4,7 @@ Abstract syntax of ConcIR in ISO/IEC 14977 EBNF. The concrete syntax is
 tagged JSON (`"kind"` discriminators); this grammar is the structure the
 deserializer accepts. Well-formedness that serde cannot express (resource
 fields by type, FQN vs short name in `provides`/`requires`, E409, …) is
-enforced by `src/validate/` — see [`syntax.md`](syntax.md) and
+enforced by `src/validate/` — see [`syntax/`](syntax/README.md) and
 [`error_codes.md`](error_codes.md).
 
 Notation: `=` definition, `,` sequence, `|` choice, `[…]` optional,
