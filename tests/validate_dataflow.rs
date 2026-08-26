@@ -267,3 +267,125 @@ fn atomic_cas_dst_old_value_same_base_is_valid() {
         report.diagnostics
     );
 }
+
+#[test]
+fn channel_missing_capacity_is_e001() {
+    let report = wrap(
+        r#"[{"name": "tx", "kind": "sync", "type": "Channel", "mode": "Sync", "base": "Int"}]"#,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "terminator": {"kind": "return"}}
+        ]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E001"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn channel_negative_capacity_is_e001() {
+    let report = wrap(
+        r#"[{"name": "tx", "kind": "sync", "type": "Channel", "mode": "Sync", "base": "Int", "capacity": -1}]"#,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "terminator": {"kind": "return"}}
+        ]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E001"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn channel_recv_dst_type_mismatch_is_e206() {
+    let report = wrap(
+        r#"[{"name": "tx", "kind": "sync", "type": "Channel", "mode": "Sync", "base": "Int", "capacity": 4}]"#,
+        r#"[
+            {"name": "main", "kind": "normal",
+             "locals": [{"name": "ok", "type": "Bool", "modeled": true}],
+             "body": [
+                {"sid": "s1",
+                 "statements": [{"kind": "channel_recv", "channel": "tx", "dst": "ok"}],
+                 "terminator": {"kind": "return"}}
+             ]}
+        ]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E206"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn select_channel_recv_dst_type_mismatch_is_e206() {
+    let report = wrap(
+        r#"[{"name": "tx", "kind": "sync", "type": "Channel", "mode": "Sync", "base": "Int", "capacity": 4}]"#,
+        r#"[
+            {"name": "main", "kind": "normal",
+             "locals": [{"name": "ok", "type": "Bool", "modeled": true}],
+             "body": [
+                {"sid": "s1",
+                 "terminator": {"kind": "select", "branches": [
+                    {"guard": {"kind": "channel_recv", "channel": "tx", "dst": "ok"},
+                     "target": "s2"}
+                 ]}},
+                {"sid": "s2", "terminator": {"kind": "return"}}
+             ]}
+        ]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E206"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn select_channel_recv_dst_matching_base_is_valid() {
+    let report = wrap(
+        r#"[{"name": "tx", "kind": "sync", "type": "Channel", "mode": "Sync", "base": "Int", "capacity": 4}]"#,
+        r#"[
+            {"name": "main", "kind": "normal",
+             "locals": [{"name": "msg", "type": "Int", "modeled": true}],
+             "body": [
+                {"sid": "s1",
+                 "terminator": {"kind": "select", "branches": [
+                    {"guard": {"kind": "channel_recv", "channel": "tx", "dst": "msg"},
+                     "target": "s2"}
+                 ]}},
+                {"sid": "s2", "terminator": {"kind": "return"}}
+             ]}
+        ]"#,
+    );
+    assert!(
+        report.valid,
+        "select guard dst holds the popped Channel payload. got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn channel_recv_discard_underscore_is_valid() {
+    let report = wrap(
+        r#"[{"name": "tx", "kind": "sync", "type": "Channel", "mode": "Sync", "base": "Int", "capacity": 0}]"#,
+        r#"[
+            {"name": "main", "kind": "normal", "body": [
+                {"sid": "s1",
+                 "statements": [{"kind": "channel_recv", "channel": "tx", "dst": "_"}],
+                 "terminator": {"kind": "return"}}
+             ]}
+        ]"#,
+    );
+    assert!(
+        report.valid,
+        "\"_\" discards the popped payload. got: {:?}",
+        report.diagnostics
+    );
+}

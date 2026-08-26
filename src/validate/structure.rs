@@ -119,10 +119,7 @@ fn check_sync_resource(r: &Resource, path: &str, diags: &mut Vec<Diagnostic>) {
                 diags.push(
                     Diagnostic::error(
                         "E001",
-                        format!(
-                            "Channel resource '{}' has negative capacity {c}",
-                            r.name
-                        ),
+                        format!("Channel resource '{}' has negative capacity {c}", r.name),
                     )
                     .with_path(format!("{path}.capacity"))
                     .with_fix("use capacity ≥ 0 (0 = rendezvous, n ≥ 1 = n payload slots)"),
