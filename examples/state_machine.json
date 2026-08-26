@@ -5,16 +5,8 @@
     {
       "name": "main",
       "provides": {
-        "resources": [
-          "mtx",
-          "cv",
-          "state"
-        ],
-        "functions": [
-          "main",
-          "controller",
-          "worker"
-        ]
+        "resources": ["mtx", "cv", "state"],
+        "functions": ["main", "controller", "worker"]
       },
       "requires": {
         "resources": [],
@@ -38,12 +30,7 @@
           "kind": "var",
           "type": "Var",
           "base": {
-            "Enum": [
-              "Init",
-              "Running",
-              "Paused",
-              "Stopped"
-            ]
+            "Enum": ["Init", "Running", "Paused", "Stopped"]
           },
           "init": "Init"
         }

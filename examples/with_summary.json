@@ -5,17 +5,8 @@
     {
       "name": "main",
       "provides": {
-        "resources": [
-          "mtx",
-          "counter",
-          "threshold"
-        ],
-        "functions": [
-          "main",
-          "worker",
-          "validate",
-          "helper_compare"
-        ]
+        "resources": ["mtx", "counter", "threshold"],
+        "functions": ["main", "worker", "validate", "helper_compare"]
       },
       "requires": {
         "resources": [],
@@ -164,10 +155,7 @@
           "kind": "normal",
           "body": [],
           "effects": {
-            "reads": [
-              "counter",
-              "threshold"
-            ],
+            "reads": ["counter", "threshold"],
             "writes": []
           }
         },
@@ -176,9 +164,7 @@
           "kind": "normal",
           "body": [],
           "effects": {
-            "reads": [
-              "threshold"
-            ],
+            "reads": ["threshold"],
             "writes": []
           }
         }

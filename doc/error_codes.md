@@ -23,15 +23,15 @@ parse time (E000), not here.
 
 ## E1xx — Name resolution
 
-| Code | Name              | Severity | Description                                                            |
-| ---- | ----------------- | :------: | ---------------------------------------------------------------------- |
-| E101 | UndefinedResource |  error   | Resource name is not declared in this module and not imported          |
-| E102 | UndefinedFunction |  error   | Function name referenced by spawn/call/async_call has no definition    |
-| E103 | UndefinedSid      |  error   | Successor sid is not in the current function body                      |
-| E104 | DuplicateResource |  error   | Duplicate resource name in the same module                             |
-| E105 | DuplicateFunction |  error   | Duplicate function name in the same module                             |
-| E106 | DuplicateSid      |  error   | Duplicate sid within the same function body                            |
-| E107 | UndefinedEntry    |  error   | `entry` is not an FQN, or the FQN is not a defined function            |
+| Code | Name              | Severity | Description                                                                                                                                                                              |
+| ---- | ----------------- | :------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E101 | UndefinedResource |  error   | Resource name is not declared in this module and not imported                                                                                                                            |
+| E102 | UndefinedFunction |  error   | Function name referenced by spawn/call/async_call has no definition                                                                                                                      |
+| E103 | UndefinedSid      |  error   | Successor sid is not in the current function body                                                                                                                                        |
+| E104 | DuplicateResource |  error   | Duplicate resource name in the same module                                                                                                                                               |
+| E105 | DuplicateFunction |  error   | Duplicate function name in the same module                                                                                                                                               |
+| E106 | DuplicateSid      |  error   | Duplicate sid within the same function body                                                                                                                                              |
+| E107 | UndefinedEntry    |  error   | `entry` is not an FQN, or the FQN is not a defined function                                                                                                                              |
 | E108 | ModuleContract    |  error   | Duplicate module name; `provides` names a missing local entity; `requires` is not an FQN or does not resolve to an exported entity; cross-module call not listed in `requires.functions` |
 
 ## E2xx — Type errors
@@ -65,41 +65,41 @@ domain (e.g. writing `11` to an `Int{[0,10]}` variable).
 
 **Call / statement–resource compatibility**:
 
-| operation            | Mutex | RwLock | Condvar | Semaphore | Channel | Atomic | Var |
-| -------------------- | :---: | :----: | :-----: | :-------: | :-----: | :----: | :-: |
-| `mutex_lock/unlock`  |  ok   |  E301  |  E301   |   E301    |  E301   |  E301  | E301 |
-| `rwlock_*`           | E302  |   ok   |  E302   |   E302    |  E302   |  E302  | E302 |
-| `condvar_*`          | E303  |  E303  |   ok    |   E303    |  E303   |  E303  | E303 |
-| `semaphore_*`        | E305  |  E305  |  E305   |    ok     |  E305   |  E305  | E305 |
-| `channel_send/recv`  | E306  |  E306  |  E306   |   E306    |   ok    |  E306  | E306 |
-| `atomic_*`           | E307  |  E307  |  E307   |   E307    |  E307   |   ok   | E307 |
-| `read/write_shared`  | E308  |  E308  |  E308   |   E308    |  E308   |  E308  |  ok  |
+| operation           | Mutex | RwLock | Condvar | Semaphore | Channel | Atomic | Var  |
+| ------------------- | :---: | :----: | :-----: | :-------: | :-----: | :----: | :--: |
+| `mutex_lock/unlock` |  ok   |  E301  |  E301   |   E301    |  E301   |  E301  | E301 |
+| `rwlock_*`          | E302  |   ok   |  E302   |   E302    |  E302   |  E302  | E302 |
+| `condvar_*`         | E303  |  E303  |   ok    |   E303    |  E303   |  E303  | E303 |
+| `semaphore_*`       | E305  |  E305  |  E305   |    ok     |  E305   |  E305  | E305 |
+| `channel_send/recv` | E306  |  E306  |  E306   |   E306    |   ok    |  E306  | E306 |
+| `atomic_*`          | E307  |  E307  |  E307   |   E307    |  E307   |   ok   | E307 |
+| `read/write_shared` | E308  |  E308  |  E308   |   E308    |  E308   |  E308  |  ok  |
 
 ## E4xx — Concurrency pairing
 
 Pairing is by **handle**, not by function name.
 
-| Code | Name                     | Severity | Description                                     |
-| ---- | ------------------------ | :------: | ----------------------------------------------- |
-| E401 | SpawnWithoutJoin         | warning  | spawn handle has no matching join               |
-| E402 | JoinWithoutSpawn         |  error   | join handle has no matching spawn               |
-| E403 | SpawnAsyncWithoutAwait   | warning  | async_call handle has no matching await         |
-| E404 | AwaitWithoutSpawnAsync   |  error   | await handle has no matching async_call         |
-| E405 | SyncSpawnPairedWithAwait |  error   | spawn handle reused as await (should be join)   |
-| E406 | AsyncSpawnPairedWithJoin |  error   | async_call handle reused as join (should be await) |
-| E407 | JoinInAsyncContext       | warning  | join in an async function may block the runtime |
-| E408 | AwaitInSyncContext       |  error   | await used in a normal function                 |
+| Code | Name                     | Severity | Description                                                                                                                                                                                  |
+| ---- | ------------------------ | :------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E401 | SpawnWithoutJoin         | warning  | spawn handle has no matching join                                                                                                                                                            |
+| E402 | JoinWithoutSpawn         |  error   | join handle has no matching spawn                                                                                                                                                            |
+| E403 | SpawnAsyncWithoutAwait   | warning  | async_call handle has no matching await                                                                                                                                                      |
+| E404 | AwaitWithoutSpawnAsync   |  error   | await handle has no matching async_call                                                                                                                                                      |
+| E405 | SyncSpawnPairedWithAwait |  error   | spawn handle reused as await (should be join)                                                                                                                                                |
+| E406 | AsyncSpawnPairedWithJoin |  error   | async_call handle reused as join (should be await)                                                                                                                                           |
+| E407 | JoinInAsyncContext       | warning  | join in an async function may block the runtime                                                                                                                                              |
+| E408 | AwaitInSyncContext       |  error   | await used in a normal function                                                                                                                                                              |
 | E409 | CondvarWaitNotSelectable |  error   | `condvar_wait` as a `select` guard in a non-async function, or on a Sync-mode Condvar. Sync `Condvar::wait` cannot enter `select!`; async guards are codegen'd as Notify/watch/timeout race. |
 
 ## E5xx — Lock safety
 
-| Code | Name                | Severity | Description                                                        |
-| ---- | ------------------- | :------: | ------------------------------------------------------------------ |
-| E501 | LockWithoutDrop     |  error   | lock without a corresponding unlock on some control-flow path      |
-| E502 | DropWithoutLock     |  error   | unlock without a preceding matching lock                           |
+| Code | Name                | Severity | Description                                                          |
+| ---- | ------------------- | :------: | -------------------------------------------------------------------- |
+| E501 | LockWithoutDrop     |  error   | lock without a corresponding unlock on some control-flow path        |
+| E502 | DropWithoutLock     |  error   | unlock without a preceding matching lock                             |
 | E503 | DoubleLock          |  error   | same resource locked twice on one path without an intervening unlock |
-| E504 | SyncLockAcrossAwait |  error   | Sync lock held across an await point in an async function          |
-| E505 | LockOrderViolation  |  error   | inconsistent lock acquisition order across paths (ABBA deadlock)   |
+| E504 | SyncLockAcrossAwait |  error   | Sync lock held across an await point in an async function            |
+| E505 | LockOrderViolation  |  error   | inconsistent lock acquisition order across paths (ABBA deadlock)     |
 
 ## E6xx — Control flow
 
@@ -123,14 +123,14 @@ Pairing is by **handle**, not by function name.
 
 ## E9xx — Typed data flow
 
-| Code | Name                    | Severity | Description                                                                                        |
-| ---- | ----------------------- | :------: | -------------------------------------------------------------------------------------------------- |
-| E910 | ParamNameCollides       |  error   | parameter name collides with a declared resource name                                              |
-| E911 | DuplicateParam          |  error   | duplicate parameter name within a function                                                          |
-| E912 | UnmodeledParamReferenced|  error   | expression references a `modeled: false` parameter (it is not in the CVN variable store)           |
-| E913 | BareReturnWithModeledReturn | warning | function models a return but some `return` terminator carries no value (binds Unknown)             |
-| E920 | CallArityMismatch        |  error   | `call` argument count does not match the callee's modeled parameters                                |
-| E921 | CallCaptureNotVar       |  error   | `call` `dst` is not a writable Var/Atomic resource                                                 |
+| Code | Name                        | Severity | Description                                                                              |
+| ---- | --------------------------- | :------: | ---------------------------------------------------------------------------------------- |
+| E910 | ParamNameCollides           |  error   | parameter name collides with a declared resource name                                    |
+| E911 | DuplicateParam              |  error   | duplicate parameter name within a function                                               |
+| E912 | UnmodeledParamReferenced    |  error   | expression references a `modeled: false` parameter (it is not in the CVN variable store) |
+| E913 | BareReturnWithModeledReturn | warning  | function models a return but some `return` terminator carries no value (binds Unknown)   |
+| E920 | CallArityMismatch           |  error   | `call` argument count does not match the callee's modeled parameters                     |
+| E921 | CallCaptureNotVar           |  error   | `call` `dst` is not a writable Var/Atomic resource                                       |
 
 ## Diagnostic output format
 

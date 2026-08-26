@@ -5,18 +5,8 @@
     {
       "name": "main",
       "provides": {
-        "resources": [
-          "async_mtx",
-          "sem",
-          "tx",
-          "result",
-          "task_count"
-        ],
-        "functions": [
-          "main",
-          "worker",
-          "collector"
-        ]
+        "resources": ["async_mtx", "sem", "tx", "result", "task_count"],
+        "functions": ["main", "worker", "collector"]
       },
       "requires": {
         "resources": [],

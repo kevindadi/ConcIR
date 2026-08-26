@@ -5,16 +5,8 @@
     {
       "name": "main",
       "provides": {
-        "resources": [
-          "mtx",
-          "cv",
-          "count"
-        ],
-        "functions": [
-          "main",
-          "producer",
-          "consumer"
-        ]
+        "resources": ["mtx", "cv", "count"],
+        "functions": ["main", "producer", "consumer"]
       },
       "requires": {
         "resources": [],

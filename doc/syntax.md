@@ -12,11 +12,11 @@ for the roadmap.
 
 ## Naming: identifiers and FQNs
 
-| Form | Pattern | Example |
-| ---- | ------- | ------- |
-| Identifier | `[A-Za-z_][A-Za-z0-9_]*` | `storage`, `main`, `log_mtx` |
-| Entity FQN | `module::entity` (exactly one `::`) | `storage::log_mtx`, `core::main` |
-| Control location | `module::function.sid` | `core::main.s3` |
+| Form             | Pattern                             | Example                          |
+| ---------------- | ----------------------------------- | -------------------------------- |
+| Identifier       | `[A-Za-z_][A-Za-z0-9_]*`            | `storage`, `main`, `log_mtx`     |
+| Entity FQN       | `module::entity` (exactly one `::`) | `storage::log_mtx`, `core::main` |
+| Control location | `module::function.sid`              | `core::main.s3`                  |
 
 Rules:
 
@@ -48,12 +48,12 @@ reachability queries belong to the verifier / CVN layer, not the IR.
 }
 ```
 
-| Field     | Type   | Required | Description                          |
-| --------- | ------ | :------: | ------------------------------------ |
-| `program` | string |   yes    | Program name                         |
-| `version` | string |    no    | Defaults to `"3.1.0"`                |
-| `modules` | array  |   yes    | One or more [`Module`](#module)s     |
-| `entry`   | FQN    |   yes    | Entry function, e.g. `core::main`    |
+| Field     | Type   | Required | Description                       |
+| --------- | ------ | :------: | --------------------------------- |
+| `program` | string |   yes    | Program name                      |
+| `version` | string |    no    | Defaults to `"3.1.0"`             |
+| `modules` | array  |   yes    | One or more [`Module`](#module)s  |
+| `entry`   | FQN    |   yes    | Entry function, e.g. `core::main` |
 
 ## Module
 
@@ -73,14 +73,14 @@ functions, and a name-resolution contract.
 }
 ```
 
-| Field        | Type    | Required | Description |
-| ------------ | ------- | :------: | ----------- |
-| `name`       | ident   |   yes    | Module identity |
+| Field        | Type    | Required | Description                     |
+| ------------ | ------- | :------: | ------------------------------- |
+| `name`       | ident   |   yes    | Module identity                 |
 | `provides`   | NameSet |    no    | Short names this module exports |
-| `requires`   | NameSet |    no    | FQNs this module imports |
-| `resources`  | array   |    no    | Resources owned by this module |
-| `protection` | array   |    no    | Var → lock mapping |
-| `functions`  | array   |    no    | Function definitions |
+| `requires`   | NameSet |    no    | FQNs this module imports        |
+| `resources`  | array   |    no    | Resources owned by this module  |
+| `protection` | array   |    no    | Var → lock mapping              |
+| `functions`  | array   |    no    | Function definitions            |
 
 `NameSet` is `{ "resources": [...], "functions": [...] }` (both default `[]`).
 
@@ -252,53 +252,53 @@ like `mutex_lock`.
 
 **Data**
 
-| `kind`          | Fields                    | Description |
-| --------------- | ------------------------- | ----------- |
-| `nop`           | —                         | No-op       |
-| `assign_local`  | `target`, `expr`          | Write a function-local |
-| `read_shared`   | `resource`, optional `dst`| Read a `Var` |
-| `write_shared`  | `resource`, `expr`        | Write a `Var` |
-| `abstract_step` | `reads`, `writes`, `desc` | Opaque modeled step |
-| `atomic_load`   | `resource`, `dst`         | Instantaneous Atomic read |
-| `atomic_store`  | `resource`, `value`       | Atomic write |
-| `atomic_cas`    | `resource`, `expected`, `desired`, `dst` | Atomic CAS |
+| `kind`          | Fields                                   | Description               |
+| --------------- | ---------------------------------------- | ------------------------- |
+| `nop`           | —                                        | No-op                     |
+| `assign_local`  | `target`, `expr`                         | Write a function-local    |
+| `read_shared`   | `resource`, optional `dst`               | Read a `Var`              |
+| `write_shared`  | `resource`, `expr`                       | Write a `Var`             |
+| `abstract_step` | `reads`, `writes`, `desc`                | Opaque modeled step       |
+| `atomic_load`   | `resource`, `dst`                        | Instantaneous Atomic read |
+| `atomic_store`  | `resource`, `value`                      | Atomic write              |
+| `atomic_cas`    | `resource`, `expected`, `desired`, `dst` | Atomic CAS                |
 
 **Synchronization** (may block in the CVN, but are still statements)
 
-| `kind`               | Key fields                         |
-| -------------------- | ---------------------------------- |
-| `mutex_lock` / `mutex_unlock` | `resource`                |
-| `rwlock_read` / `rwlock_write` / `rwlock_unlock` | `resource` |
-| `channel_send`       | `channel`, `value`                 |
-| `channel_recv`       | `channel`, `dst`                   |
-| `condvar_wait`       | `condvar`, `lock`                  |
-| `condvar_notify` / `condvar_notify_all` | `condvar`           |
-| `semaphore_acquire` / `semaphore_release` | `resource`, optional `count` |
+| `kind`                                           | Key fields                   |
+| ------------------------------------------------ | ---------------------------- |
+| `mutex_lock` / `mutex_unlock`                    | `resource`                   |
+| `rwlock_read` / `rwlock_write` / `rwlock_unlock` | `resource`                   |
+| `channel_send`                                   | `channel`, `value`           |
+| `channel_recv`                                   | `channel`, `dst`             |
+| `condvar_wait`                                   | `condvar`, `lock`            |
+| `condvar_notify` / `condvar_notify_all`          | `condvar`                    |
+| `semaphore_acquire` / `semaphore_release`        | `resource`, optional `count` |
 
 **Threads and calls.** Spawn / join pair on **handles**, not function names.
 `func` uses the [FQN rules](#naming-identifiers-and-fqns).
 
-| `kind`         | Key fields                                      |
-| -------------- | ----------------------------------------------- |
-| `call`         | `func`, `args`, optional `dst`                  |
-| `spawn`        | `func`, `args`, `handle`                        |
-| `spawn_batch`  | `func`, `count`, `handle`                       |
-| `join` / `join_all` | `handle`                                   |
-| `async_call`   | `func`, `args`, `handle`                        |
-| `await`        | `handle`                                        |
+| `kind`              | Key fields                     |
+| ------------------- | ------------------------------ |
+| `call`              | `func`, `args`, optional `dst` |
+| `spawn`             | `func`, `args`, `handle`       |
+| `spawn_batch`       | `func`, `count`, `handle`      |
+| `join` / `join_all` | `handle`                       |
+| `async_call`        | `func`, `args`, `handle`       |
+| `await`             | `handle`                       |
 
 ## Terminator
 
 CFG exits. This is the only place `return` may appear, and the only place
 successors are named.
 
-| `kind`   | Fields | Description |
-| -------- | ------ | ----------- |
-| `goto`   | `target` | Unconditional jump |
-| `branch` | `cond`, `then`, `else` | Conditional; `else` is the JSON key. A back-edge (`then`/`else` to an earlier sid) is a loop. |
-| `switch` | `var`, `cases`, `default` | Multi-way branch; `default` is required |
-| `return` | optional `value` | Function return; one spelling only |
-| `select` | `branches`, optional `default` | Multi-way wait; each branch has `guard` + `target` |
+| `kind`   | Fields                         | Description                                                                                   |
+| -------- | ------------------------------ | --------------------------------------------------------------------------------------------- |
+| `goto`   | `target`                       | Unconditional jump                                                                            |
+| `branch` | `cond`, `then`, `else`         | Conditional; `else` is the JSON key. A back-edge (`then`/`else` to an earlier sid) is a loop. |
+| `switch` | `var`, `cases`, `default`      | Multi-way branch; `default` is required                                                       |
+| `return` | optional `value`               | Function return; one spelling only                                                            |
+| `select` | `branches`, optional `default` | Multi-way wait; each branch has `guard` + `target`                                            |
 
 `select` guards: `channel_recv`, `semaphore_acquire`, and `condvar_wait`.
 
