@@ -232,10 +232,10 @@ fn cross_function_spawn_join() {
     assert!(dot.contains("label=\"spawn\""));
     assert!(dot.contains("main_s2 -> consumer_s1"));
 
-    // join edges: scope return is the barrier (both children join at s3)
+    // join edges
     assert!(dot.contains("producer_ret -> main_s3"));
     assert!(dot.contains("label=\"join\""));
-    assert!(dot.contains("consumer_ret -> main_s3"));
+    assert!(dot.contains("consumer_ret -> main_s4"));
 }
 
 #[test]
@@ -339,8 +339,9 @@ fn spawn_join_node_shapes() {
 
     // Spawn should be doubleoctagon
     assert!(dot.contains("main_s1") && dot.contains("shape=doubleoctagon"));
-    // Scope return is the join barrier (ellipse), not an explicit join node
-    assert!(dot.contains("main_s3") && dot.contains("shape=ellipse"));
+    // Explicit join is dashed doubleoctagon; return is ellipse
+    assert!(dot.contains("main_s3") && dot.contains("style=\"filled,dashed\""));
+    assert!(dot.contains("main_s5") && dot.contains("shape=ellipse"));
 }
 
 #[test]

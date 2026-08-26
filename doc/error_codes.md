@@ -8,8 +8,8 @@ See [`syntax/`](syntax/README.md) for the grammar and [`todo.md`](todo.md) for t
 ## E0xx — Structural errors
 
 Supplemental structural checks after successful JSON deserialization.
-Unknown `kind` tags and leftover block fields (`statements`, `terminator`,
-`call`) fail at parse time (E000), not here.
+Unknown `kind` tags and leftover fields from the old block shape
+(`statements`, `terminator`, `call`) fail at parse time (E000), not here.
 
 | Code | Name                  | Severity | Description                                                                                |
 | ---- | --------------------- | :------: | ------------------------------------------------------------------------------------------ |
@@ -18,7 +18,7 @@ Unknown `kind` tags and leftover block fields (`statements`, `terminator`,
 | E005 | InvalidSidFormat      |  error   | sid format is not `"s"` + digits (e.g. `"s1"`, `"s10"`)                                    |
 | E008 | InvalidKind           |  error   | Resource `kind` is not `"sync"` / `"var"`, or sync `type` value is illegal                 |
 | E009 | InvalidMode           |  error   | `mode` is not `"Sync"` / `"Async"`                                                         |
-| E010 | InvalidFnKind         |  error   | Function `kind` is not `"normal"` / `"async"` / `"scope"`, or `form` is not `"function"` / `"closure"` |
+| E010 | InvalidFnKind         |  error   | Function `kind` is not `"normal"` / `"async"`, or `form` is not `"function"` / `"closure"` |
 | E208 | InitValueTypeMismatch |  error   | Resource initial value type does not match the declared `base`                             |
 
 ## E1xx — Name resolution
@@ -81,18 +81,16 @@ Pairing is by **handle**, not by function name.
 
 | Code | Name                     | Severity | Description                                                                                                                                                                                  |
 | ---- | ------------------------ | :------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E401 | SpawnWithoutJoin         | warning  | unstructured `spawn` handle has no matching `join` (not emitted inside a `kind: "scope"` function; `return` is the barrier) |
+| E401 | SpawnWithoutJoin         | warning  | unstructured `spawn` handle has no matching `join` (`scope` statements join implicitly and do not emit this) |
 | E402 | JoinWithoutSpawn         |  error   | join handle has no matching spawn                                                                                                                                                            |
 | E403 | SpawnAsyncWithoutAwait   | warning  | async_call handle has no matching await                                                                                                                                                      |
 | E404 | AwaitWithoutSpawnAsync   |  error   | await handle has no matching async_call                                                                                                                                                      |
 | E405 | SyncSpawnPairedWithAwait |  error   | spawn handle reused as await (should be join)                                                                                                                                                |
 | E406 | AsyncSpawnPairedWithJoin |  error   | async_call handle reused as join (should be await)                                                                                                                                           |
 | E407 | JoinInAsyncContext       | warning  | join in an async function may block the runtime                                                                                                                                              |
-| E408 | AwaitInSyncContext       |  error   | await used in a non-async function (`normal` or `scope`)                                                                                                                                     |
+| E408 | AwaitInSyncContext       |  error   | await used in a non-async function                                                                                                                                                           |
 | E409 | CondvarWaitNotSelectable |  error   | `condvar_wait` as a `select` guard in a non-async function, or on a Sync-mode Condvar. Sync `Condvar::wait` cannot enter `select!`; async guards are codegen'd as Notify/watch/timeout race. |
-| E410 | SpawnBatchNotScope       |  error   | `spawn_batch` target is not `kind: "scope"`                                                                                                                                                  |
-| E411 | ScopeEnteredWrong        |  error   | `call` / `spawn` / `async_call` targets a `kind: "scope"` function; enter it with `spawn_batch`                                                                                              |
-| E412 | JoinAllOutsideScope      |  error   | `join_all` used outside a `kind: "scope"` function                                                                                                                                           |
+| E410 | ScopeCountInvalid        |  error   | `scope` `count` is less than 1                                                                                                                                                               |
 
 ## E5xx — Lock safety
 
@@ -108,7 +106,7 @@ Pairing is by **handle**, not by function name.
 
 | Code | Name                 | Severity | Description                                     |
 | ---- | -------------------- | :------: | ----------------------------------------------- |
-| E601 | UnreachableStatement | warning  | block unreachable from the entry                |
+| E601 | UnreachableStatement | warning  | statement unreachable from the entry            |
 | E602 | MissingReturn        |  error   | a control-flow path that does not end in return |
 | E603 | BranchTargetsSame    | warning  | branch then/else targets are the same           |
 | E604 | SwitchNotExhaustive  |  error   | switch does not cover all Enum variants         |

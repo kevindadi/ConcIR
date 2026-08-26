@@ -70,14 +70,14 @@ fn check_duplicate_sids(program: &Program, diags: &mut Vec<Diagnostic>) {
     for (mi, m) in program.modules.iter().enumerate() {
         for (fi, f) in m.functions.iter().enumerate() {
             let mut seen = HashSet::new();
-            for (si, block) in f.body.iter().enumerate() {
-                if !seen.insert(block.sid.clone()) {
+            for (si, stmt) in f.body.iter().enumerate() {
+                if !seen.insert(stmt.sid.clone()) {
                     diags.push(
                         Diagnostic::error(
                             "E106",
                             format!(
                                 "duplicate statement id '{}' in function '{}'",
-                                block.sid, f.name
+                                stmt.sid, f.name
                             ),
                         )
                         .with_path(format!("{}.body[{si}].sid", Program::fn_path(mi, fi)))

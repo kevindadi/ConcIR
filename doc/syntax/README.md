@@ -19,8 +19,7 @@ The formal grammar is [`ebnf.md`](../ebnf.md). See
 | [Module](module.md) | `provides` / `requires`, resources, functions |
 | [Resource](resource.md) | Sync primitives, shared vars, `base` types, Channel |
 | [Protection](protection.md) | Var → lock mapping |
-| [Function](function.md) | `kind` / `form`, scope, params / returns / locals |
-| [Control flow](block.md) | Statement list, fallthrough, successors |
-| [Statement](statement.md) | Data, sync, threads, calls, control ops |
+| [Function](function.md) | `kind` / `form`, params / returns / locals |
+| [Statement](statement.md) | CFG node: data, sync, threads, calls, control ops |
 | [Validation](validation.md) | Nine-pass pipeline |
 | [Wait semantics](wait.md) | `condvar_wait` lock release / re-acquire |

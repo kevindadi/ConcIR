@@ -9,7 +9,7 @@ use crate::fqn;
 // ──────────────────── Top-level ────────────────────
 
 fn default_version() -> String {
-    "3.3.0".to_string()
+    "3.4.0".to_string()
 }
 
 fn default_form() -> String {
@@ -252,11 +252,7 @@ pub struct LocalDecl {
 #[serde(deny_unknown_fields)]
 pub struct Function {
     pub name: String,
-    /// Body / execution: `"normal"`, `"async"`, or `"scope"`.
-    ///
-    /// A `"scope"` is a structured fork-join region (`thread::scope`): every
-    /// `spawn` inside it is a fork; `return` (and `join_all`) is the join
-    /// barrier. Enter a named scope with [`Op::SpawnBatch`].
+    /// Body / execution: `"normal"` or `"async"`.
     pub kind: String,
     /// Callable form: `"function"` (default) or `"closure"`. Codegen hint
     /// only; `spawn` may target either.
@@ -278,10 +274,6 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn is_scope(&self) -> bool {
-        self.kind == "scope"
-    }
-
     pub fn is_async(&self) -> bool {
         self.kind == "async"
     }
@@ -411,20 +403,17 @@ pub enum Op {
         args: Vec<String>,
         handle: String,
     },
-    /// Enter a [`Function`] with `kind: "scope"` and wait for its fork-join.
-    #[serde(rename = "spawn_batch")]
-    SpawnBatch {
+    /// Spawn `count` copies of `func` in a `thread::scope` and join them all
+    /// before falling through (`handlers.join_all`).
+    #[serde(rename = "scope")]
+    Scope {
         func: String,
+        count: i64,
         #[serde(default)]
         args: Vec<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        dst: Option<String>,
     },
     #[serde(rename = "join")]
     Join { handle: String },
-    /// Join every outstanding spawn in the enclosing `kind: "scope"` function.
-    #[serde(rename = "join_all")]
-    JoinAll,
     #[serde(rename = "async_call")]
     AsyncCall {
         func: String,
@@ -622,7 +611,7 @@ impl Op {
         match self {
             Op::Func { func, .. }
             | Op::Spawn { func, .. }
-            | Op::SpawnBatch { func, .. }
+            | Op::Scope { func, .. }
             | Op::AsyncCall { func, .. } => Some(func),
             _ => None,
         }
@@ -674,8 +663,7 @@ impl Op {
             self,
             Op::Await { .. }
                 | Op::Join { .. }
-                | Op::JoinAll
-                | Op::SpawnBatch { .. }
+                | Op::Scope { .. }
                 | Op::ChannelRecv { .. }
                 | Op::SemaphoreAcquire { .. }
                 | Op::CondvarWait { .. }

@@ -242,11 +242,11 @@ fn node_style(stmt: &Stmt) -> NodeStyle {
                 ..Default::default()
             }
         }
-        Op::Spawn { .. } | Op::SpawnBatch { .. } | Op::AsyncCall { .. } => NodeStyle {
+        Op::Spawn { .. } | Op::Scope { .. } | Op::AsyncCall { .. } => NodeStyle {
             shape: "doubleoctagon",
             ..Default::default()
         },
-        Op::Join { .. } | Op::JoinAll | Op::Await { .. } => NodeStyle {
+        Op::Join { .. } | Op::Await { .. } => NodeStyle {
             shape: "doubleoctagon",
             style: "filled,dashed".to_string(),
             ..Default::default()
@@ -327,9 +327,8 @@ fn format_op_compact(op: &Op) -> String {
         Op::SemaphoreRelease { resource, .. } => format!("semaphore_release({resource})"),
         Op::Func { func, .. } => format!("call({func})"),
         Op::Spawn { func, .. } => format!("spawn({func})"),
-        Op::SpawnBatch { func, .. } => format!("spawn_batch({func})"),
+        Op::Scope { func, count, .. } => format!("scope({func}×{count})"),
         Op::Join { handle } => format!("join({handle})"),
-        Op::JoinAll => "join_all".into(),
         Op::AsyncCall { func, .. } => format!("async_call({func})"),
         Op::Await { handle } => format!("await({handle})"),
         Op::Goto { .. } => "goto".into(),
@@ -449,23 +448,20 @@ fn write_cross_function_edges(out: &mut String, functions: &[&Function]) {
         .collect();
 
     for func in functions {
-        let spawned: Vec<&str> = func
-            .body
-            .iter()
-            .filter_map(|s| match &s.op {
-                Op::Spawn { func: t, .. } => Some(t.as_str()),
-                _ => None,
-            })
-            .collect();
-
         for stmt in &func.body {
             let src = format!("{}_{}", func.name, stmt.sid);
             match &stmt.op {
                 Op::Spawn { func: target, .. } => {
                     write_callee_edge(out, &src, target, &first_sids, "spawn", "dashed", "blue");
                 }
-                Op::SpawnBatch { func: target, .. } => {
+                Op::Scope { func: target, .. } => {
                     write_callee_edge(out, &src, target, &first_sids, "scope", "dashed", "blue");
+                    let name = target.rsplit("::").next().unwrap_or(target);
+                    writeln!(
+                        out,
+                        "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join\"];",
+                    )
+                    .unwrap();
                 }
                 Op::AsyncCall { func: target, .. } => {
                     write_callee_edge(
@@ -487,28 +483,8 @@ fn write_cross_function_edges(out: &mut String, functions: &[&Function]) {
                         .unwrap();
                     }
                 }
-                Op::JoinAll => {
-                    for target in &spawned {
-                        let name = target.rsplit("::").next().unwrap_or(target);
-                        writeln!(
-                            out,
-                            "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join_all\"];",
-                        )
-                        .unwrap();
-                    }
-                }
                 Op::Func { func: target, .. } => {
                     write_callee_edge(out, &src, target, &first_sids, "call", "dotted", "gray50");
-                }
-                Op::Return { .. } if func.is_scope() => {
-                    for target in &spawned {
-                        let name = target.rsplit("::").next().unwrap_or(target);
-                        writeln!(
-                            out,
-                            "  {name}_ret -> {src} [style=dashed, color=purple, label=\"join\"];",
-                        )
-                        .unwrap();
-                    }
                 }
                 _ => {}
             }
@@ -552,9 +528,7 @@ fn is_back_edge(current: &str, target: &str) -> bool {
 // ── Utility ─────────────────────────────────────────────────────────────────
 
 fn cluster_kind_label(func: &Function) -> String {
-    if func.is_scope() {
-        "scope".into()
-    } else if func.is_async() {
+    if func.is_async() {
         "async".into()
     } else if func.is_closure() {
         "closure".into()

@@ -122,8 +122,8 @@ fn check_call_sites(
 ) {
     for (si, stmt) in f.body.iter().enumerate() {
         let (op, func, args, dst) = match &stmt.op {
-            Op::Func { func, args, dst } => ("call", func, args, dst),
-            Op::SpawnBatch { func, args, dst } => ("spawn_batch", func, args, dst),
+            Op::Func { func, args, dst } => ("call", func, args, dst.as_ref()),
+            Op::Scope { func, args, .. } => ("scope", func, args, None),
             _ => continue,
         };
         let Some(callee) = callees.get(func) else {
@@ -184,7 +184,7 @@ fn param_referenced_in_body(f: &Function, param: &str) -> bool {
             }
             Op::Func { args, .. }
             | Op::Spawn { args, .. }
-            | Op::SpawnBatch { args, .. }
+            | Op::Scope { args, .. }
             | Op::AsyncCall { args, .. } => {
                 texts.extend(args.iter().map(String::as_str));
             }

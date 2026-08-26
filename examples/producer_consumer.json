@@ -1,6 +1,6 @@
 {
   "program": "producer_consumer",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "modules": [
     {
       "name": "main",
@@ -50,7 +50,7 @@
       "functions": [
         {
           "name": "main",
-          "kind": "scope",
+          "kind": "normal",
           "body": [
             {
               "sid": "s1",
@@ -66,6 +66,16 @@
             },
             {
               "sid": "s3",
+              "kind": "join",
+              "handle": "h_producer"
+            },
+            {
+              "sid": "s4",
+              "kind": "join",
+              "handle": "h_consumer"
+            },
+            {
+              "sid": "s5",
               "kind": "return"
             }
           ]

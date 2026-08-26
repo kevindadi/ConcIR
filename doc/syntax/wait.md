@@ -10,7 +10,8 @@ back-edge):
 s1: mutex_lock(mtx)                  // fallthrough
 s2: read_shared(cond)
 s3: branch(cond, then=s5, else=s4)
-s4: condvar_wait(cv, mtx); goto s2   // back to the check, not to lock
+s4: condvar_wait(cv, mtx)
+s6: goto s2                          // back to the check, not to lock
 s5: ...                              // condition holds; lock still held
 ```
 

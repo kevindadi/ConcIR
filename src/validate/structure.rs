@@ -226,8 +226,8 @@ fn check_functions(program: &Program, diags: &mut Vec<Diagnostic>) {
         for (fi, f) in m.functions.iter().enumerate() {
             let fn_path = Program::fn_path(mi, fi);
 
-            // E010: function kind must be normal/async/scope; form function/closure
-            if !["normal", "async", "scope"].contains(&f.kind.as_str()) {
+            // E010: function kind must be normal/async; form function/closure
+            if !["normal", "async"].contains(&f.kind.as_str()) {
                 diags.push(
                     Diagnostic::error(
                         "E010",
@@ -235,8 +235,8 @@ fn check_functions(program: &Program, diags: &mut Vec<Diagnostic>) {
                     )
                     .with_path(format!("{fn_path}.kind"))
                     .with_fix(
-                        "kind must be \"normal\", \"async\", or \"scope\" (use form: \"closure\" \
-                         for a closure, not kind)",
+                        "kind must be \"normal\" or \"async\" (structured fork-join is a \
+                         scope statement, not a function kind)",
                     ),
                 );
             }

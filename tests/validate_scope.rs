@@ -1,4 +1,4 @@
-//! Scope / spawn_batch / form checks (E010, E401, E410–E412).
+//! Scope statement / function kind / spawn pairing (E010, E401, E410).
 
 use concir::ast::Program;
 use concir::validate::validate;
@@ -27,12 +27,12 @@ fn codes(report: &concir::diagnostic::ValidationReport) -> Vec<&str> {
 }
 
 #[test]
-fn spawn_inside_scope_without_join_is_valid() {
+fn scope_statement_joins_implicitly() {
     let report = wrap(
         "[]",
         r#"[
-            {"name": "main", "kind": "scope", "body": [
-                {"sid": "s1", "kind": "spawn", "func": "worker", "handle": "h_w"},
+            {"name": "main", "kind": "normal", "body": [
+                {"sid": "s1", "kind": "scope", "func": "worker", "count": 4},
                 {"sid": "s2", "kind": "return"}
             ]},
             {"name": "worker", "kind": "normal", "form": "closure",
@@ -41,18 +41,18 @@ fn spawn_inside_scope_without_join_is_valid() {
     );
     assert!(
         report.valid,
-        "scope return joins leftover spawns. got: {:?}",
+        "scope statement is spawn N + implicit join_all. got: {:?}",
         report.diagnostics
     );
     assert!(
         !codes(&report).contains(&"E401"),
-        "E401 must not fire inside a scope. got: {:?}",
+        "scope does not leave unpaired handles. got: {:?}",
         report.diagnostics
     );
 }
 
 #[test]
-fn spawn_outside_scope_without_join_is_e401_warning() {
+fn spawn_without_join_is_e401_warning() {
     let report = wrap(
         "[]",
         r#"[
@@ -77,39 +77,12 @@ fn spawn_outside_scope_without_join_is_e401_warning() {
 }
 
 #[test]
-fn spawn_batch_of_scope_is_valid() {
+fn scope_count_zero_is_e410() {
     let report = wrap(
         "[]",
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "kind": "spawn_batch", "func": "section"},
-                {"sid": "s2", "kind": "return"}
-            ]},
-            {"name": "section", "kind": "scope", "body": [
-                {"sid": "s1", "kind": "spawn", "func": "a", "handle": "ha"},
-                {"sid": "s2", "kind": "spawn", "func": "b", "handle": "hb"},
-                {"sid": "s3", "kind": "return"}
-            ]},
-            {"name": "a", "kind": "normal", "form": "function",
-             "body": [{"sid": "s1", "kind": "return"}]},
-            {"name": "b", "kind": "normal", "form": "closure",
-             "body": [{"sid": "s1", "kind": "return"}]}
-        ]"#,
-    );
-    assert!(
-        report.valid,
-        "spawn_batch enters a scope; children may be function or closure. got: {:?}",
-        report.diagnostics
-    );
-}
-
-#[test]
-fn spawn_batch_of_non_scope_is_e410() {
-    let report = wrap(
-        "[]",
-        r#"[
-            {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "kind": "spawn_batch", "func": "worker"},
+                {"sid": "s1", "kind": "scope", "func": "worker", "count": 0},
                 {"sid": "s2", "kind": "return"}
             ]},
             {"name": "worker", "kind": "normal",
@@ -125,84 +98,16 @@ fn spawn_batch_of_non_scope_is_e410() {
 }
 
 #[test]
-fn call_of_scope_is_e411() {
+fn function_kind_scope_is_e010() {
     let report = wrap(
         "[]",
-        r#"[
-            {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "kind": "call", "func": "section"},
-                {"sid": "s2", "kind": "return"}
-            ]},
-            {"name": "section", "kind": "scope",
-             "body": [{"sid": "s1", "kind": "return"}]}
-        ]"#,
+        r#"[{"name": "main", "kind": "scope",
+            "body": [{"sid": "s1", "kind": "return"}]}]"#,
     );
     assert!(!report.valid);
     assert!(
-        codes(&report).contains(&"E411"),
+        codes(&report).contains(&"E010"),
         "got: {:?}",
-        report.diagnostics
-    );
-}
-
-#[test]
-fn spawn_of_scope_is_e411() {
-    let report = wrap(
-        "[]",
-        r#"[
-            {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "kind": "spawn", "func": "section", "handle": "hs"},
-                {"sid": "s2", "kind": "join", "handle": "hs"},
-                {"sid": "s3", "kind": "return"}
-            ]},
-            {"name": "section", "kind": "scope",
-             "body": [{"sid": "s1", "kind": "return"}]}
-        ]"#,
-    );
-    assert!(!report.valid);
-    assert!(
-        codes(&report).contains(&"E411"),
-        "got: {:?}",
-        report.diagnostics
-    );
-}
-
-#[test]
-fn join_all_outside_scope_is_e412() {
-    let report = wrap(
-        "[]",
-        r#"[
-            {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "kind": "join_all"},
-                {"sid": "s2", "kind": "return"}
-            ]}
-        ]"#,
-    );
-    assert!(!report.valid);
-    assert!(
-        codes(&report).contains(&"E412"),
-        "got: {:?}",
-        report.diagnostics
-    );
-}
-
-#[test]
-fn join_all_inside_scope_is_valid() {
-    let report = wrap(
-        "[]",
-        r#"[
-            {"name": "main", "kind": "scope", "body": [
-                {"sid": "s1", "kind": "spawn", "func": "worker", "handle": "h_w"},
-                {"sid": "s2", "kind": "join_all"},
-                {"sid": "s3", "kind": "return"}
-            ]},
-            {"name": "worker", "kind": "normal",
-             "body": [{"sid": "s1", "kind": "return"}]}
-        ]"#,
-    );
-    assert!(
-        report.valid,
-        "join_all is the mid-scope barrier. got: {:?}",
         report.diagnostics
     );
 }
@@ -220,4 +125,38 @@ fn kind_closure_is_e010() {
         "got: {:?}",
         report.diagnostics
     );
+}
+
+#[test]
+fn spawn_batch_is_unknown_kind() {
+    let json = r#"{
+        "program": "p",
+        "modules": [{
+            "name": "main",
+            "functions": [{
+                "name": "main", "kind": "normal",
+                "body": [{"sid": "s1", "kind": "spawn_batch", "func": "w"}]
+            }]
+        }],
+        "entry": "main::main"
+    }"#;
+    let result: Result<Program, _> = serde_json::from_str(json);
+    assert!(result.is_err(), "spawn_batch is not a statement kind");
+}
+
+#[test]
+fn join_all_is_unknown_kind() {
+    let json = r#"{
+        "program": "p",
+        "modules": [{
+            "name": "main",
+            "functions": [{
+                "name": "main", "kind": "normal",
+                "body": [{"sid": "s1", "kind": "join_all"}]
+            }]
+        }],
+        "entry": "main::main"
+    }"#;
+    let result: Result<Program, _> = serde_json::from_str(json);
+    assert!(result.is_err(), "join_all is implicit on scope, not a kind");
 }

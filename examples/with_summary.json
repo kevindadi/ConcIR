@@ -1,6 +1,6 @@
 {
   "program": "with_summary",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "modules": [
     {
       "name": "main",
@@ -60,17 +60,12 @@
           "body": [
             {
               "sid": "s1",
-              "kind": "spawn",
+              "kind": "scope",
               "func": "worker",
-              "handle": "h_worker"
+              "count": 1
             },
             {
               "sid": "s2",
-              "kind": "join",
-              "handle": "h_worker"
-            },
-            {
-              "sid": "s3",
               "kind": "return"
             }
           ]

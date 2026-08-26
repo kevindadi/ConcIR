@@ -140,8 +140,7 @@ Function   = Ident,                     (* name *)
              { Stmt },                  (* body; empty = nobody placeholder *)
              [ Effects ] ;
 
-FnKind     = "normal" | "async" | "scope" ;
-               (* scope = structured fork-join; return joins leftover spawns *)
+FnKind     = "normal" | "async" ;
 
 FnForm     = "function" | "closure" ;
                (* codegen hint; spawn may target either *)
@@ -188,9 +187,8 @@ Op         = Nop
            | SemaphoreRelease
            | Call
            | Spawn
-           | SpawnBatch
+           | Scope
            | Join
-           | JoinAll
            | AsyncCall
            | Await
            | Goto
@@ -257,12 +255,10 @@ Call       = "call", Name, { Expr }, [ Name ] ;
                (* func, args, optional dst *)
 
 Spawn      = "spawn", Name, { Expr }, Ident ;
-               (* func, args, handle; target must not be a scope (E411) *)
-SpawnBatch = "spawn_batch", Name, { Expr }, [ Name ] ;
-               (* func, args, optional dst; func must be kind "scope" (E410) *)
+               (* func, args, handle *)
+Scope      = "scope", Name, Integer, { Expr } ;
+               (* func, count ≥ 1, optional args; implicit join_all (E410 if count < 1) *)
 Join       = "join", Ident ;
-JoinAll    = "join_all" ;
-               (* mid-scope barrier; E412 outside a scope *)
 
 AsyncCall  = "async_call", Name, { Expr }, Ident ;
 Await      = "await", Ident ;

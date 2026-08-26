@@ -112,10 +112,10 @@ fn check_return_paths(
 
 /// E603: branch with same true/false targets
 fn check_branch_targets_same(f: &Function, fn_path: &str, diags: &mut Vec<Diagnostic>) {
-    for (si, block) in f.body.iter().enumerate() {
+    for (si, stmt) in f.body.iter().enumerate() {
         if let Op::Branch {
             then, else_target, ..
-        } = &block.op
+        } = &stmt.op
         {
             if then == else_target {
                 diags.push(
@@ -123,7 +123,7 @@ fn check_branch_targets_same(f: &Function, fn_path: &str, diags: &mut Vec<Diagno
                         "E603",
                         format!(
                             "branch at '{}' has identical then/else targets '{then}'",
-                            block.sid
+                            stmt.sid
                         ),
                     )
                     .with_path(format!("{fn_path}.body[{si}]"))
@@ -141,8 +141,8 @@ fn check_switch_exhaustive(
     fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
-    for (si, block) in f.body.iter().enumerate() {
-        if let Some((var, cases, _)) = block.switch() {
+    for (si, stmt) in f.body.iter().enumerate() {
+        if let Some((var, cases, _)) = stmt.switch() {
             if let Some(rt) = rt_map.get(var) {
                 let bt = crate::validate::types::res_type_to_base(rt);
                 if let Some(BaseType::Complex(ComplexBaseType::Enum(ref variants))) = bt {

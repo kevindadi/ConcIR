@@ -5,6 +5,7 @@
 | Identifier       | `[A-Za-z_][A-Za-z0-9_]*`            | `storage`, `main`, `log_mtx`     |
 | Entity FQN       | `module::entity` (exactly one `::`) | `storage::log_mtx`, `core::main` |
 | Control location | `module::function.sid`              | `core::main.s3`                  |
+| Statement id     | `"s"` + digits                      | `s1`, `s10`                      |
 
 Rules:
 

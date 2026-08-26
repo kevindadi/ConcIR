@@ -1,11 +1,31 @@
 # Statement
 
-Every operation in a function body, including control transfer. JSON is
-flat: `{ "sid": "s1", "kind": "mutex_lock", "resource": "mtx" }`.
+Every operation in a [function](function.md) `body`, including control
+transfer. `body` is a list of statements; each is a CFG node
+`{ "sid", "kind", … }`.
 
-Non-control ops fall through to the next statement. Control ops
-(`goto` / `branch` / `switch` / `return` / `select`) name successors.
-See [Control flow](block.md).
+```json
+{ "sid": "s1", "kind": "mutex_lock", "resource": "mtx" }
+```
+
+**Fallthrough.** A non-control op continues at the next entry in `body`.
+Do not write a `goto` whose target is the immediately following statement.
+
+**Control ops** (`goto` / `branch` / `switch` / `return` / `select`) name
+successors. A path that does not end in `return` is E602. A then-arm that
+must skip an else-arm uses `goto`:
+
+```json
+[
+  { "sid": "s1", "kind": "branch", "cond": "flag == true", "then": "s2", "else": "s4" },
+  { "sid": "s2", "kind": "write_shared", "resource": "x", "expr": "1" },
+  { "sid": "s3", "kind": "goto", "target": "s5" },
+  { "sid": "s4", "kind": "write_shared", "resource": "x", "expr": "0" },
+  { "sid": "s5", "kind": "return" }
+]
+```
+
+`sid` is `"s"` plus digits (`s1`, `s10`). The first statement is the entry.
 
 In the CVN, a `read_shared` of a lock-protected Var (lock already held)
 and an `atomic_load` are instantaneous data-flow steps — they do not
@@ -71,19 +91,26 @@ See [Resource](resource.md) and [`select` guards](#select).
 
 ## Threads and calls
 
-Unstructured `spawn` / `join` pair on **handles**, not function names. A
-`kind: "scope"` function joins leftover handles at `return` (see
-[Function](function.md)). `func` uses the [FQN rules](naming.md).
+Unstructured `spawn` / `join` pair on **handles**, not function names.
+Homogeneous scoped threads are a `scope` statement: spawn `count` copies
+of `func` (`thread::scope`) and **implicitly** `join_all` before the next
+statement. `func` uses the [FQN rules](naming.md).
 
-| `kind`         | Key fields                     | Notes |
-| -------------- | ------------------------------ | ----- |
-| `call`         | `func`, `args`, optional `dst` | Sequential call; cannot target a scope (E411) |
-| `spawn`        | `func`, `args`, `handle`       | Fork a thread; `form` is not restricted |
-| `spawn_batch`  | `func`, `args`, optional `dst` | Enter a `kind: "scope"` function and wait |
-| `join`         | `handle`                       | Early join of one spawn |
-| `join_all`     | —                              | Mid-scope barrier; E412 outside a scope |
-| `async_call`   | `func`, `args`, `handle`       | |
-| `await`        | `handle`                       | |
+| `kind`  | Key fields                     | Notes |
+| ------- | ------------------------------ | ----- |
+| `call`  | `func`, `args`, optional `dst` | Sequential call |
+| `spawn` | `func`, `args`, `handle`       | Unstructured fork; unpaired handle is E401 |
+| `scope` | `func`, `count`, optional `args` | Spawn `count` (≥ 1) copies and join them all (E410 if `count < 1`) |
+| `join`  | `handle`                       | Join one unstructured spawn |
+| `async_call` | `func`, `args`, `handle`  | |
+| `await` | `handle`                       | |
+
+```json
+{ "sid": "s1", "kind": "scope", "func": "worker", "count": 4 }
+```
+
+Codegen is `thread::scope` + a loop of `spawn` + implicit `handlers.join_all()`.
+Heterogeneous concurrent workers (producer + consumer) stay `spawn` + `join`.
 
 ## Control
 
