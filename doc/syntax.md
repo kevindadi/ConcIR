@@ -1,80 +1,93 @@
 # ConcIR Syntax
 
-ConcIR (Concurrency Intermediate Representation) is a statement-level, verification-oriented concurrency model. This document is the canonical grammar reference; the executable definition is `src/ast.rs` plus `src/validate/`.
+ConcIR (Concurrency Intermediate Representation) is a statement-level,
+verification-oriented IR. The shape follows compiler intermediate code
+(basic blocks, statements, calls, terminators) rather than a source language.
+ConcIR is language-neutral: names are ConcIR identifiers and FQNs, never
+backend crate paths or source-language keywords.
 
-See [`error_codes.md`](error_codes.md) for the validation error reference and [`todo.md`](todo.md) for the roadmap.
+The executable definition is `src/ast.rs`, `src/fqn.rs`, and `src/validate/`.
+See [`error_codes.md`](error_codes.md) for diagnostics and [`todo.md`](todo.md)
+for the roadmap.
 
-## Top-level structure
+## Naming: identifiers and FQNs
+
+| Form | Pattern | Example |
+| ---- | ------- | ------- |
+| Identifier | `[A-Za-z_][A-Za-z0-9_]*` | `storage`, `main`, `log_mtx` |
+| Entity FQN | `module::entity` (exactly one `::`) | `storage::log_mtx`, `core::main` |
+| Control location | `module::function.sid` | `core::main.s3` |
+
+Rules:
+
+1. A **module name** is an identifier. It is ConcIR's own namespace, not a
+   Rust crate or Java package.
+2. An **entity FQN** names a resource or function as `module::entity`. Extra
+   `::` segments are illegal (`crate::foo::bar` is not a ConcIR FQN).
+3. A **control location** is `module::function.sid`. Use this when referring
+   to a basic block from outside the function.
+4. **Same-module references use the short name.** Inside module `core`, write
+   `main` and `log_mtx`, not `core::main`.
+5. **Cross-module references must be FQNs** and must appear in the importing
+   module's `requires`.
+6. **`provides` always uses short names** declared in this module.
+7. **`requires` always uses FQNs.**
+8. **`entry` is always an FQN.**
+
+## Top-level program
+
+A program is a set of modules plus one entry FQN. There is no `goals` field;
+reachability queries belong to the verifier / CVN layer, not the IR.
 
 ```json
 {
-  "program": "<program name>",
-  "resources": [ ... ],
-  "protection": [ ... ],
-  "functions": [ ... ],
-  "entry": "<entry function name>",
-  "goals": [ ... ]
+  "program": "app",
+  "version": "3.1.0",
+  "modules": [ ... ],
+  "entry": "core::main"
 }
 ```
 
-| Field        | Type   | Required | Description                                                                            |
-| ------------ | ------ | :------: | -------------------------------------------------------------------------------------- |
-| `program`    | string |   yes    | Program name                                                                           |
-| `resources`  | array  |   yes    | Shared resource declarations                                                           |
-| `protection` | array  |   yes    | Protection mapping (may be empty)                                                      |
-| `functions`  | array  |   yes    | Function definitions; must include at least the entry function                         |
-| `entry`      | string |   yes    | Entry function name                                                                    |
-| `goals`      | array  |    no    | Reachability and variable postcondition goals; defaults to an empty array when omitted |
+| Field     | Type   | Required | Description                          |
+| --------- | ------ | :------: | ------------------------------------ |
+| `program` | string |   yes    | Program name                         |
+| `version` | string |    no    | Defaults to `"3.1.0"`                |
+| `modules` | array  |   yes    | One or more [`Module`](#module)s     |
+| `entry`   | FQN    |   yes    | Entry function, e.g. `core::main`    |
 
 ## Module
 
-A `Module` is an independently authored fragment with the same payload as a
-`Program`. ConcIR concatenates a list of modules into one `Program` before
-validation. Cross-module `call`/`spawn` targets resolve after concatenation;
-each function in the assembled program carries `module` equal to its source
-[`Module.name`](#module).
+A module is an independently authored fragment: resources, protection,
+functions, and a name-resolution contract.
 
 ```json
 {
-  "name": "producer",
-  "provides": ["producer"],
-  "requires": [],
+  "name": "storage",
+  "provides": { "resources": ["log_mtx"], "functions": ["flush"] },
+  "requires": { "resources": [], "functions": ["core::log"] },
   "resources": [
-    {"name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync"}
+    {"name": "log_mtx", "kind": "sync", "type": "Mutex", "mode": "Sync"}
   ],
   "protection": [],
-  "functions": [
-    {
-      "name": "producer",
-      "kind": "closure",
-      "body": [
-        { "sid": "s1", "op": ["res_op", "mtx", "lock"], "transfer": ["next", "s2"] },
-        { "sid": "s2", "op": ["res_op", "mtx", "drop"], "transfer": ["next", "s3"] },
-        { "sid": "s3", "op": "return", "transfer": "return" }
-      ]
-    }
-  ]
+  "functions": [ ... ]
 }
 ```
 
-| Field        | Type   | Required | Description                                                                 |
-| ------------ | ------ | :------: | --------------------------------------------------------------------------- |
-| `name`       | string |   yes    | Module identity; stamped onto each function as `Function.module` after concat |
-| `provides`   | array  |    no    | Function names this module exports; defaults to `[]`                        |
-| `requires`   | array  |    no    | Function names used here but defined in another module; defaults to `[]`    |
-| `resources`  | array  |    no    | Shared resource declarations; defaults to `[]`                              |
-| `protection` | array  |    no    | Protection mapping; defaults to `[]`                                        |
-| `functions`  | array  |    no    | Function definitions; defaults to `[]`                                      |
-| `entry`      | string |    no    | Entry function when this module owns the program entry                      |
-| `goals`      | array  |    no    | Reachability goals contributed by this module; defaults to `[]`             |
+| Field        | Type    | Required | Description |
+| ------------ | ------- | :------: | ----------- |
+| `name`       | ident   |   yes    | Module identity |
+| `provides`   | NameSet |    no    | Short names this module exports |
+| `requires`   | NameSet |    no    | FQNs this module imports |
+| `resources`  | array   |    no    | Resources owned by this module |
+| `protection` | array   |    no    | Var → lock mapping |
+| `functions`  | array   |    no    | Function definitions |
 
-Shared resources may be declared in the owning module and only referenced in
-others, or redeclared in every module that uses them. `provides` / `requires`
-are interface annotations for later schema-level checks; they are not enforced
-yet.
+`NameSet` is `{ "resources": [...], "functions": [...] }` (both default `[]`).
 
-The assembled `Program` remains the validator input. Concatenation lives in
-ConcIR and is not part of this grammar snapshot.
+The validator consumes the assembled `Program`. `provides` / `requires` are
+enforced (E108): a provided name must be declared here; a required FQN must
+exist and be exported by the owning module; a cross-module call target must
+appear in `requires.functions`.
 
 ## Resource
 
@@ -83,21 +96,19 @@ ConcIR and is not part of this grammar snapshot.
 ```json
 {"name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync"}
 {"name": "sem", "kind": "sync", "type": "Semaphore", "mode": "Async", "count": 3}
-{"name": "tx",  "kind": "sync", "type": "Channel", "mode": "Async", "base": "Int"}
+{"name": "tx",  "kind": "sync", "type": "Channel", "mode": "Async", "base": "Int", "capacity": 8}
 ```
 
-| type      |   mode   |  count   |   base   |
-| --------- | :------: | :------: | :------: |
-| Mutex     | required |    —     |    —     |
-| RwLock    | required |    —     |    —     |
-| Condvar   | required |    —     |    —     |
-| Semaphore | required | required |    —     |
-| Channel   | required |    —     | required |
+| type      |   mode   |  count   |   base   | capacity |
+| --------- | :------: | :------: | :------: | :------: |
+| Mutex     | required |    —     |    —     |    —     |
+| RwLock    | required |    —     |    —     |    —     |
+| Condvar   | required |    —     |    —     |    —     |
+| Semaphore | required | required |    —     |    —     |
+| Channel   | required |    —     | required | optional |
 
-Channel currently has no capacity field; the translator abstracts it as a
-resource that starts empty, where `send` produces one message token and `recv`
-consumes one message token. Capacity, message contents, and FIFO ordering are
-not modeled in the current ConcIR/CVN semantics.
+`capacity` is accepted on Channel for later bounded-buffer modeling. Current
+CVN semantics still treat `channel_send` / `channel_recv` as unbuffered tokens.
 
 **Shared variables** (`kind: "var"`):
 
@@ -106,24 +117,21 @@ not modeled in the current ConcIR/CVN semantics.
 {"name": "flag",  "kind": "var", "type": "Atomic", "base": "Bool", "init": false}
 ```
 
-**`base_type` values**:
+**`base` values**:
 
-| Value                                | Description        | init example |
-| ------------------------------------ | ------------------ | ------------ |
-| `"Bool"`                             | Boolean            | `true`       |
-| `"Int"`                              | Integer            | `0`          |
-| `{"Int": [lo, hi]}`                  | Bounded Int `[lo, hi]` | `3`       |
-| `"Float"`                            | Floating-point     | `3.14`       |
-| `"String"`                           | String             | `""`         |
-| `{"Enum": ["A","B"]}`                | Enum               | `"A"`        |
-| `{"Struct": {"x":"Int"}}`            | Struct             | `{"x": 0}`   |
-| `{"Array": {"elem":"Int","len":10}}` | Fixed-length array | `[]`         |
+| Value                                | Description            | init example |
+| ------------------------------------ | ---------------------- | ------------ |
+| `"Bool"`                             | Boolean                | `true`       |
+| `"Int"`                              | Integer                | `0`          |
+| `{"Int": [lo, hi]}`                  | Bounded Int `[lo, hi]` | `3`          |
+| `"Float"`                            | Floating-point         | `3.14`       |
+| `"String"`                           | String                 | `""`         |
+| `{"Enum": ["A","B"]}`                | Enum                   | `"A"`        |
+| `{"Struct": {"x":"Int"}}`            | Struct                 | `{"x": 0}`   |
+| `{"Array": {"elem":"Int","len":10}}` | Fixed-length array     | `[]`         |
 
-**Bounded Int**: `{"Int": [lo, hi]}` restricts a variable's value domain. In the
-CVN a variable update leaving the domain disables its transition, so counter
-loops terminate at the bound and the state space stays finite. `init` values and
-literal write/store/cas values outside `[lo, hi]` are validation errors (E208 /
-E203 / E204 / E205).
+Bounded Int: a CVN update leaving `[lo, hi]` disables the transition, so
+counter loops stay finite. Literals outside the domain are E208 / E203.
 
 ## Protection
 
@@ -131,7 +139,7 @@ E203 / E204 / E205).
 { "var": "counter", "lock": "mtx" }
 ```
 
-Each `Var` may appear at most once. `Atomic` resources do not appear in protection.
+Each `Var` appears at most once. `Atomic` resources must not appear here.
 
 ## Function
 
@@ -139,24 +147,32 @@ Each `Var` may appear at most once. `Atomic` resources do not appear in protecti
 {
   "name": "main",
   "kind": "normal",
+  "params": [],
+  "locals": [],
   "body": [
-    { "sid": "s1", "op": ["spawn", "worker"], "transfer": ["next", "s2"] },
-    { "sid": "s2", "op": "return", "transfer": "return" }
+    {
+      "sid": "s1",
+      "call": {
+        "kind": "spawn",
+        "func": "worker",
+        "handle": "h_worker",
+        "target": "s2"
+      }
+    },
+    { "sid": "s2", "terminator": { "kind": "return" } }
   ]
 }
 ```
-`kind` values: `"normal"` / `"async"` / `"closure"`
 
-The optional `module` field records the source [`Module.name`](#module) when
-the program was concatenated from modular fragments; it is used for
-cross-module repair attribution and is absent for single-fragment programs.
+`kind` values: `"normal"` / `"async"` / `"closure"`.
 
-### Typed data flow (params / returns)
+An empty `body` is a nobody function: a codegen placeholder, not a call-chain
+element. Optionally attach `effects: { "reads": [...], "writes": [...] }`.
 
-Functions may declare typed parameters and an optional return value. Each
-carries a `modeled` flag implementing the **projection principle**: only
-`modeled: true` values enter the CVN variable store; unmodeled values are
-codegen-only placeholders and are never materialized in the net.
+### Typed data flow (params / returns / locals)
+
+Each declaration has a `modeled` flag (projection): only `modeled: true`
+values enter the CVN store. Unmodeled values are codegen-only.
 
 ```json
 {
@@ -167,123 +183,149 @@ codegen-only placeholders and are never materialized in the net.
     { "name": "label", "type": "String", "modeled": false }
   ],
   "returns": { "name": "ok", "type": "Bool", "modeled": true },
+  "locals": [
+    { "name": "tmp", "type": "Int", "modeled": true, "init": 0 }
+  ],
   "body": [ ... ]
 }
 ```
 
-- Modeled params become variables named `p_{fn}_{param}`, bound at `call`
-  sites and readable in the function's guards / expressions.
-- A modeled return becomes a variable named `r_{fn}_{ret}`, written by
-  `["return", <expr>]` and captured into a caller Var via the call's out-var.
-- A parameter referenced by any expression must be `modeled: true`
-  (otherwise validation error E912). Unmodeled params are never referenced by
-  the body.
+- Modeled params become `p_{fn}_{param}`, bound at `call` sites.
+- A modeled return becomes `r_{fn}_{ret}`, written by
+  `{ "kind": "return", "value": "<expr>" }` and captured into the caller's
+  `dst`.
+- Referencing a `modeled: false` parameter is E912.
 
-At a `call` site the extra elements after the callee name are interpreted from
-the callee's signature: when the callee models a return, the first extra
-element is the capture out-var (`""` = no capture) followed by the arguments;
-otherwise all extras are arguments. The out-var must be a writable Var/Atomic
-resource (E921); the argument count must match the modeled parameters (E920).
-
-```json
-{ "sid": "s1", "op": ["call", "process", "ok_flag", "budget", "10"], "transfer": ["next", "s2"] }
-```
-### Body-less ("nobody") functions
-
-An empty `body` array marks a function with no control flow and no callsites. It is a codegen placeholder, not a call-chain element. When spawned, the translator models it as a trivial skeleton (entry → single transition → return); a `call` to one is an atomic pass-through. Optionally attach an `effects` object to hint the data footprint for codegen:
+At a `call` site: `args` must match modeled parameters (E920); `dst`, if
+present, must be a writable Var/Atomic (E921).
 
 ```json
 {
-  "name": "compute",
-  "kind": "normal",
-  "body": [],
-  "effects": { "reads": ["counter"], "writes": ["result"] }
+  "sid": "s1",
+  "call": {
+    "kind": "call",
+    "func": "process",
+    "args": ["budget", "10"],
+    "dst": "ok_flag",
+    "target": "s2"
+  }
 }
 ```
 
-`effects` carries `reads`/`writes` (both default to `[]`). The write values are
-modeled as unknown in the CVN.
+## Basic block
 
-## Operation (op)
+A function body is a list of basic blocks. Each block has:
 
-| Format                                      | Description                                    |
-| ------------------------------------------- | ---------------------------------------------- |
-| `["res_op", "<resource>", "<action>", ...]` | Shared resource operation                      |
-| `["spawn", "<function name>"]`              | Create an OS thread                            |
-| `["spawn_async", "<function name>"]`        | Create an async task                           |
-| `["join", "<function name>"]`               | Wait for a thread                              |
-| `["await", "<function name>"]`              | Wait for an async task                         |
-| `["call", "<function name>", ...]`  | Synchronous call; optional out-var + argument expressions (see typed data flow) |
-| `["return", "<expr>"]`              | Function return with an optional value expression (binds a modeled `returns`) |
-| `"return"`                          | Function return (string, without a value)                          |
-| `"nop"`                             | No-op; useful as an explicit control-flow node |
+1. Zero or more [`Stmt`](#statement)s (data / structured loop).
+2. Exactly one exit: either a [`Call`](#call) **or** a
+   [`Terminator`](#terminator). Both or neither is a parse error.
 
-`call` targets are resolved after modules are concatenated into a `Program`, so any defined function may be called — body-less or bodied, including one with synchronization operations.
-
-### `res_op` action list
-
-| action       | Arguments         | Applicable types                     |
-| ------------ | ----------------- | ------------------------------------ |
-| `lock`       | none              | Mutex, RwLock                        |
-| `read`       | none              | RwLock (read lock), Var (read value) |
-| `write`      | val               | Var                                  |
-| `drop`       | none              | Mutex, RwLock                        |
-| `wait`       | lock_name         | Condvar                              |
-| `notify`     | none              | Condvar                              |
-| `notify_all` | none              | Condvar                              |
-| `acquire`    | none              | Semaphore                            |
-| `release`    | none              | Semaphore                            |
-| `send`       | val               | Channel                              |
-| `recv`       | none              | Channel                              |
-| `load`       | none              | Atomic                               |
-| `store`      | val               | Atomic                               |
-| `cas`        | expected, desired | Atomic                               |
-
-## Transfer
-
-| Format                                                   | Description                         |
-| -------------------------------------------------------- | ----------------------------------- |
-| `["next", "<sid>"]`                                      | Sequential transfer                 |
-| `["branch", "<condition>", "<true_sid>", "<false_sid>"]` | Conditional branch                  |
-| `["switch", "<variable>", {"<label>": "<sid>", ...}]`    | Multi-way branch                    |
-| `"return"`                                               | Function end (string, not an array) |
-
-## BusinessGoal
+This is the MIR / LLVM layout: statements, then a call with a continuation,
+or a CFG terminator. `return` appears only as a terminator.
 
 ```json
 {
-  "id": "workers_return",
-  "desc": "Both workers reach return",
-  "marking": { "worker.s5": 1, "mtx": 1 },
-  "variables": { "ready": true }
+  "sid": "s3",
+  "statements": [
+    { "kind": "write_shared", "resource": "count", "expr": "count + 1" }
+  ],
+  "terminator": { "kind": "goto", "target": "s4" }
 }
 ```
 
-`desc`, `marking`, and `variables` may be omitted. Keys in `marking` may be: a declared resource name; a control location of the form `function.sid`; or a raw CVN place id starting with `cp_`, `rp_`, `wp_`, or `ra_`. Do not use display forms such as `cp(worker, ret)` or `rp(mtx)`. Goal token counts mean the minimum number that must be reached; for Channel/Condvar resources that start empty, use 0 for an emptiness check. `variables` uses CVN variable names and JSON scalar values.
+`sid` must be `"s"` followed by digits (`s1`, `s10`).
+
+## Statement
+
+Data operations and structured loop headers. They do not transfer control by
+themselves except `loop`, whose `body` / `exit` are additional CFG edges.
+
+| `kind`           | Fields                         | Description |
+| ---------------- | ------------------------------ | ----------- |
+| `nop`            | —                              | No-op       |
+| `assign_local`   | `target`, `expr`               | Write a function-local |
+| `read_shared`    | `resource`, optional `dst`     | Read a `Var` |
+| `write_shared`   | `resource`, `expr`             | Write a `Var` |
+| `abstract_step`  | `reads`, `writes`, `desc`      | Opaque modeled step |
+| `loop`           | `body`, `exit`                 | Structured loop header |
+
+## Call
+
+Thread control, synchronization, and function invocation. Every variant except
+`select` names the successor block in `target` — the continuation after the
+call returns (MIR `Call { destination, target }`).
+
+Spawn / join pair on **handles**, not function names.
+
+| `kind`                | Key fields                                      | Notes |
+| --------------------- | ----------------------------------------------- | ----- |
+| `mutex_lock`          | `resource`, `target`                            | Mutex |
+| `mutex_unlock`        | `resource`, `target`                            | Mutex |
+| `rwlock_read`         | `resource`, `target`                            | RwLock read lock |
+| `rwlock_write`        | `resource`, `target`                            | RwLock write lock |
+| `rwlock_unlock`       | `resource`, `target`                            | RwLock |
+| `channel_send`        | `channel`, `value`, `target`                    | Channel |
+| `channel_recv`        | `channel`, `dst`, `target`                      | `dst` is the data target; `target` is the successor |
+| `condvar_wait`        | `condvar`, `lock`, `target`                     | See [wait semantics](#wait-semantics) |
+| `condvar_notify`      | `condvar`, `target`                             | |
+| `condvar_notify_all`  | `condvar`, `target`                             | |
+| `semaphore_acquire`   | `resource`, optional `count`, `target`          | |
+| `semaphore_release`   | `resource`, optional `count`, `target`          | |
+| `atomic_load`         | `resource`, `dst`, `target`                     | |
+| `atomic_store`        | `resource`, `value`, `target`                   | |
+| `atomic_cas`          | `resource`, `expected`, `desired`, `dst`, `target` | |
+| `call`                | `func`, `args`, optional `dst`, `target`        | Synchronous call |
+| `spawn`               | `func`, `args`, `handle`, `target`              | OS thread |
+| `spawn_batch`         | `func`, `count`, `handle`, `target`             | |
+| `join`                | `handle`, `target`                              | Pairs with `spawn` on the same handle |
+| `join_all`            | `handle`, `target`                              | |
+| `async_call`          | `func`, `args`, `handle`, `target`              | Async task |
+| `await`               | `handle`, `target`                              | Pairs with `async_call` |
+| `select`              | `branches`, optional `default`                  | Each branch has `guard` + `target` |
+
+`select` guards: `channel_recv`, `condvar_wait`, `semaphore_acquire`.
+
+Call targets (`func`) use the [FQN rules](#naming-identifiers-and-fqns): short
+name in the same module, FQN listed in `requires` otherwise.
+
+## Terminator
+
+CFG exits. This is the only place `return` may appear.
+
+| `kind`   | Fields | Description |
+| -------- | ------ | ----------- |
+| `goto`   | `target` | Unconditional jump |
+| `branch` | `cond`, `then`, `else` | Conditional; `else` is the JSON key |
+| `switch` | `var`, `cases`, `default` | Multi-way branch; `default` is required |
+| `return` | optional `value` | Function return; one spelling only |
+
+There is no separate `op: "return"` and no `transfer` field.
 
 ## Validation pipeline
 
-The validator runs 8 passes in a fixed order; each pass emits diagnostics independently:
+Nine passes; each emits diagnostics independently:
 
 ```
 structure  →  names  →  types  →  compat  →  protection
     E0xx       E1xx      E2xx     E3xx        E7xx
 
-→  concurrency  →  locks  →  control
-       E4xx        E5xx      E6xx
+→  concurrency  →  locks  →  control  →  dataflow
+       E4xx        E5xx      E6xx         E9xx
 ```
+
+JSON that does not match this grammar fails at deserialize (E000), including
+unknown `kind` tags and a block with both `call` and `terminator`.
 
 ## `wait` semantics
 
-ConcIR semantics of `wait(cv, lock_name)`: release the associated lock, block until woken, then re-acquire the lock.
+`condvar_wait(cv, lock)`: release `lock`, block until woken, re-acquire
+`lock`. Lock-safety analysis treats the net effect as lock-neutral.
 
-Therefore, in lock-safety analysis, the net effect of `wait` is that lock state is unchanged (release followed immediately by re-acquire). When modeling a condvar wait loop, write it as:
+A condvar wait loop:
 
 ```
-s1: lock(mtx)            -- acquire lock
-s2: read(cond)           -- check condition
-    branch(cond, s4, s3)
-s3: wait(cv, mtx)        -- release lock, wait, re-acquire lock
-    next(s2)             -- back to condition check, not back to lock
-s4: ...                  -- condition satisfied; continue (lock still held)
+s1: mutex_lock(mtx) → s2
+s2: read_shared(cond); branch(cond, then=s4, else=s3)
+s3: condvar_wait(cv, mtx) → s2     // back to the check, not to lock
+s4: ...                            // condition holds; lock still held
 ```

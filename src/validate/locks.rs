@@ -151,12 +151,12 @@ fn check_lock_drop_pairing(
                     Diagnostic::error(
                         "E501",
                         format!(
-                            "lock '{lock}' not dropped on return path in function '{}'",
+                            "lock '{lock}' not unlocked on return path in function '{}'",
                             f.name
                         ),
                     )
                     .with_path(format!("{fn_path}.body[{idx}]"))
-                    .with_fix("add drop() before return"),
+                    .with_fix("add mutex_unlock/rwlock_unlock before return"),
                 );
             }
         }

@@ -98,22 +98,12 @@ fn check_contracts(
     let provided_res: HashSet<String> = program
         .modules
         .iter()
-        .flat_map(|m| {
-            m.provides
-                .resources
-                .iter()
-                .map(|n| fqn::fqn(&m.name, n))
-        })
+        .flat_map(|m| m.provides.resources.iter().map(|n| fqn::fqn(&m.name, n)))
         .collect();
     let provided_fn: HashSet<String> = program
         .modules
         .iter()
-        .flat_map(|m| {
-            m.provides
-                .functions
-                .iter()
-                .map(|n| fqn::fqn(&m.name, n))
-        })
+        .flat_map(|m| m.provides.functions.iter().map(|n| fqn::fqn(&m.name, n)))
         .collect();
 
     for (mi, m) in program.modules.iter().enumerate() {
@@ -163,12 +153,9 @@ fn check_contracts(
             }
             if !resource_fqns.contains(name) || !provided_res.contains(name) {
                 diags.push(
-                    Diagnostic::error(
-                        "E108",
-                        format!("unresolved import of resource '{name}'"),
-                    )
-                    .with_path(format!("modules[{mi}].requires.resources[{i}]"))
-                    .with_fix("export it from the owning module's provides.resources"),
+                    Diagnostic::error("E108", format!("unresolved import of resource '{name}'"))
+                        .with_path(format!("modules[{mi}].requires.resources[{i}]"))
+                        .with_fix("export it from the owning module's provides.resources"),
                 );
             }
         }
@@ -186,12 +173,9 @@ fn check_contracts(
             }
             if !function_fqns.contains(name) || !provided_fn.contains(name) {
                 diags.push(
-                    Diagnostic::error(
-                        "E108",
-                        format!("unresolved import of function '{name}'"),
-                    )
-                    .with_path(format!("modules[{mi}].requires.functions[{i}]"))
-                    .with_fix("export it from the owning module's provides.functions"),
+                    Diagnostic::error("E108", format!("unresolved import of function '{name}'"))
+                        .with_path(format!("modules[{mi}].requires.functions[{i}]"))
+                        .with_fix("export it from the owning module's provides.functions"),
                 );
             }
         }
@@ -209,12 +193,9 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
             if let Some((resource, _)) = stmt.shared_var_access() {
                 if !resource_defined(program, &m.name, resource) {
                     diags.push(
-                        Diagnostic::error(
-                            "E101",
-                            format!("undefined resource '{resource}'"),
-                        )
-                        .with_path(format!("{path}.statements"))
-                        .with_fix("declare the resource or import it via requires"),
+                        Diagnostic::error("E101", format!("undefined resource '{resource}'"))
+                            .with_path(format!("{path}.statements"))
+                            .with_fix("declare the resource or import it via requires"),
                     );
                 }
             }
@@ -223,12 +204,9 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
             if let Some(resource) = call.resource_name() {
                 if !resource_defined(program, &m.name, resource) {
                     diags.push(
-                        Diagnostic::error(
-                            "E101",
-                            format!("undefined resource '{resource}'"),
-                        )
-                        .with_path(format!("{path}.call"))
-                        .with_fix("declare the resource or import it via requires"),
+                        Diagnostic::error("E101", format!("undefined resource '{resource}'"))
+                            .with_path(format!("{path}.call"))
+                            .with_fix("declare the resource or import it via requires"),
                     );
                 }
             }
@@ -271,7 +249,9 @@ fn check_function_references(program: &Program, diags: &mut Vec<Diagnostic>) {
                 diags.push(
                     Diagnostic::error(
                         "E108",
-                        format!("cross-module reference '{func}' is not listed in requires.functions"),
+                        format!(
+                            "cross-module reference '{func}' is not listed in requires.functions"
+                        ),
                     )
                     .with_path(format!("{}.call", Program::block_path(mi, fi, si)))
                     .with_fix("add this FQN to the module's requires.functions"),

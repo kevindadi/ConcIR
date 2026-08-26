@@ -10,34 +10,34 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
 
     for (mi, m) in program.modules.iter().enumerate() {
         for (fi, f) in m.functions.iter().enumerate() {
-        if f.body.is_empty() {
-            continue;
-        }
+            if f.body.is_empty() {
+                continue;
+            }
 
-        let sid_to_idx: HashMap<&str, usize> = f
-            .body
-            .iter()
-            .enumerate()
-            .map(|(i, s)| (s.sid.as_str(), i))
-            .collect();
+            let sid_to_idx: HashMap<&str, usize> = f
+                .body
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (s.sid.as_str(), i))
+                .collect();
 
-        let n = f.body.len();
-        let mut successors = vec![Vec::new(); n];
+            let n = f.body.len();
+            let mut successors = vec![Vec::new(); n];
 
-        for (i, block) in f.body.iter().enumerate() {
-            for t in block.successor_sids() {
-                if let Some(&ti) = sid_to_idx.get(t) {
-                    successors[i].push(ti);
+            for (i, block) in f.body.iter().enumerate() {
+                for t in block.successor_sids() {
+                    if let Some(&ti) = sid_to_idx.get(t) {
+                        successors[i].push(ti);
+                    }
                 }
             }
-        }
 
-        let fn_path = Program::fn_path(mi, fi);
-        check_reachability(f, &successors, n, &fn_path, diags);
-        check_return_paths(f, &successors, n, &fn_path, diags);
-        check_branch_targets_same(f, &fn_path, diags);
-        check_switch_exhaustive(f, &rt_map, &fn_path, diags);
-        check_infinite_loop(f, &successors, n, &fn_path, diags);
+            let fn_path = Program::fn_path(mi, fi);
+            check_reachability(f, &successors, n, &fn_path, diags);
+            check_return_paths(f, &successors, n, &fn_path, diags);
+            check_branch_targets_same(f, &fn_path, diags);
+            check_switch_exhaustive(f, &rt_map, &fn_path, diags);
+            check_infinite_loop(f, &successors, n, &fn_path, diags);
         }
     }
 }

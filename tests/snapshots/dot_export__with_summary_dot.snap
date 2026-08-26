@@ -1,5 +1,5 @@
 ---
-source: cir/tests/dot_export.rs
+source: tests/dot_export.rs
 expression: dot
 ---
 digraph "with_summary" {
@@ -26,7 +26,7 @@ digraph "with_summary" {
     color=black;
 
     main_s1 [label="s1: spawn(worker)", shape=doubleoctagon, style="filled", fillcolor="#f0f0f0", color=black, penwidth=3];
-    main_s2 [label="s2: join(worker)", shape=doubleoctagon, style="filled,dashed", fillcolor="#f0f0f0", color=black, penwidth=1];
+    main_s2 [label="s2: join(h_worker)", shape=doubleoctagon, style="filled,dashed", fillcolor="#f0f0f0", color=black, penwidth=1];
     main_s3 [label="s3: return", shape=ellipse, style="filled", fillcolor="#a0a0a0", color=black, penwidth=1];
     main_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
 
@@ -40,10 +40,10 @@ digraph "with_summary" {
     style=rounded;
     color=black;
 
-    worker_s10 [label="s10: lock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=red, penwidth=3];
+    worker_s10 [label="s10: mutex_lock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=red, penwidth=3];
     worker_s11 [label="s11: call(validate)", shape=rect, style="filled,rounded", fillcolor="#f0f0f0", color=black, penwidth=1];
-    worker_s12 [label="s12: write(counter, counter + 1)", shape=rect, style="filled", fillcolor="#f0f0f0", color=orange, penwidth=2];
-    worker_s13 [label="s13: drop(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    worker_s12 [label="s12: write_shared(counter, counter + 1)", shape=rect, style="filled", fillcolor="#f0f0f0", color=orange, penwidth=2];
+    worker_s13 [label="s13: mutex_unlock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
     worker_s14 [label="s14: return", shape=ellipse, style="filled", fillcolor="#a0a0a0", color=black, penwidth=1];
     worker_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
 

@@ -207,7 +207,7 @@ impl Default for NodeStyle {
 }
 
 fn node_style(stmt: &Block) -> NodeStyle {
-    let transfer_override = match &stmt.terminator {
+    let terminator_style = match &stmt.terminator {
         Some(Terminator::Branch { .. }) => Some(NodeStyle {
             shape: "diamond",
             fillcolor: "#ffffcc",
@@ -221,7 +221,7 @@ fn node_style(stmt: &Block) -> NodeStyle {
         _ => None,
     };
 
-    if let Some(s) = transfer_override {
+    if let Some(s) = terminator_style {
         return s;
     }
 
@@ -309,55 +309,75 @@ fn write_node(out: &mut String, prefix: &str, stmt: &Block, is_entry: bool, opts
 
 // ── Label formatting ────────────────────────────────────────────────────────
 
-fn format_label_compact(stmt: &Block) -> String {
-    let op_str = if let Some(call) = &stmt.call {
-        match call {
-            Call::MutexLock { resource, .. } => format!("mutex_lock({resource})"),
-            Call::MutexUnlock { resource, .. } => format!("mutex_unlock({resource})"),
-            Call::Spawn { func, .. } => format!("spawn({func})"),
-            Call::SpawnBatch { func, .. } => format!("spawn_batch({func})"),
-            Call::Join { handle, .. } => format!("join({handle})"),
-            Call::JoinAll { handle, .. } => format!("join_all({handle})"),
-            Call::Func { func, .. } => format!("call({func})"),
-            Call::Await { handle, .. } => format!("await({handle})"),
-            Call::AsyncCall { func, .. } => format!("async_call({func})"),
-            other => format!("{other:?}"),
-        }
-    } else if stmt.is_return() {
-        "return".to_string()
-    } else if let Some(Terminator::Goto { .. }) = &stmt.terminator {
-        "goto".to_string()
-    } else if let Some(Terminator::Branch { .. }) = &stmt.terminator {
-        "branch".to_string()
-    } else if let Some(Terminator::Switch { .. }) = &stmt.terminator {
-        "switch".to_string()
+fn format_label_compact(block: &Block) -> String {
+    let op_str = if let Some(call) = &block.call {
+        format_call_compact(call)
+    } else if matches!(
+        block.terminator,
+        Some(Terminator::Branch { .. } | Terminator::Switch { .. } | Terminator::Return { .. })
+    ) {
+        format_terminator_compact(block)
+    } else if let Some(stmt) = block.statements.first() {
+        format_stmt_compact(stmt)
     } else {
-        "block".to_string()
+        format_terminator_compact(block)
     };
-    escape(&format!("{}: {}", stmt.sid, op_str))
+    escape(&format!("{}: {}", block.sid, op_str))
 }
 
-fn compact_args(args: &[String]) -> String {
-    if args.len() == 1 {
-        return escape(&args[0]);
+fn format_stmt_compact(stmt: &crate::ast::Stmt) -> String {
+    use crate::ast::Stmt;
+    match stmt {
+        Stmt::Nop => "nop".into(),
+        Stmt::AssignLocal { target, expr } => format!("assign({target}, {expr})"),
+        Stmt::ReadShared { resource, .. } => format!("read_shared({resource})"),
+        Stmt::WriteShared { resource, expr } => format!("write_shared({resource}, {expr})"),
+        Stmt::AbstractStep { desc, .. } => {
+            if desc.is_empty() {
+                "abstract_step".into()
+            } else {
+                format!("abstract_step({desc})")
+            }
+        }
+        Stmt::Loop { body, exit } => format!("loop({body}..{exit})"),
     }
-    // For CAS-like: "false", "true" → "F→T"
-    if args.len() == 2 {
-        let a = compact_val(&args[0]);
-        let b = compact_val(&args[1]);
-        return format!("{a}\\u2192{b}"); // →
-    }
-    args.iter()
-        .map(|a| escape(a))
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
-fn compact_val(v: &str) -> String {
-    match v {
-        "true" => "T".to_string(),
-        "false" => "F".to_string(),
-        other => escape(other),
+fn format_call_compact(call: &Call) -> String {
+    match call {
+        Call::MutexLock { resource, .. } => format!("mutex_lock({resource})"),
+        Call::MutexUnlock { resource, .. } => format!("mutex_unlock({resource})"),
+        Call::RwLockRead { resource, .. } => format!("rwlock_read({resource})"),
+        Call::RwLockWrite { resource, .. } => format!("rwlock_write({resource})"),
+        Call::RwLockUnlock { resource, .. } => format!("rwlock_unlock({resource})"),
+        Call::ChannelSend { channel, .. } => format!("channel_send({channel})"),
+        Call::ChannelRecv { channel, .. } => format!("channel_recv({channel})"),
+        Call::CondvarWait { condvar, lock, .. } => format!("condvar_wait({condvar}, {lock})"),
+        Call::CondvarNotify { condvar, .. } => format!("condvar_notify({condvar})"),
+        Call::CondvarNotifyAll { condvar, .. } => format!("condvar_notify_all({condvar})"),
+        Call::SemaphoreAcquire { resource, .. } => format!("semaphore_acquire({resource})"),
+        Call::SemaphoreRelease { resource, .. } => format!("semaphore_release({resource})"),
+        Call::AtomicLoad { resource, .. } => format!("atomic_load({resource})"),
+        Call::AtomicStore { resource, .. } => format!("atomic_store({resource})"),
+        Call::AtomicCas { resource, .. } => format!("atomic_cas({resource})"),
+        Call::Func { func, .. } => format!("call({func})"),
+        Call::Spawn { func, .. } => format!("spawn({func})"),
+        Call::SpawnBatch { func, .. } => format!("spawn_batch({func})"),
+        Call::Join { handle, .. } => format!("join({handle})"),
+        Call::JoinAll { handle, .. } => format!("join_all({handle})"),
+        Call::AsyncCall { func, .. } => format!("async_call({func})"),
+        Call::Await { handle, .. } => format!("await({handle})"),
+        Call::Select { .. } => "select".into(),
+    }
+}
+
+fn format_terminator_compact(block: &Block) -> String {
+    match &block.terminator {
+        Some(Terminator::Goto { .. }) => "goto".into(),
+        Some(Terminator::Branch { .. }) => "branch".into(),
+        Some(Terminator::Switch { .. }) => "switch".into(),
+        Some(Terminator::Return { .. }) => "return".into(),
+        None => "block".into(),
     }
 }
 

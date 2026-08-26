@@ -1,6 +1,6 @@
 //! Module + FQN + Block/Call/Terminator grammar.
 
-use concir::ast::{Block, Call, Function, Module, Program, Terminator};
+use concir::ast::{Block, Function, Module, Program, Terminator};
 use concir::fqn;
 
 fn sample_module_json() -> &'static str {
@@ -50,7 +50,10 @@ fn program_uses_modules_and_fqn_entry() {
     );
     let program: Program = serde_json::from_str(&json).unwrap();
     assert_eq!(program.entry, "producer::producer");
-    assert_eq!(fqn::split_fqn(&program.entry), Some(("producer", "producer")));
+    assert_eq!(
+        fqn::split_fqn(&program.entry),
+        Some(("producer", "producer"))
+    );
     assert!(program.lookup_function("producer", "producer").is_some());
 }
 

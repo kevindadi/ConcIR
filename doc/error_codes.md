@@ -1,12 +1,15 @@
 # ConcIR Error Code Reference
 
-The validator emits structured diagnostics. All errors are located by JSON path, e.g. `functions[1].body[3].op`.
+The validator emits structured diagnostics. Locations use JSON paths, e.g.
+`modules[0].functions[1].body[3].call`.
 
 See [`syntax.md`](syntax.md) for the grammar and [`todo.md`](todo.md) for the roadmap.
 
 ## E0xx — Structural errors
 
 Supplemental structural checks after successful JSON deserialization.
+Unknown `kind` tags and a block with both `call` and `terminator` fail at
+parse time (E000), not here.
 
 | Code | Name                  | Severity | Description                                                                                |
 | ---- | --------------------- | :------: | ------------------------------------------------------------------------------------------ |
@@ -22,13 +25,14 @@ Supplemental structural checks after successful JSON deserialization.
 
 | Code | Name              | Severity | Description                                                            |
 | ---- | ----------------- | :------: | ---------------------------------------------------------------------- |
-| E101 | UndefinedResource |  error   | Resource name referenced in an op is not in resources                  |
-| E102 | UndefinedFunction |  error   | Function name referenced by spawn/call/join/await has no fn definition |
-| E103 | UndefinedSid      |  error   | Transfer target sid is not in the current function body                |
-| E104 | DuplicateResource |  error   | Duplicate resource name in resources                                   |
-| E105 | DuplicateFunction |  error   | Duplicate function name in functions                                   |
+| E101 | UndefinedResource |  error   | Resource name is not declared in this module and not imported          |
+| E102 | UndefinedFunction |  error   | Function name referenced by spawn/call/async_call has no definition    |
+| E103 | UndefinedSid      |  error   | Successor sid is not in the current function body                      |
+| E104 | DuplicateResource |  error   | Duplicate resource name in the same module                             |
+| E105 | DuplicateFunction |  error   | Duplicate function name in the same module                             |
 | E106 | DuplicateSid      |  error   | Duplicate sid within the same function body                            |
-| E107 | UndefinedEntry    |  error   | Entry function name does not exist in functions                        |
+| E107 | UndefinedEntry    |  error   | `entry` is not an FQN, or the FQN is not a defined function            |
+| E108 | ModuleContract    |  error   | Duplicate module name; `provides` names a missing local entity; `requires` is not an FQN or does not resolve to an exported entity; cross-module call not listed in `requires.functions` |
 
 ## E2xx — Type errors
 
@@ -36,10 +40,10 @@ Supplemental structural checks after successful JSON deserialization.
 | ---- | ----------------------- | :------: | ------------------------------------------------------------------------------------- |
 | E201 | BranchCondNotBool       |  error   | branch condition is not a comparison expression (missing `==`/`!=`/`>`/`<`/`>=`/`<=`) |
 | E202 | SwitchVarNotEnumOrInt   |  error   | switch variable type is not Enum or Int                                               |
-| E203 | WriteTypeMismatch       |  error   | write value type does not match the Var's base                                        |
-| E204 | StoreTypeMismatch       |  error   | store value type does not match the Atomic's base                                     |
-| E205 | CasTypeMismatch         |  error   | cas argument types do not match the Atomic's base                                     |
-| E206 | SendTypeMismatch        |  error   | send value type does not match the Channel's base                                     |
+| E203 | WriteTypeMismatch       |  error   | `write_shared` value type does not match the Var's base                               |
+| E204 | StoreTypeMismatch       |  error   | `atomic_store` value type does not match the Atomic's base                            |
+| E205 | CasTypeMismatch         |  error   | `atomic_cas` argument types do not match the Atomic's base                            |
+| E206 | SendTypeMismatch        |  error   | `channel_send` value type does not match the Channel's base                           |
 | E207 | SwitchCaseLabelMismatch |  error   | switch case label is not a valid variant of the target Enum                           |
 
 E203/E204/E205 also fire when a literal value is outside a bounded `Int`
@@ -49,47 +53,40 @@ domain (e.g. writing `11` to an `Int{[0,10]}` variable).
 
 | Code | Name                  | Severity | Description                                                          |
 | ---- | --------------------- | :------: | -------------------------------------------------------------------- |
-| E301 | LockOnNonLock         |  error   | lock/drop on a non-Mutex/RwLock resource                             |
-| E302 | ReadLockOnNonRwLock   |  error   | read on a Mutex (should use lock)                                    |
-| E303 | WaitOnNonCondvar      |  error   | wait/notify/notify_all on a non-Condvar resource                     |
-| E304 | WaitLockNotExist      |  error   | wait's lock_name is not a declared Mutex/RwLock                      |
-| E305 | AcquireOnNonSemaphore |  error   | acquire/release on a non-Semaphore resource                          |
-| E306 | SendOnNonChannel      |  error   | send/recv on a non-Channel resource                                  |
-| E307 | LoadOnNonAtomic       |  error   | load/store/cas on a non-Atomic resource                              |
-| E308 | ReadWriteOnNonVar     |  error   | read (value) / write on a non-Var resource                           |
+| E301 | LockOnNonLock         |  error   | `mutex_lock` / `mutex_unlock` on a non-Mutex                         |
+| E302 | ReadLockOnNonRwLock   |  error   | `rwlock_*` on a non-RwLock                                           |
+| E303 | WaitOnNonCondvar      |  error   | `condvar_*` on a non-Condvar                                         |
+| E304 | WaitLockNotExist      |  error   | `condvar_wait`'s `lock` is not a Mutex/RwLock                        |
+| E305 | AcquireOnNonSemaphore |  error   | `semaphore_*` on a non-Semaphore                                     |
+| E306 | SendOnNonChannel      |  error   | `channel_send` / `channel_recv` on a non-Channel                     |
+| E307 | LoadOnNonAtomic       |  error   | `atomic_*` on a non-Atomic                                           |
+| E308 | ReadWriteOnNonVar     |  error   | `read_shared` / `write_shared` on a non-Var                          |
 | E309 | VarAccessWithoutLock  |  error   | read/write of a protected Var without holding the corresponding lock |
-| E310 | UnknownResourceAction |  error   | `res_op` uses an action not in the ConcIR contract                   |
-| E311 | ResourceActionArity   |  error   | `res_op` action argument count does not match the ConcIR contract    |
 
-**Operation–resource compatibility matrix**:
+**Call / statement–resource compatibility**:
 
-| action     | Mutex |  RwLock   | Condvar | Semaphore | Channel | Atomic |    Var    |
-| ---------- | :---: | :-------: | :-----: | :-------: | :-----: | :----: | :-------: |
-| lock       |  ok   | ok(write) |  E303   |   E305    |  E306   |  E307  |   E308    |
-| read       | E302  | ok(read)  |  E303   |   E305    |  E306   |  E307  | ok(value) |
-| write      | E301  |   E301    |  E303   |   E305    |  E306   |  E307  | ok(value) |
-| drop       |  ok   |    ok     |  E303   |   E305    |  E306   |  E307  |   E308    |
-| wait       | E303  |   E303    |   ok    |   E305    |  E306   |  E307  |   E308    |
-| notify     | E303  |   E303    |   ok    |   E305    |  E306   |  E307  |   E308    |
-| notify_all | E303  |   E303    |   ok    |   E305    |  E306   |  E307  |   E308    |
-| acquire    | E301  |   E301    |  E303   |    ok     |  E306   |  E307  |   E308    |
-| release    | E301  |   E301    |  E303   |    ok     |  E306   |  E307  |   E308    |
-| send       | E301  |   E301    |  E303   |   E305    |   ok    |  E307  |   E308    |
-| recv       | E301  |   E301    |  E303   |   E305    |   ok    |  E307  |   E308    |
-| load       | E301  |   E301    |  E303   |   E305    |  E306   |   ok   |   E308    |
-| store      | E301  |   E301    |  E303   |   E305    |  E306   |   ok   |   E308    |
-| cas        | E301  |   E301    |  E303   |   E305    |  E306   |   ok   |   E308    |
+| operation            | Mutex | RwLock | Condvar | Semaphore | Channel | Atomic | Var |
+| -------------------- | :---: | :----: | :-----: | :-------: | :-----: | :----: | :-: |
+| `mutex_lock/unlock`  |  ok   |  E301  |  E301   |   E301    |  E301   |  E301  | E301 |
+| `rwlock_*`           | E302  |   ok   |  E302   |   E302    |  E302   |  E302  | E302 |
+| `condvar_*`          | E303  |  E303  |   ok    |   E303    |  E303   |  E303  | E303 |
+| `semaphore_*`        | E305  |  E305  |  E305   |    ok     |  E305   |  E305  | E305 |
+| `channel_send/recv`  | E306  |  E306  |  E306   |   E306    |   ok    |  E306  | E306 |
+| `atomic_*`           | E307  |  E307  |  E307   |   E307    |  E307   |   ok   | E307 |
+| `read/write_shared`  | E308  |  E308  |  E308   |   E308    |  E308   |  E308  |  ok  |
 
 ## E4xx — Concurrency pairing
 
+Pairing is by **handle**, not by function name.
+
 | Code | Name                     | Severity | Description                                     |
 | ---- | ------------------------ | :------: | ----------------------------------------------- |
-| E401 | SpawnWithoutJoin         | warning  | spawn without a corresponding join              |
-| E402 | JoinWithoutSpawn         |  error   | join without a corresponding spawn              |
-| E403 | SpawnAsyncWithoutAwait   | warning  | spawn_async without a corresponding await       |
-| E404 | AwaitWithoutSpawnAsync   |  error   | await without a corresponding spawn_async       |
-| E405 | SyncSpawnPairedWithAwait |  error   | spawn paired with await (should be join)        |
-| E406 | AsyncSpawnPairedWithJoin |  error   | spawn_async paired with join (should be await)  |
+| E401 | SpawnWithoutJoin         | warning  | spawn handle has no matching join               |
+| E402 | JoinWithoutSpawn         |  error   | join handle has no matching spawn               |
+| E403 | SpawnAsyncWithoutAwait   | warning  | async_call handle has no matching await         |
+| E404 | AwaitWithoutSpawnAsync   |  error   | await handle has no matching async_call         |
+| E405 | SyncSpawnPairedWithAwait |  error   | spawn handle reused as await (should be join)   |
+| E406 | AsyncSpawnPairedWithJoin |  error   | async_call handle reused as join (should be await) |
 | E407 | JoinInAsyncContext       | warning  | join in an async function may block the runtime |
 | E408 | AwaitInSyncContext       |  error   | await used in a normal function                 |
 
@@ -97,9 +94,9 @@ domain (e.g. writing `11` to an `Int{[0,10]}` variable).
 
 | Code | Name                | Severity | Description                                                        |
 | ---- | ------------------- | :------: | ------------------------------------------------------------------ |
-| E501 | LockWithoutDrop     |  error   | lock without a corresponding drop on some control-flow path        |
-| E502 | DropWithoutLock     |  error   | drop without a preceding matching lock                             |
-| E503 | DoubleLock          |  error   | same resource locked twice on one path without an intervening drop |
+| E501 | LockWithoutDrop     |  error   | lock without a corresponding unlock on some control-flow path      |
+| E502 | DropWithoutLock     |  error   | unlock without a preceding matching lock                           |
+| E503 | DoubleLock          |  error   | same resource locked twice on one path without an intervening unlock |
 | E504 | SyncLockAcrossAwait |  error   | Sync lock held across an await point in an async function          |
 | E505 | LockOrderViolation  |  error   | inconsistent lock acquisition order across paths (ABBA deadlock)   |
 
@@ -107,9 +104,9 @@ domain (e.g. writing `11` to an `Int{[0,10]}` variable).
 
 | Code | Name                 | Severity | Description                                     |
 | ---- | -------------------- | :------: | ----------------------------------------------- |
-| E601 | UnreachableStatement | warning  | statement unreachable from the entry            |
+| E601 | UnreachableStatement | warning  | block unreachable from the entry                |
 | E602 | MissingReturn        |  error   | a control-flow path that does not end in return |
-| E603 | BranchTargetsSame    | warning  | branch true/false targets are the same          |
+| E603 | BranchTargetsSame    | warning  | branch then/else targets are the same           |
 | E604 | SwitchNotExhaustive  |  error   | switch does not cover all Enum variants         |
 | E605 | InfiniteLoopNoExit   | warning  | loop with no exit and no blocking operation     |
 
@@ -130,9 +127,9 @@ domain (e.g. writing `11` to an `Int{[0,10]}` variable).
 | E910 | ParamNameCollides       |  error   | parameter name collides with a declared resource name                                              |
 | E911 | DuplicateParam          |  error   | duplicate parameter name within a function                                                          |
 | E912 | UnmodeledParamReferenced|  error   | expression references a `modeled: false` parameter (it is not in the CVN variable store)           |
-| E913 | BareReturnWithModeledReturn | warning | function models a return but some `return` statement carries no value (binds Unknown)             |
+| E913 | BareReturnWithModeledReturn | warning | function models a return but some `return` terminator carries no value (binds Unknown)             |
 | E920 | CallArityMismatch        |  error   | `call` argument count does not match the callee's modeled parameters                                |
-| E921 | CallCaptureNotVar       |  error   | `call` out-var is not a writable Var/Atomic resource                                               |
+| E921 | CallCaptureNotVar       |  error   | `call` `dst` is not a writable Var/Atomic resource                                                 |
 
 ## Diagnostic output format
 
@@ -142,9 +139,9 @@ Each diagnostic includes the following fields:
 {
   "code": "E501",
   "severity": "error",
-  "message": "lock 'mtx' not dropped on return path in function 'worker'",
-  "path": "functions[1].body[3]",
-  "fix_hint": "add drop() before return"
+  "message": "lock 'mtx' not unlocked on return path in function 'worker'",
+  "path": "modules[0].functions[1].body[3]",
+  "fix_hint": "add mutex_unlock/rwlock_unlock before return"
 }
 ```
 

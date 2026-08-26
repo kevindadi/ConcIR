@@ -558,21 +558,32 @@ impl Program {
 
 impl Block {
     pub fn successor_sids(&self) -> Vec<&str> {
+        let mut v = Vec::new();
+        for stmt in &self.statements {
+            if let Stmt::Loop { body, exit } = stmt {
+                v.push(body.as_str());
+                v.push(exit.as_str());
+            }
+        }
         if let Some(call) = &self.call {
-            return call.successor_sids();
+            v.extend(call.successor_sids());
+            return v;
         }
         match &self.terminator {
-            Some(Terminator::Goto { target }) => vec![target],
+            Some(Terminator::Goto { target }) => v.push(target),
             Some(Terminator::Branch {
                 then, else_target, ..
-            }) => vec![then, else_target],
-            Some(Terminator::Switch { cases, default, .. }) => {
-                let mut v: Vec<&str> = cases.values().map(String::as_str).collect();
-                v.push(default);
-                v
+            }) => {
+                v.push(then);
+                v.push(else_target);
             }
-            Some(Terminator::Return { .. }) | None => vec![],
+            Some(Terminator::Switch { cases, default, .. }) => {
+                v.extend(cases.values().map(String::as_str));
+                v.push(default);
+            }
+            Some(Terminator::Return { .. }) | None => {}
         }
+        v
     }
 
     pub fn is_return(&self) -> bool {

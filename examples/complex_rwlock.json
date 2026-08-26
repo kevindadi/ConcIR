@@ -268,7 +268,16 @@
                 "kind": "atomic_load",
                 "resource": "error_flag",
                 "dst": "_",
-                "target": "error_flag == true"
+                "target": "s30"
+              }
+            },
+            {
+              "sid": "s30",
+              "terminator": {
+                "kind": "branch",
+                "cond": "error_flag == true",
+                "then": "s28",
+                "else": "s29"
               }
             },
             {

@@ -26,8 +26,8 @@ digraph "state_machine" {
 
     main_s1 [label="s1: spawn(controller)", shape=doubleoctagon, style="filled", fillcolor="#f0f0f0", color=black, penwidth=3];
     main_s2 [label="s2: spawn(worker)", shape=doubleoctagon, style="filled", fillcolor="#f0f0f0", color=black, penwidth=1];
-    main_s3 [label="s3: join(controller)", shape=doubleoctagon, style="filled,dashed", fillcolor="#f0f0f0", color=black, penwidth=1];
-    main_s4 [label="s4: join(worker)", shape=doubleoctagon, style="filled,dashed", fillcolor="#f0f0f0", color=black, penwidth=1];
+    main_s3 [label="s3: join(h_controller)", shape=doubleoctagon, style="filled,dashed", fillcolor="#f0f0f0", color=black, penwidth=1];
+    main_s4 [label="s4: join(h_worker)", shape=doubleoctagon, style="filled,dashed", fillcolor="#f0f0f0", color=black, penwidth=1];
     main_s5 [label="s5: return", shape=ellipse, style="filled", fillcolor="#a0a0a0", color=black, penwidth=1];
     main_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
 
@@ -43,10 +43,10 @@ digraph "state_machine" {
     style=rounded;
     color=black;
 
-    controller_s10 [label="s10: lock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=red, penwidth=3];
-    controller_s11 [label="s11: write(state, Running)", shape=rect, style="filled", fillcolor="#f0f0f0", color=orange, penwidth=2];
-    controller_s12 [label="s12: notify_all(cv)", shape=rect, style="filled,dashed", fillcolor="#f0f0f0", color=purple, penwidth=2];
-    controller_s13 [label="s13: drop(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    controller_s10 [label="s10: mutex_lock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=red, penwidth=3];
+    controller_s11 [label="s11: write_shared(state, Running)", shape=rect, style="filled", fillcolor="#f0f0f0", color=orange, penwidth=2];
+    controller_s12 [label="s12: condvar_notify_all(cv)", shape=rect, style="filled", fillcolor="#f0f0f0", color=purple, penwidth=2];
+    controller_s13 [label="s13: mutex_unlock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
     controller_s14 [label="s14: return", shape=ellipse, style="filled", fillcolor="#a0a0a0", color=black, penwidth=1];
     controller_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
 
@@ -62,12 +62,12 @@ digraph "state_machine" {
     style=rounded;
     color=black;
 
-    worker_s20 [label="s20: lock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=red, penwidth=3];
-    worker_s21 [label="s21: read(state)", shape=diamond, style="filled", fillcolor="#ffe8cc", color=black, penwidth=1];
-    worker_s22 [label="s22: wait(cv, mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=purple, penwidth=2];
-    worker_s23 [label="s23: drop(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
-    worker_s24 [label="s24: wait(cv, mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=purple, penwidth=2];
-    worker_s25 [label="s25: drop(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    worker_s20 [label="s20: mutex_lock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=red, penwidth=3];
+    worker_s21 [label="s21: switch", shape=diamond, style="filled", fillcolor="#ffe8cc", color=black, penwidth=1];
+    worker_s22 [label="s22: condvar_wait(cv, mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=purple, penwidth=2];
+    worker_s23 [label="s23: mutex_unlock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    worker_s24 [label="s24: condvar_wait(cv, mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=purple, penwidth=2];
+    worker_s25 [label="s25: mutex_unlock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
     worker_s26 [label="s26: return", shape=ellipse, style="filled", fillcolor="#a0a0a0", color=black, penwidth=1];
     worker_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
 
@@ -76,6 +76,7 @@ digraph "state_machine" {
     worker_s21 -> worker_s24 [label="Paused"];
     worker_s21 -> worker_s23 [label="Running"];
     worker_s21 -> worker_s25 [label="Stopped"];
+    worker_s21 -> worker_s22 [label="default", style=dashed];
     worker_s22 -> worker_s21 [color=blue, penwidth=2];
     worker_s23 -> worker_s26;
     worker_s24 -> worker_s21 [color=blue, penwidth=2];
