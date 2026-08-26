@@ -259,9 +259,48 @@ like `mutex_lock`.
 | `read_shared`   | `resource`, optional `dst`               | Read a `Var`              |
 | `write_shared`  | `resource`, `expr`                       | Write a `Var`             |
 | `abstract_step` | `reads`, `writes`, `desc`                | Opaque modeled step       |
-| `atomic_load`   | `resource`, `dst`                        | Instantaneous Atomic read |
+| `atomic_load`   | `resource`, `dst`                        | Instantaneous Atomic read; `dst` := current value |
 | `atomic_store`  | `resource`, `value`                      | Atomic write              |
-| `atomic_cas`    | `resource`, `expected`, `desired`, `dst` | Atomic CAS                |
+| `atomic_cas`    | `resource`, `expected`, `desired`, `dst` | Compare-and-swap; `dst` := **old value** (see below) |
+
+### `atomic_cas` `dst`: old value, not Bool
+
+`dst` is written with the value of `resource` **before** the swap — the same
+type as the Atomic's `base`. This matches Rust
+`Atomic*::compare_exchange` / C++ `compare_exchange_strong` (the observed
+current value), **not** a Bool success flag.
+
+- Success: `dst == expected` (the snapshot still equals what we compared
+  against). The resource now holds `desired`.
+- Failure: the resource is unchanged and `dst` holds the latest observed
+  value. A spin loop uses that value as the next `expected`.
+
+Do not write `dst` as Bool unless the Atomic itself is `Bool` (in which case
+the old value happens to be Bool). Test success with a terminator:
+
+```json
+{
+  "sid": "s1",
+  "statements": [
+    {
+      "kind": "atomic_cas",
+      "resource": "flag",
+      "expected": "0",
+      "desired": "1",
+      "dst": "ret"
+    }
+  ],
+  "terminator": {
+    "kind": "branch",
+    "cond": "ret == 0",
+    "then": "s2",
+    "else": "s1"
+  }
+}
+```
+
+On the back-edge, `ret` is the new current value; the next CAS should use it
+as `expected` (via `assign_local` or by passing `ret` in `expected`).
 
 **Synchronization** (may block in the CVN, but are still statements)
 

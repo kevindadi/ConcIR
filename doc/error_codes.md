@@ -42,7 +42,7 @@ parse time (E000), not here.
 | E202 | SwitchVarNotEnumOrInt   |  error   | switch variable type is not Enum or Int                                               |
 | E203 | WriteTypeMismatch       |  error   | `write_shared` value type does not match the Var's base                               |
 | E204 | StoreTypeMismatch       |  error   | `atomic_store` value type does not match the Atomic's base                            |
-| E205 | CasTypeMismatch         |  error   | `atomic_cas` argument types do not match the Atomic's base                            |
+| E205 | CasTypeMismatch         |  error   | `atomic_cas` `expected`/`desired`/`dst` do not match the Atomic's base. `dst` is the pre-CAS old value (that base type), not a Bool success flag. |
 | E206 | SendTypeMismatch        |  error   | `channel_send` value type does not match the Channel's base                           |
 | E207 | SwitchCaseLabelMismatch |  error   | switch case label is not a valid variant of the target Enum                           |
 

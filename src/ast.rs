@@ -347,6 +347,8 @@ pub enum Stmt {
         resource: String,
         expected: String,
         desired: String,
+        /// Pre-CAS snapshot of `resource` (old value), same type as the Atomic
+        /// `base`. Not a Bool success flag. Success is `dst == expected`.
         dst: String,
     },
     #[serde(rename = "mutex_lock")]

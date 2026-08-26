@@ -149,7 +149,7 @@ fn check_write_types(
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    program.walk_blocks(|mi, fi, si, _, _, block| {
+    program.walk_blocks(|mi, fi, si, _, f, block| {
         let path = Program::block_path(mi, fi, si);
         for stmt in &block.statements {
             match stmt {
@@ -179,7 +179,7 @@ fn check_write_types(
                     resource,
                     expected,
                     desired,
-                    ..
+                    dst,
                 } => {
                     if let Some(ResType::Atomic(ty)) = resource_types.get(resource) {
                         check_literal_type(
@@ -196,6 +196,25 @@ fn check_write_types(
                             ty,
                             &format!("{path}.statements"),
                         );
+                        if let Some(dst_ty) = lookup_dst_type(f, resource_types, dst) {
+                            if dst_ty != ty {
+                                diags.push(
+                                    Diagnostic::error(
+                                        "E205",
+                                        format!(
+                                            "atomic_cas dst '{dst}' has type {dst_ty}, but must \
+                                             hold the pre-CAS old value (Atomic base {ty}), not a \
+                                             Bool success flag"
+                                        ),
+                                    )
+                                    .with_path(format!("{path}.statements"))
+                                    .with_fix(
+                                        "bind dst to a local or Var/Atomic of the same base type; \
+                                         test success with branch(dst == expected)",
+                                    ),
+                                );
+                            }
+                        }
                     }
                 }
                 _ => {}
@@ -270,6 +289,23 @@ fn check_literal_type(
                 );
             }
         }
+    }
+}
+
+fn lookup_dst_type<'a>(
+    f: &'a Function,
+    resource_types: &'a HashMap<String, ResType>,
+    dst: &str,
+) -> Option<&'a BaseType> {
+    if let Some(local) = f.locals.iter().find(|l| l.name == dst) {
+        return Some(&local.local_type);
+    }
+    if let Some(p) = f.params.iter().find(|p| p.name == dst) {
+        return Some(&p.param_type);
+    }
+    match resource_types.get(dst) {
+        Some(ResType::Var(bt) | ResType::Atomic(bt)) => Some(bt),
+        _ => None,
     }
 }
 

@@ -220,3 +220,50 @@ fn bounded_int_lo_gt_hi_is_a_parse_error() {
     let result: Result<Program, _> = serde_json::from_str(json);
     assert!(result.is_err(), "lo > hi must be rejected at parse");
 }
+
+#[test]
+fn atomic_cas_dst_bool_on_int_atomic_is_e205() {
+    let report = wrap(
+        r#"[{"name": "flag", "kind": "var", "type": "Atomic", "base": "Int", "init": 0}]"#,
+        r#"[
+            {"name": "main", "kind": "normal",
+             "locals": [{"name": "ok", "type": "Bool", "modeled": true}],
+             "body": [
+                {"sid": "s1",
+                 "statements": [{"kind": "atomic_cas", "resource": "flag",
+                                 "expected": "0", "desired": "1", "dst": "ok"}],
+                 "terminator": {"kind": "return"}}
+             ]}
+        ]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E205"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn atomic_cas_dst_old_value_same_base_is_valid() {
+    let report = wrap(
+        r#"[{"name": "flag", "kind": "var", "type": "Atomic", "base": "Int", "init": 0}]"#,
+        r#"[
+            {"name": "main", "kind": "normal",
+             "locals": [{"name": "ret", "type": "Int", "modeled": true}],
+             "body": [
+                {"sid": "s1",
+                 "statements": [{"kind": "atomic_cas", "resource": "flag",
+                                 "expected": "0", "desired": "1", "dst": "ret"}],
+                 "terminator": {"kind": "branch", "cond": "ret == 0",
+                                "then": "s2", "else": "s1"}},
+                {"sid": "s2", "terminator": {"kind": "return"}}
+             ]}
+        ]"#,
+    );
+    assert!(
+        report.valid,
+        "dst holds the old Int value; success is ret == expected. got: {:?}",
+        report.diagnostics
+    );
+}

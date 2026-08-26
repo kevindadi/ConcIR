@@ -210,10 +210,13 @@ AbstractStep
                (* reads, writes, desc *)
 
 AtomicLoad = "atomic_load", Name, Ident ;
+               (* dst := current value, Atomic base type *)
 AtomicStore
            = "atomic_store", Name, Expr ;
 AtomicCas  = "atomic_cas", Name, Expr, Expr, Ident ;
-               (* resource, expected, desired, dst *)
+               (* resource, expected, desired, dst.
+                  dst := pre-CAS old value, same type as Atomic base,
+                  not a Bool success flag. Success is dst == expected. *)
 
 MutexLock  = "mutex_lock", Name ;
 MutexUnlock
