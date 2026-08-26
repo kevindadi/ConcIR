@@ -9,7 +9,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     check_branch_conditions(program, diags);
     check_switch_variables(program, diags, &resource_types);
     check_write_types(program, diags, &resource_types);
-    check_send_types(program, diags, &resource_types);
+    check_channel_payload_types(program, diags, &resource_types);
 }
 
 #[derive(Clone)]
@@ -223,27 +223,91 @@ fn check_write_types(
     });
 }
 
-/// E206: send type checking.
-fn check_send_types(
+/// E206: `channel_send` value and `channel_recv` `dst` must match Channel `base`.
+fn check_channel_payload_types(
     program: &Program,
     diags: &mut Vec<Diagnostic>,
     resource_types: &HashMap<String, ResType>,
 ) {
-    program.walk_blocks(|mi, fi, si, _, _, block| {
+    program.walk_blocks(|mi, fi, si, _, f, block| {
+        let path = Program::block_path(mi, fi, si);
         for stmt in &block.statements {
-            if let Stmt::ChannelSend { channel, value } = stmt {
-                if let Some(ResType::Channel(expected)) = resource_types.get(channel) {
-                    check_literal_type(
+            match stmt {
+                Stmt::ChannelSend { channel, value } => {
+                    if let Some(ResType::Channel(expected)) = resource_types.get(channel) {
+                        check_literal_type(
+                            diags,
+                            "E206",
+                            value,
+                            expected,
+                            &format!("{path}.statements"),
+                        );
+                    }
+                }
+                Stmt::ChannelRecv { channel, dst } => {
+                    check_recv_dst(
                         diags,
-                        "E206",
-                        value,
-                        expected,
-                        &format!("{}.statements", Program::block_path(mi, fi, si)),
+                        f,
+                        resource_types,
+                        channel,
+                        dst,
+                        &format!("{path}.statements"),
+                    );
+                }
+                _ => {}
+            }
+        }
+        if let Terminator::Select { branches, .. } = &block.terminator {
+            for branch in branches {
+                if let SelectGuard::ChannelRecv { channel, dst } = &branch.guard {
+                    check_recv_dst(
+                        diags,
+                        f,
+                        resource_types,
+                        channel,
+                        dst,
+                        &format!("{path}.terminator"),
                     );
                 }
             }
         }
     });
+}
+
+/// `dst` is the popped payload (Channel `base`). `"_"` discards. Unknown names
+/// are left to later passes (same as `atomic_cas` `dst`).
+fn check_recv_dst(
+    diags: &mut Vec<Diagnostic>,
+    f: &Function,
+    resource_types: &HashMap<String, ResType>,
+    channel: &str,
+    dst: &str,
+    path: &str,
+) {
+    if dst == "_" {
+        return;
+    }
+    let Some(ResType::Channel(expected)) = resource_types.get(channel) else {
+        return;
+    };
+    if let Some(dst_ty) = lookup_dst_type(f, resource_types, dst) {
+        if dst_ty != expected {
+            diags.push(
+                Diagnostic::error(
+                    "E206",
+                    format!(
+                        "channel_recv dst '{dst}' has type {dst_ty}, but Channel '{channel}' \
+                         payload type is {expected}"
+                    ),
+                )
+                .with_path(path.to_string())
+                .with_fix(
+                    "bind dst to a local or Var/Atomic of the Channel's base type, or use \
+                     \"_\" to discard the payload",
+                ),
+            );
+        }
+    }
 }
 
 /// Best-effort type check: only flags mismatches when the value is a recognizable literal.

@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use crate::ast::{Block, Function, Program, Stmt, Terminator};
+use crate::ast::{Block, Function, Program, SelectGuard, Stmt, Terminator};
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -349,7 +349,7 @@ fn format_stmt_compact(stmt: &Stmt) -> String {
         Stmt::RwLockWrite { resource } => format!("rwlock_write({resource})"),
         Stmt::RwLockUnlock { resource } => format!("rwlock_unlock({resource})"),
         Stmt::ChannelSend { channel, .. } => format!("channel_send({channel})"),
-        Stmt::ChannelRecv { channel, .. } => format!("channel_recv({channel})"),
+        Stmt::ChannelRecv { channel, dst } => format!("channel_recv({channel} → {dst})"),
         Stmt::CondvarWait { condvar, lock } => format!("condvar_wait({condvar}, {lock})"),
         Stmt::CondvarNotify { condvar } => format!("condvar_notify({condvar})"),
         Stmt::CondvarNotifyAll { condvar } => format!("condvar_notify_all({condvar})"),
@@ -440,7 +440,18 @@ fn write_edges(out: &mut String, prefix: &str, stmt: &Block, opts: &DotOptions) 
         Terminator::Select { branches, default } => {
             for branch in branches {
                 let dst = format!("{prefix}_{}", branch.target);
-                writeln!(out, "    {src} -> {dst} [label=\"select\"];").unwrap();
+                let label = match &branch.guard {
+                    SelectGuard::ChannelRecv { channel, dst: cap } => {
+                        format!("recv {channel}→{cap}")
+                    }
+                    SelectGuard::CondvarWait { condvar, .. } => {
+                        format!("wait {condvar}")
+                    }
+                    SelectGuard::SemaphoreAcquire { resource } => {
+                        format!("acquire {resource}")
+                    }
+                };
+                writeln!(out, "    {src} -> {dst} [label=\"{label}\"];").unwrap();
             }
             if let Some(d) = default {
                 let dst = format!("{prefix}_{d}");

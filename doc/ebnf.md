@@ -100,7 +100,7 @@ Resource   = Ident,                     (* name *)
              [ Integer ],               (* count; required for Semaphore *)
              [ BaseType ],              (* required for Channel, Var, Atomic *)
              [ JsonValue ],             (* init; required for Var, Atomic *)
-             [ Integer ] ;              (* capacity; optional Channel *)
+             [ Integer ] ;              (* capacity; required for Channel *)
 
 ResKind    = "sync" | "var" ;
 
@@ -121,7 +121,8 @@ RwLockRes  = Ident, "sync", "RwLock", Mode ;
 CondvarRes = Ident, "sync", "Condvar", Mode ;
 SemaphoreRes
            = Ident, "sync", "Semaphore", Mode, Integer ;
-ChannelRes = Ident, "sync", "Channel", Mode, BaseType, [ Integer ] ;
+ChannelRes = Ident, "sync", "Channel", Mode, BaseType, Integer ;
+               (* capacity: 0 = rendezvous; n ≥ 1 = n payload slots of base *)
 
 VarRes     = Ident, "var", "Var", BaseType, JsonValue ;
 AtomicRes  = Ident, "var", "Atomic", BaseType, JsonValue ;
@@ -232,6 +233,8 @@ ChannelSend
            = "channel_send", Name, Expr ;
 ChannelRecv
            = "channel_recv", Name, Ident ;
+               (* channel, dst; dst := popped payload of Channel.base;
+                  "_" discards. Buffer is the Channel's capacity slots. *)
 
 CondvarWait
            = "condvar_wait", Name, Name ;
@@ -292,7 +295,8 @@ SelectGuard
            | SemaphoreAcquireGuard ;
 
 ChannelRecvGuard
-           = "channel_recv", Name, Ident ;
+           = ChannelRecv ;
+               (* same fields as the statement, including dst *)
 
 CondvarWaitGuard
            = "condvar_wait", Name, Name ;

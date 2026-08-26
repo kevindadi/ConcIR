@@ -68,6 +68,9 @@ pub struct Resource {
     pub base: Option<BaseType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub init: Option<serde_json::Value>,
+    /// Channel only: number of in-flight payload slots of `base`. Required
+    /// (E001). `0` is rendezvous; `n ≥ 1` is a bounded buffer. Recv copies one
+    /// slot into `channel_recv.dst`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capacity: Option<i64>,
 }
@@ -364,7 +367,12 @@ pub enum Stmt {
     #[serde(rename = "channel_send")]
     ChannelSend { channel: String, value: String },
     #[serde(rename = "channel_recv")]
-    ChannelRecv { channel: String, dst: String },
+    ChannelRecv {
+        channel: String,
+        /// Popped payload (Channel `base`). `"_"` discards. The buffer itself
+        /// is the Channel resource's `capacity` slots.
+        dst: String,
+    },
     #[serde(rename = "condvar_wait")]
     CondvarWait { condvar: String, lock: String },
     #[serde(rename = "condvar_notify")]
@@ -428,6 +436,10 @@ pub struct SelectBranch {
 
 /// Blocking operations allowed as `select` guards.
 ///
+/// Each variant uses the **same tagged JSON object** as the corresponding
+/// [`Stmt`] (`kind` plus the same fields). `channel_recv` therefore carries
+/// `dst`: the payload popped from the Channel's `capacity` slots.
+///
 /// `condvar_wait` is not a `select!` candidate in sync Rust (`Condvar::wait`
 /// is a blocking primitive). It is only legal in an `async` function on an
 /// `Async`-mode Condvar; the translator maps it to `Notify` / `watch` or a
@@ -436,7 +448,11 @@ pub struct SelectBranch {
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum SelectGuard {
     #[serde(rename = "channel_recv")]
-    ChannelRecv { channel: String, dst: String },
+    ChannelRecv {
+        channel: String,
+        /// Same as [`Stmt::ChannelRecv`]: popped payload, or `"_"` to discard.
+        dst: String,
+    },
     #[serde(rename = "condvar_wait")]
     CondvarWait { condvar: String, lock: String },
     #[serde(rename = "semaphore_acquire")]

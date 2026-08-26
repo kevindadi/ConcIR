@@ -89,7 +89,7 @@ fn check_sync_resource(r: &Resource, path: &str, diags: &mut Vec<Diagnostic>) {
         );
     }
 
-    // E001: Channel requires base
+    // E001: Channel requires base (payload type) and capacity (message store)
     if r.res_type == "Channel" && r.base.is_none() {
         diags.push(
             Diagnostic::error(
@@ -97,8 +97,39 @@ fn check_sync_resource(r: &Resource, path: &str, diags: &mut Vec<Diagnostic>) {
                 format!("Channel resource '{}' is missing 'base' field", r.name),
             )
             .with_path(path.to_string())
-            .with_fix("add \"base\": \"<type>\" to specify the channel data type"),
+            .with_fix("add \"base\": \"<type>\" to specify the channel payload type"),
         );
+    }
+    if r.res_type == "Channel" {
+        match r.capacity {
+            None => {
+                diags.push(
+                    Diagnostic::error(
+                        "E001",
+                        format!("Channel resource '{}' is missing 'capacity' field", r.name),
+                    )
+                    .with_path(path.to_string())
+                    .with_fix(
+                        "add \"capacity\": <n> (n ≥ 1 bounded buffer, 0 rendezvous); this is \
+                         the in-flight message store",
+                    ),
+                );
+            }
+            Some(c) if c < 0 => {
+                diags.push(
+                    Diagnostic::error(
+                        "E001",
+                        format!(
+                            "Channel resource '{}' has negative capacity {c}",
+                            r.name
+                        ),
+                    )
+                    .with_path(format!("{path}.capacity"))
+                    .with_fix("use capacity ≥ 0 (0 = rendezvous, n ≥ 1 = n payload slots)"),
+                );
+            }
+            _ => {}
+        }
     }
 }
 

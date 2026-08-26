@@ -105,10 +105,18 @@ appear in `requires.functions`.
 | RwLock    | required |    —     |    —     |    —     |
 | Condvar   | required |    —     |    —     |    —     |
 | Semaphore | required | required |    —     |    —     |
-| Channel   | required |    —     | required | optional |
+| Channel   | required |    —     | required | required |
 
-`capacity` is accepted on Channel for later bounded-buffer modeling. Current
-CVN semantics still treat `channel_send` / `channel_recv` as unbuffered tokens.
+**Channel is the message store.** `base` is the payload type of each slot;
+`capacity` is the number of in-flight slots (E001 if missing or negative):
+
+- `capacity: 0` — rendezvous (no buffered payload)
+- `capacity: n` (`n ≥ 1`) — bounded buffer of `n` messages of type `base`
+
+`channel_send` enqueues into those slots; `channel_recv` (statement or
+`select` guard) dequeues one slot into `dst`. The CVN currently still treats
+send/recv as unbuffered tokens; bounded-buffer semantics from `capacity` are
+on the roadmap.
 
 **Shared variables** (`kind: "var"`):
 
@@ -314,6 +322,9 @@ as `expected` (via `assign_local` or by passing `ret` in `expected`).
 | `condvar_notify` / `condvar_notify_all`          | `condvar`                    |
 | `semaphore_acquire` / `semaphore_release`        | `resource`, optional `count` |
 
+`channel_recv` `dst` is the popped payload (Channel `base`); `"_"` discards.
+The in-flight messages live in the Channel resource's `capacity` slots.
+
 **Threads and calls.** Spawn / join pair on **handles**, not function names.
 `func` uses the [FQN rules](#naming-identifiers-and-fqns).
 
@@ -339,7 +350,28 @@ successors are named.
 | `return` | optional `value`               | Function return; one spelling only                                                            |
 | `select` | `branches`, optional `default` | Multi-way wait; each branch has `guard` + `target`                                            |
 
-`select` guards: `channel_recv`, `semaphore_acquire`, and `condvar_wait`.
+`select` guards reuse the **same tagged JSON object** as the corresponding
+Statement (`kind` plus the same fields). Legal kinds: `channel_recv`,
+`semaphore_acquire`, and `condvar_wait`.
+
+### `select` `channel_recv` `dst`: popped payload
+
+The Channel resource is the message store (`capacity` slots of `base`).
+When a `channel_recv` guard fires, one slot is dequeued into `dst` — a
+function local or Var/Atomic of that `base` (E206). `"_"` discards the
+payload. This is the same field as statement `channel_recv`.
+
+```json
+{
+  "kind": "select",
+  "branches": [
+    {
+      "guard": { "kind": "channel_recv", "channel": "tx", "dst": "msg" },
+      "target": "s_handle_msg"
+    }
+  ]
+}
+```
 
 **`condvar_wait` as a select guard (E409).** In sync Rust, `Condvar::wait` is a
 blocking primitive and cannot be placed in a non-blocking `select!`. ConcIR

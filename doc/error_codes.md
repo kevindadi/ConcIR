@@ -14,7 +14,7 @@ parse time (E000), not here.
 | Code | Name                  | Severity | Description                                                                                |
 | ---- | --------------------- | :------: | ------------------------------------------------------------------------------------------ |
 | E000 | JsonParseError        |  error   | JSON syntax error or invalid top-level structure; deserialization failed                   |
-| E001 | MissingField          |  error   | Resource declaration missing a field required by its type (e.g. Semaphore missing `count`) |
+| E001 | MissingField          |  error   | Resource declaration missing a field required by its type (Semaphore `count`; Channel `base` and `capacity`; Var/Atomic `base`/`init`). Channel `capacity` must be ≥ 0. |
 | E005 | InvalidSidFormat      |  error   | sid format is not `"s"` + digits (e.g. `"s1"`, `"s10"`)                                    |
 | E008 | InvalidKind           |  error   | Resource `kind` is not `"sync"` / `"var"`, or sync `type` value is illegal                 |
 | E009 | InvalidMode           |  error   | `mode` is not `"Sync"` / `"Async"`                                                         |
@@ -43,7 +43,7 @@ parse time (E000), not here.
 | E203 | WriteTypeMismatch       |  error   | `write_shared` value type does not match the Var's base                               |
 | E204 | StoreTypeMismatch       |  error   | `atomic_store` value type does not match the Atomic's base                            |
 | E205 | CasTypeMismatch         |  error   | `atomic_cas` `expected`/`desired`/`dst` do not match the Atomic's base. `dst` is the pre-CAS old value (that base type), not a Bool success flag. |
-| E206 | SendTypeMismatch        |  error   | `channel_send` value type does not match the Channel's base                           |
+| E206 | SendTypeMismatch        |  error   | `channel_send` value or `channel_recv` `dst` type does not match the Channel's `base`. `dst` is the popped payload (that base type); `"_"` discards. |
 | E207 | SwitchCaseLabelMismatch |  error   | switch case label is not a valid variant of the target Enum                           |
 
 E203/E204/E205 also fire when a literal value is outside a bounded `Int`

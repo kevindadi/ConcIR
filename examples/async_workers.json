@@ -31,7 +31,8 @@
           "kind": "sync",
           "type": "Channel",
           "mode": "Async",
-          "base": "Int"
+          "base": "Int",
+          "capacity": 8
         },
         {
           "name": "result",
@@ -190,6 +191,13 @@
         {
           "name": "collector",
           "kind": "async",
+          "locals": [
+            {
+              "name": "msg",
+              "type": "Int",
+              "modeled": true
+            }
+          ],
           "body": [
             {
               "sid": "s20",
@@ -197,7 +205,7 @@
                 {
                   "kind": "channel_recv",
                   "channel": "tx",
-                  "dst": "_"
+                  "dst": "msg"
                 }
               ],
               "terminator": {
