@@ -62,7 +62,7 @@ src/
     protection.rs      E7xx  Protection mapping
     concurrency.rs     E4xx  Handle pairing, scope statement
     locks.rs           E5xx  Lock safety (E309 includes expr r-values; E803 requires_held)
-    interface.rs       E8xx  Function may_block / locks; imported signatures
+    interface.rs       E8xx  Function may_block / locks; imported signatures; bound (E960/E961)
     control.rs         E6xx  Control flow
     dataflow.rs        E9xx  Name env, unified dst, call vs spawn
   export/

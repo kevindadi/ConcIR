@@ -13,8 +13,9 @@ Rules:
    Rust crate or Java package.
 2. An **entity FQN** names a resource or function as `module::entity`. Extra
    `::` segments are illegal (`crate::foo::bar` is not a ConcIR FQN).
-3. A **control location** is `module::function.sid`. Use this when referring
-   to a statement from outside the function.
+3. A **control location** is `module::function.sid`. This is the **primary**
+   diagnostic `location` for a statement. Function-level diagnostics use
+   `module::function`.
 4. **Same-module references use the short name.** Inside module `core`, write
    `main` and `log_mtx`, not `core::main`.
 5. **Cross-module references must be FQNs** and must appear in the importing

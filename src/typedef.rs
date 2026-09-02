@@ -80,10 +80,7 @@ fn resolve_with_map(
         BaseType::Complex(ComplexBaseType::Array(def)) => {
             let elem = resolve_with_map(resolved, from_module, &def.elem)?;
             Some(BaseType::Complex(ComplexBaseType::Array(Box::new(
-                crate::ast::ArrayDef {
-                    elem,
-                    len: def.len,
-                },
+                crate::ast::ArrayDef { elem, len: def.len },
             ))))
         }
         other => Some(other.clone()),
@@ -125,10 +122,7 @@ fn resolve_def(
         BaseType::Complex(ComplexBaseType::Array(def)) => {
             let elem = resolve_def(defs, owner, &def.elem, stack)?;
             Ok(BaseType::Complex(ComplexBaseType::Array(Box::new(
-                crate::ast::ArrayDef {
-                    elem,
-                    len: def.len,
-                },
+                crate::ast::ArrayDef { elem, len: def.len },
             ))))
         }
         other => Ok(other.clone()),
@@ -197,7 +191,9 @@ fn check_declarations(program: &Program, diags: &mut Vec<Diagnostic>) {
             let path = format!("modules[{mi}].types[{i}].type");
             let mut stack = vec![fqn::fqn(&m.name, &t.name)];
             match resolve_def(&defs, &m.name, &t.ty, &mut stack) {
-                Err(()) if has_cycle(&defs, &m.name, &t.ty, &mut vec![fqn::fqn(&m.name, &t.name)]) => {
+                Err(())
+                    if has_cycle(&defs, &m.name, &t.ty, &mut vec![fqn::fqn(&m.name, &t.name)]) =>
+                {
                     diags.push(
                         Diagnostic::error(
                             "E113",
@@ -212,10 +208,7 @@ fn check_declarations(program: &Program, diags: &mut Vec<Diagnostic>) {
                         diags.push(
                             Diagnostic::error(
                                 "E111",
-                                format!(
-                                    "type '{}' refers to undefined type '{name}'",
-                                    t.name
-                                ),
+                                format!("type '{}' refers to undefined type '{name}'", t.name),
                             )
                             .with_path(path)
                             .with_fix("declare the named type in this module or import it"),
@@ -236,9 +229,7 @@ fn has_cycle(
 ) -> bool {
     let BaseType::Primitive(p) = ty else {
         if let BaseType::Complex(ComplexBaseType::Struct(fields)) = ty {
-            return fields
-                .values()
-                .any(|v| has_cycle(defs, owner, v, stack));
+            return fields.values().any(|v| has_cycle(defs, owner, v, stack));
         }
         if let BaseType::Complex(ComplexBaseType::Array(def)) = ty {
             return has_cycle(defs, owner, &def.elem, stack);
