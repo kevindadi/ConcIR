@@ -31,6 +31,11 @@ In the CVN, a `read_shared` of a lock-protected Var (lock already held)
 and an `atomic_load` are instantaneous data-flow steps — they do not
 queue like `mutex_lock`.
 
+`expr` / `cond` / `value` fields are strings. The live validator only
+subset-checks literals (E2xx). The closed grammar, unified `dst` rules,
+and protection-on-guards are specified in [Data flow](dataflow.md)
+(proposal, 3.5).
+
 ## Data
 
 | `kind`          | Fields                                   | Description               |

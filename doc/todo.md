@@ -10,12 +10,14 @@ Status legend: `[x]` done · `[ ]` planned · `[~]` in progress
 - `[x]` Flattened CFG: function body is a statement list; non-control ops fall through; `goto`/`branch`/`switch`/`return`/`select` are statement kinds; no terminator object; loops are back-edges
 - `[x]` Bounded typed data flow with projection: function `params`/`returns`/`locals`
   with a `modeled` flag
+- `[ ]` **Data-flow closure (3.5)** — two stores, unified dst, parsed
+  expressions, spawn vs call; spec in [`syntax/dataflow.md`](syntax/dataflow.md)
 - `[x]` `assign_local` for writable intermediate values
 - `[x]` Bounded `Int` value ranges — `{"Int": [lo, hi]}`
 - `[x]` Channel `capacity` required on the resource (message store; `0` = rendezvous, `n ≥ 1` = bounded buffer of `n` payload slots)
 - `[x]` Structured concurrency: `scope` is a statement (`funcs` array); implicit `join_all`; repeated copies use `branch`; function `kind` is only `normal` / `async`
 - `[ ]` Channel capacity in the CVN — bounded-buffer semantics from the `capacity` field
-- `[ ]` Dynamic thread identities / thread-local state — multiple spawns of the same function share control places (multi-token abstraction)
+- `[ ]` Dynamic thread identities / thread-local state — multiple spawns of the same function share control places (multi-token abstraction). Per-token locals are **rejected** by the data-flow proposal; concurrent values stay in resources.
 
 ## Call semantics
 
@@ -33,7 +35,12 @@ Status legend: `[x]` done · `[ ]` planned · `[~]` in progress
 ## Validation & diagnostics
 
 - `[ ]` Keep every emitted error code documented in `error_codes.md`; add a test that asserts the code set in code matches the documented set
-- `[ ]` Expression language — extend beyond the current literal/`+ - * / %`/comparison subset
+- `[ ]` Expression language — parse the grammar in [`syntax/dataflow.md`](syntax/dataflow.md)
+  (not an untyped string); share the parser with `cir2cvn`
+- `[ ]` Unified dst (E921): local / param / Var / Atomic / `"_"` as specified
+- `[ ]` E922: no modeled params on `spawn` / `async_call` / `scope` targets
+- `[ ]` E309 on expression r-values of protected Vars (guards, writes, args)
+- `[ ]` E912 as a warning (unmodeled name → `Unknown` in the net), not an error
 
 ## Repo hygiene
 

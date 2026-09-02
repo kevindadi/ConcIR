@@ -40,7 +40,9 @@ Location   = Fqn, ".", Sid ;
                (* control place, e.g. core::main.s3 *)
 
 Expr       = ? string ? ;
-               (* unparsed expression / guard / literal; subset checked in E2xx / E9xx *)
+               (* unparsed today; E2xx / E9xx subset-check literals.
+                  Target grammar (parsed strings, ConcIR 3.5):
+                  see syntax/dataflow.md *)
 
 JsonValue  = ? JSON value ? ;
 Integer    = ? JSON integer ? ;

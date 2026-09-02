@@ -12,6 +12,11 @@ The formal grammar is [`ebnf.md`](../ebnf.md). See
 [`error_codes.md`](../error_codes.md) for diagnostics and
 [`todo.md`](../todo.md) for the roadmap.
 
+[Data flow](dataflow.md) is a **3.5 proposal**: the CFG is already
+closed; names, destinations, and expressions are not. Until that page
+is implemented, [`function.md`](function.md) and E9xx describe what the
+validator actually enforces.
+
 | Page | Topic |
 | ---- | ----- |
 | [Naming](naming.md) | Identifiers, entity FQNs, control locations |
@@ -21,4 +26,5 @@ The formal grammar is [`ebnf.md`](../ebnf.md). See
 | [Protection](protection.md) | Var → lock mapping |
 | [Function](function.md) | `kind` / `form`, params / returns / locals |
 | [Statement](statement.md) | CFG node: data, sync, threads, calls, control ops |
+| [Data flow](dataflow.md) | **Proposal:** two stores, unified dst, expression language |
 | [Validation](validation.md) | Nine-pass pipeline |

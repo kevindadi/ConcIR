@@ -124,6 +124,12 @@ Pairing is by **handle**, not by function name.
 
 ## E9xx — Typed data flow
 
+The table is what the validator emits **today**.
+[`syntax/dataflow.md`](syntax/dataflow.md) proposes E912 as a warning,
+broadens E921 to any writable slot, and adds E914–E915 / E922–E924 /
+E931–E937. Do not list those codes here until `src/validate/` implements
+them.
+
 | Code | Name                        | Severity | Description                                                                              |
 | ---- | --------------------------- | :------: | ---------------------------------------------------------------------------------------- |
 | E910 | ParamNameCollides           |  error   | parameter name collides with a declared resource name                                    |

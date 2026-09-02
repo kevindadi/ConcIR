@@ -15,3 +15,5 @@ unknown `kind` tags, leftover `statements` / `terminator` / `call` fields,
 or a statement missing `kind`.
 
 See [`error_codes.md`](../error_codes.md) for the full diagnostic catalog.
+The E9xx pass is the one [data-flow closure](dataflow.md) extends
+(name environment, parsed expressions, unified dst, E922).

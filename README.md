@@ -36,6 +36,7 @@ items, and the process exits with exit code 1.
 | Document                         | Contents                                                        |
 | -------------------------------- | --------------------------------------------------------------- |
 | [`doc/syntax/`](doc/syntax/README.md) | Prose grammar, split by top-level construct |
+| [`doc/syntax/dataflow.md`](doc/syntax/dataflow.md) | **Proposal (3.5):** close names, dst, expressions, call vs spawn |
 | [`doc/ebnf.md`](doc/ebnf.md)     | ISO EBNF abstract syntax                                             |
 | [`doc/error_codes.md`](doc/error_codes.md) | Validation error reference (E0xx–E9xx) and diagnostic output format |
 | [`doc/todo.md`](doc/todo.md)     | Roadmap: modeling scope, call semantics, modular generation     |
