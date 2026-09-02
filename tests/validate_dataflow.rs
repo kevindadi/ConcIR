@@ -32,7 +32,7 @@ fn modeled_param_referenced_in_guard_is_valid() {
         r#"[{"name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync"}]"#,
         r#"[
             {"name": "main", "kind": "normal", "body": [
-                {"sid": "s1", "kind": "call", "func": "worker", "args": ["n"]},
+                {"sid": "s1", "kind": "call", "func": "worker", "args": ["0"]},
                 {"sid": "s2", "kind": "return"}
             ]},
             {"name": "worker", "kind": "normal",
@@ -575,6 +575,166 @@ fn channel_recv_discard_underscore_is_valid() {
     assert!(
         report.valid,
         "\"_\" discards the popped payload. got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn undefined_name_in_expr_is_e931() {
+    let report = wrap(
+        r#"[{"name": "count", "kind": "var", "type": "Var", "base": "Int", "init": 0}]"#,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "write_shared", "resource": "count", "expr": "nope + 1"},
+            {"sid": "s2", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E931"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn mutex_in_expression_is_e934() {
+    let report = wrap(
+        r#"[{"name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync"},
+            {"name": "count", "kind": "var", "type": "Var", "base": "Int", "init": 0}]"#,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "write_shared", "resource": "count", "expr": "mtx"},
+            {"sid": "s2", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E934"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn positional_struct_literal_is_e931() {
+    let report = wrap(
+        r#"[{"name": "pt", "kind": "var", "type": "Var", "base": {"Struct": {"x": "Int", "y": "Int"}}, "init": {"x": 0, "y": 0}}]"#,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "write_shared", "resource": "pt", "expr": "{1, 2}"},
+            {"sid": "s2", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E931"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn named_struct_literal_is_valid() {
+    let report = wrap(
+        r#"[{"name": "pt", "kind": "var", "type": "Var", "base": {"Struct": {"x": "Int", "y": "Int"}}, "init": {"x": 0, "y": 0}}]"#,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "write_shared", "resource": "pt", "expr": "{x: 1, y: 2}"},
+            {"sid": "s2", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(report.valid, "got: {:?}", report.diagnostics);
+}
+
+#[test]
+fn struct_field_in_guard_is_valid() {
+    let report = wrap(
+        r#"[{"name": "pt", "kind": "var", "type": "Var", "base": {"Struct": {"x": "Int", "ready": "Bool"}}, "init": {"x": 0, "ready": false}}]"#,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "branch", "cond": "pt.ready == true", "then": "s2", "else": "s3"},
+            {"sid": "s2", "kind": "return"},
+            {"sid": "s3", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(report.valid, "got: {:?}", report.diagnostics);
+}
+
+#[test]
+fn unknown_struct_field_is_e933() {
+    let report = wrap(
+        r#"[{"name": "pt", "kind": "var", "type": "Var", "base": {"Struct": {"x": "Int"}}, "init": {"x": 0}}]"#,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "branch", "cond": "pt.nope == 0", "then": "s2", "else": "s3"},
+            {"sid": "s2", "kind": "return"},
+            {"sid": "s3", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E933"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn examples_still_validate() {
+    for name in [
+        "producer_consumer",
+        "async_workers",
+        "complex_rwlock",
+        "state_machine",
+        "with_summary",
+    ] {
+        let json = std::fs::read_to_string(format!("examples/{name}.json"))
+            .unwrap_or_else(|e| panic!("read {name}: {e}"));
+        let program: Program =
+            serde_json::from_str(&json).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let report = validate(&program);
+        assert!(
+            report.valid,
+            "{name} should stay valid after the expression parser. got: {:?}",
+            report.diagnostics
+        );
+    }
+}
+
+#[test]
+fn spawn_arg_undefined_name_is_e931() {
+    let report = wrap(
+        "[]",
+        r#"[
+            {"name": "main", "kind": "normal", "body": [
+                {"sid": "s1", "kind": "spawn", "func": "worker", "args": ["nope"], "handle": "h"},
+                {"sid": "s2", "kind": "join", "handle": "h"},
+                {"sid": "s3", "kind": "return"}
+            ]},
+            {"name": "worker", "kind": "normal",
+             "params": [{"name": "n", "type": "Int", "modeled": false}],
+             "body": [
+                {"sid": "s1", "kind": "return"}
+             ]}
+        ]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E931"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn bare_identifier_branch_is_e201() {
+    let report = wrap(
+        r#"[{"name": "flag", "kind": "var", "type": "Var", "base": "Bool", "init": false}]"#,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "branch", "cond": "flag", "then": "s2", "else": "s3"},
+            {"sid": "s2", "kind": "return"},
+            {"sid": "s3", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E201"),
+        "got: {:?}",
         report.diagnostics
     );
 }

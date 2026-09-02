@@ -4,9 +4,9 @@
 //! `doc/syntax/dataflow.md`): `"_"` → local → param → return slot →
 //! required FQN resource → in-module resource.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::ast::{BaseType, Function, Module, Program, Resource};
+use crate::ast::{BaseType, ComplexBaseType, Function, Module, Program, Resource};
 use crate::fqn;
 
 /// Kind of a resolved name.
@@ -137,6 +137,16 @@ impl NameEnv {
 
     pub fn ty(&self, name: &str) -> Option<&BaseType> {
         self.get(name).and_then(|s| s.ty.as_ref())
+    }
+
+    pub fn enum_variants(&self) -> HashSet<String> {
+        let mut out = HashSet::new();
+        for slot in self.slots.values() {
+            if let Some(BaseType::Complex(ComplexBaseType::Enum(vars))) = &slot.ty {
+                out.extend(vars.iter().cloned());
+            }
+        }
+        out
     }
 }
 

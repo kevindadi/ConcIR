@@ -603,6 +603,23 @@ impl Op {
         }
     }
 
+    /// Expression strings in r-value position (still stored as JSON strings).
+    pub fn rvalue_exprs(&self) -> Vec<&str> {
+        match self {
+            Op::AssignLocal { expr, .. } | Op::WriteShared { expr, .. } => vec![expr],
+            Op::AtomicStore { value, .. } | Op::ChannelSend { value, .. } => vec![value],
+            Op::AtomicCas {
+                expected, desired, ..
+            } => vec![expected, desired],
+            Op::Func { args, .. } | Op::Spawn { args, .. } | Op::AsyncCall { args, .. } => {
+                args.iter().map(String::as_str).collect()
+            }
+            Op::Return { value: Some(value) } => vec![value],
+            Op::Branch { cond, .. } => vec![cond],
+            _ => vec![],
+        }
+    }
+
     pub fn callee_funcs(&self) -> Vec<&str> {
         match self {
             Op::Func { func, .. } | Op::Spawn { func, .. } | Op::AsyncCall { func, .. } => {

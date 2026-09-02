@@ -124,9 +124,9 @@ Pairing is by **handle**, not by function name.
 
 ## E9xx — Typed data flow
 
-Implemented against [`syntax/dataflow.md`](syntax/dataflow.md) phase 1
-(name environment, unified dst, call vs concurrent entry). Expression
-parse codes E931–E934 land in phase 2.
+Implemented against [`syntax/dataflow.md`](syntax/dataflow.md) phases 1–2
+(name environment, unified dst, call vs concurrent entry, expression
+parser). E309 on expression r-values is phase 3.
 
 | Code | Name | Severity | Description |
 | ---- | ---- | :------: | ----------- |
@@ -141,6 +141,10 @@ parse codes E931–E934 land in phase 2.
 | E922 | ModeledParamOnConcurrentEntry | error | `spawn` / `async_call` / `scope` target has modeled parameters |
 | E923 | DstWithoutModeledReturn | error | `call` has `dst` but the callee has no modeled return |
 | E924 | SpawnArityMismatch | error | non-empty `spawn`/`async_call` `args` do not match unmodeled parameters |
+| E931 | ExprParseError | error | expression string does not parse, or names an unknown identifier |
+| E932 | ExprTypeMismatch | error | expression type does not match the destination / operands |
+| E933 | BadProjection | error | missing, extra, or invalid struct field |
+| E934 | NonValueResourceInExpr | error | Mutex/RwLock/Condvar/Semaphore/Channel used as an r-value |
 | E935 | SwitchScrutineeNotSlot | error | `switch.var` is not a value slot (local, param, return, Var, Atomic) |
 | E936 | AssignLocalToResource | error | `assign_local.target` is not a function local or parameter |
 | E937 | ModeledActivationOnConcurrentEntry | warning | spawn/scope/async target has modeled locals or a modeled return |

@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use crate::ast::*;
 use crate::diagnostic::Diagnostic;
+use crate::env::NameEnv;
+use crate::expr;
 
-/// E2xx: Type checking.
+/// E2xx: Type checking, now parser-backed (E931–E934).
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let resource_types = build_resource_type_map(program);
-    check_branch_conditions(program, diags);
+    check_exprs(program, diags, &resource_types);
     check_switch_variables(program, diags);
-    check_write_types(program, diags, &resource_types);
-    check_channel_payload_types(program, diags, &resource_types);
 }
 
 #[derive(Clone)]
@@ -62,31 +62,242 @@ pub(crate) fn build_resource_type_map(program: &Program) -> HashMap<String, ResT
     map
 }
 
-/// E201: branch condition must be a comparison expression producing Bool.
-/// In the JSON format, conditions are strings. We check for the presence of
-/// a comparison operator (==, !=, >, <, >=, <=).
-fn check_branch_conditions(program: &Program, diags: &mut Vec<Diagnostic>) {
-    program.walk_stmts(|mi, fi, si, _, _, stmt| {
-        let Some(cond) = stmt.branch_cond() else {
-            return;
-        };
-        let has_cmp = cond.contains("==")
-            || cond.contains("!=")
-            || cond.contains(">=")
-            || cond.contains("<=")
-            || cond.contains('>')
-            || cond.contains('<');
-        if !has_cmp {
-            diags.push(
-                Diagnostic::error(
+fn check_exprs(
+    program: &Program,
+    diags: &mut Vec<Diagnostic>,
+    resource_types: &HashMap<String, ResType>,
+) {
+    program.walk_stmts(|mi, fi, si, m, f, stmt| {
+        let path = Program::stmt_path(mi, fi, si);
+        let env = NameEnv::build(program, m, f);
+        match &stmt.op {
+            Op::Branch { cond, .. } => {
+                check_expr(
+                    cond,
+                    &env,
+                    Some(&BaseType::Primitive("Bool".into())),
+                    true,
+                    &path,
                     "E201",
-                    format!("branch condition \"{cond}\" is not a comparison expression"),
-                )
-                .with_path(Program::stmt_path(mi, fi, si))
-                .with_fix("use a comparison operator: ==, !=, >, <, >=, <="),
-            );
+                    diags,
+                );
+            }
+            Op::AssignLocal { target, expr } => {
+                if let Some(ty) = env.ty(target) {
+                    check_expr(expr, &env, Some(ty), false, &path, "E932", diags);
+                } else {
+                    check_expr(expr, &env, None, false, &path, "E932", diags);
+                }
+            }
+            Op::WriteShared { resource, expr } => {
+                if let Some(ResType::Var(expected)) = resource_types.get(resource) {
+                    check_expr(expr, &env, Some(expected), false, &path, "E203", diags);
+                } else {
+                    check_expr(expr, &env, None, false, &path, "E203", diags);
+                }
+            }
+            Op::AtomicStore { resource, value } => {
+                if let Some(ResType::Atomic(expected)) = resource_types.get(resource) {
+                    check_expr(value, &env, Some(expected), false, &path, "E204", diags);
+                } else {
+                    check_expr(value, &env, None, false, &path, "E204", diags);
+                }
+            }
+            Op::AtomicCas {
+                resource,
+                expected,
+                desired,
+                dst,
+            } => {
+                if let Some(ResType::Atomic(ty)) = resource_types.get(resource) {
+                    check_expr(expected, &env, Some(ty), false, &path, "E205", diags);
+                    check_expr(desired, &env, Some(ty), false, &path, "E205", diags);
+                    if let Some(dst_ty) = env.ty(dst) {
+                        if dst_ty != ty && !(is_intish(dst_ty) && is_intish(ty)) {
+                            diags.push(
+                                Diagnostic::error(
+                                    "E205",
+                                    format!(
+                                        "atomic_cas dst '{dst}' has type {dst_ty}, but must \
+                                         hold the pre-CAS old value (Atomic base {ty}), not a \
+                                         Bool success flag"
+                                    ),
+                                )
+                                .with_path(path.clone())
+                                .with_fix(
+                                    "bind dst to a local or Var/Atomic of the same base type; \
+                                     test success with branch(dst == expected)",
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+            Op::ChannelSend { channel, value } => {
+                if let Some(ResType::Channel(expected)) = resource_types.get(channel) {
+                    check_expr(value, &env, Some(expected), false, &path, "E206", diags);
+                } else {
+                    check_expr(value, &env, None, false, &path, "E206", diags);
+                }
+            }
+            Op::ChannelRecv { channel, dst } => {
+                check_recv_dst(diags, &env, resource_types, channel, dst, &path);
+            }
+            Op::Select { branches, .. } => {
+                for branch in branches {
+                    if let SelectGuard::ChannelRecv { channel, dst } = &branch.guard {
+                        check_recv_dst(diags, &env, resource_types, channel, dst, &path);
+                    }
+                }
+            }
+            Op::Return { value: Some(value) } => {
+                if let Some(ret) = &f.returns {
+                    check_expr(
+                        value,
+                        &env,
+                        Some(&ret.param_type),
+                        false,
+                        &path,
+                        "E932",
+                        diags,
+                    );
+                } else {
+                    check_expr(value, &env, None, false, &path, "E932", diags);
+                }
+            }
+            Op::Func { func, args, .. } => {
+                if let Some((_, callee)) = program.lookup_function(&m.name, func) {
+                    let modeled: Vec<&ParamDecl> =
+                        callee.params.iter().filter(|p| p.modeled).collect();
+                    for (arg, param) in args.iter().zip(modeled.iter()) {
+                        check_expr(
+                            arg,
+                            &env,
+                            Some(&param.param_type),
+                            false,
+                            &path,
+                            "E932",
+                            diags,
+                        );
+                    }
+                    for arg in args.iter().skip(modeled.len()) {
+                        check_expr(arg, &env, None, false, &path, "E932", diags);
+                    }
+                } else {
+                    for arg in args {
+                        check_expr(arg, &env, None, false, &path, "E932", diags);
+                    }
+                }
+            }
+            Op::Spawn { args, .. } | Op::AsyncCall { args, .. } => {
+                for arg in args {
+                    check_expr(arg, &env, None, false, &path, "E932", diags);
+                }
+            }
+            _ => {}
         }
     });
+}
+
+fn is_intish(ty: &BaseType) -> bool {
+    match ty {
+        BaseType::Primitive(p) if p == "Int" => true,
+        BaseType::Complex(ComplexBaseType::BoundedInt { .. }) => true,
+        _ => false,
+    }
+}
+
+fn check_expr(
+    text: &str,
+    env: &NameEnv,
+    expected: Option<&BaseType>,
+    require_cmp: bool,
+    path: &str,
+    assign_code: &'static str,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let expr = match expr::parse(text, env) {
+        Ok(e) => e,
+        Err(e) => {
+            diags.push(
+                Diagnostic::error("E931", e.message)
+                    .with_path(path.to_string())
+                    .with_fix("fix the expression syntax, or use a declared slot or enum variant"),
+            );
+            return;
+        }
+    };
+    if require_cmp && !expr.is_comparison() {
+        diags.push(
+            Diagnostic::error(
+                "E201",
+                format!("branch condition \"{text}\" is not a comparison expression"),
+            )
+            .with_path(path.to_string())
+            .with_fix("use a comparison operator: ==, !=, >, <, >=, <="),
+        );
+        return;
+    }
+    let got = match expr::type_of(&expr, env) {
+        Ok(t) => t,
+        Err(te) => {
+            diags.push(
+                Diagnostic::error(te.code, te.message)
+                    .with_path(path.to_string())
+                    .with_fix("use a value name of the matching type"),
+            );
+            return;
+        }
+    };
+    let Some(expected) = expected else {
+        return;
+    };
+    if let Err(te) = expr::assignable(got.as_ref(), expected, &expr) {
+        let code = if te.code == "E203" {
+            assign_code
+        } else {
+            te.code
+        };
+        diags.push(
+            Diagnostic::error(code, te.message)
+                .with_path(path.to_string())
+                .with_fix("change the value to match the expected type"),
+        );
+    }
+}
+
+fn check_recv_dst(
+    diags: &mut Vec<Diagnostic>,
+    env: &NameEnv,
+    resource_types: &HashMap<String, ResType>,
+    channel: &str,
+    dst: &str,
+    path: &str,
+) {
+    if dst == "_" {
+        return;
+    }
+    let Some(ResType::Channel(expected)) = resource_types.get(channel) else {
+        return;
+    };
+    if let Some(dst_ty) = env.ty(dst) {
+        if dst_ty != expected && !(is_intish(dst_ty) && is_intish(expected)) {
+            diags.push(
+                Diagnostic::error(
+                    "E206",
+                    format!(
+                        "channel_recv dst '{dst}' has type {dst_ty}, but Channel '{channel}' \
+                         payload type is {expected}"
+                    ),
+                )
+                .with_path(path.to_string())
+                .with_fix(
+                    "bind dst to a local or Var/Atomic of the Channel's base type, or use \
+                     \"_\" to discard the payload",
+                ),
+            );
+        }
+    }
 }
 
 /// E202, E207: switch variable type and case label validation.
@@ -152,204 +363,6 @@ fn check_switch_variables(program: &Program, diags: &mut Vec<Diagnostic>) {
             }
         }
     });
-}
-
-/// E203, E204, E205: write/store/cas type checking (best-effort on literal values).
-fn check_write_types(
-    program: &Program,
-    diags: &mut Vec<Diagnostic>,
-    resource_types: &HashMap<String, ResType>,
-) {
-    program.walk_stmts(|mi, fi, si, _, f, stmt| {
-        let path = Program::stmt_path(mi, fi, si);
-        match &stmt.op {
-            Op::WriteShared { resource, expr } => {
-                if let Some(ResType::Var(expected)) = resource_types.get(resource) {
-                    check_literal_type(diags, "E203", expr, expected, &path);
-                }
-            }
-            Op::AtomicStore { resource, value } => {
-                if let Some(ResType::Atomic(expected)) = resource_types.get(resource) {
-                    check_literal_type(diags, "E204", value, expected, &path);
-                }
-            }
-            Op::AtomicCas {
-                resource,
-                expected,
-                desired,
-                dst,
-            } => {
-                if let Some(ResType::Atomic(ty)) = resource_types.get(resource) {
-                    check_literal_type(diags, "E205", expected, ty, &path);
-                    check_literal_type(diags, "E205", desired, ty, &path);
-                    if let Some(dst_ty) = lookup_dst_type(f, resource_types, dst) {
-                        if dst_ty != ty {
-                            diags.push(
-                                Diagnostic::error(
-                                    "E205",
-                                    format!(
-                                        "atomic_cas dst '{dst}' has type {dst_ty}, but must \
-                                             hold the pre-CAS old value (Atomic base {ty}), not a \
-                                             Bool success flag"
-                                    ),
-                                )
-                                .with_path(path.to_string())
-                                .with_fix(
-                                    "bind dst to a local or Var/Atomic of the same base type; \
-                                         test success with branch(dst == expected)",
-                                ),
-                            );
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    });
-}
-
-/// E206: `channel_send` value and `channel_recv` `dst` must match Channel `base`.
-fn check_channel_payload_types(
-    program: &Program,
-    diags: &mut Vec<Diagnostic>,
-    resource_types: &HashMap<String, ResType>,
-) {
-    program.walk_stmts(|mi, fi, si, _, f, stmt| {
-        let path = Program::stmt_path(mi, fi, si);
-        match &stmt.op {
-            Op::ChannelSend { channel, value } => {
-                if let Some(ResType::Channel(expected)) = resource_types.get(channel) {
-                    check_literal_type(diags, "E206", value, expected, &path);
-                }
-            }
-            Op::ChannelRecv { channel, dst } => {
-                check_recv_dst(diags, f, resource_types, channel, dst, &path);
-            }
-            Op::Select { branches, .. } => {
-                for branch in branches {
-                    if let SelectGuard::ChannelRecv { channel, dst } = &branch.guard {
-                        check_recv_dst(diags, f, resource_types, channel, dst, &path);
-                    }
-                }
-            }
-            _ => {}
-        }
-    });
-}
-
-/// `dst` is the popped payload (Channel `base`). `"_"` discards. Unknown names
-/// are left to later passes (same as `atomic_cas` `dst`).
-fn check_recv_dst(
-    diags: &mut Vec<Diagnostic>,
-    f: &Function,
-    resource_types: &HashMap<String, ResType>,
-    channel: &str,
-    dst: &str,
-    path: &str,
-) {
-    if dst == "_" {
-        return;
-    }
-    let Some(ResType::Channel(expected)) = resource_types.get(channel) else {
-        return;
-    };
-    if let Some(dst_ty) = lookup_dst_type(f, resource_types, dst) {
-        if dst_ty != expected {
-            diags.push(
-                Diagnostic::error(
-                    "E206",
-                    format!(
-                        "channel_recv dst '{dst}' has type {dst_ty}, but Channel '{channel}' \
-                         payload type is {expected}"
-                    ),
-                )
-                .with_path(path.to_string())
-                .with_fix(
-                    "bind dst to a local or Var/Atomic of the Channel's base type, or use \
-                     \"_\" to discard the payload",
-                ),
-            );
-        }
-    }
-}
-
-/// Best-effort type check: only flags mismatches when the value is a recognizable literal.
-fn check_literal_type(
-    diags: &mut Vec<Diagnostic>,
-    code: &'static str,
-    val: &str,
-    expected: &BaseType,
-    path: &str,
-) {
-    let inferred = infer_literal_type(val);
-    if let Some(ref actual) = inferred {
-        let expected_name = match expected {
-            BaseType::Primitive(p) => Some(p.as_str()),
-            _ => None,
-        };
-        let actual_name = match actual {
-            BaseType::Primitive(p) => Some(p.as_str()),
-            _ => None,
-        };
-        if let (Some(e), Some(a)) = (expected_name, actual_name) {
-            if e != a {
-                diags.push(
-                    Diagnostic::error(code, format!("type mismatch: expected {e}, found {a}"))
-                        .with_path(path.to_string())
-                        .with_fix("change the value to match the expected type"),
-                );
-            }
-        }
-    }
-
-    // Bounded Int: the value must lie within the declared domain.
-    if let BaseType::Complex(ComplexBaseType::BoundedInt { lo, hi }) = expected {
-        if let Ok(v) = val.trim().parse::<i64>() {
-            if v < *lo || v > *hi {
-                diags.push(
-                    Diagnostic::error(
-                        code,
-                        format!("value {v} is outside the declared Int range {lo}..={hi}"),
-                    )
-                    .with_path(path.to_string())
-                    .with_fix(format!("use a value between {lo} and {hi}")),
-                );
-            }
-        }
-    }
-}
-
-fn lookup_dst_type<'a>(
-    f: &'a Function,
-    resource_types: &'a HashMap<String, ResType>,
-    dst: &str,
-) -> Option<&'a BaseType> {
-    if let Some(local) = f.locals.iter().find(|l| l.name == dst) {
-        return Some(&local.local_type);
-    }
-    if let Some(p) = f.params.iter().find(|p| p.name == dst) {
-        return Some(&p.param_type);
-    }
-    match resource_types.get(dst) {
-        Some(ResType::Var(bt) | ResType::Atomic(bt)) => Some(bt),
-        _ => None,
-    }
-}
-
-fn infer_literal_type(val: &str) -> Option<BaseType> {
-    if val == "true" || val == "false" {
-        return Some(BaseType::Primitive("Bool".to_string()));
-    }
-    if val.parse::<i64>().is_ok() {
-        return Some(BaseType::Primitive("Int".to_string()));
-    }
-    if val.parse::<f64>().is_ok() && val.contains('.') {
-        return Some(BaseType::Primitive("Float".to_string()));
-    }
-    if val.starts_with('"') && val.ends_with('"') {
-        return Some(BaseType::Primitive("String".to_string()));
-    }
-    None
 }
 
 #[allow(dead_code)]

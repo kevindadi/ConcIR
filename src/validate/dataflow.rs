@@ -428,23 +428,9 @@ fn check_modeled_activation_on_entry(
 
 fn name_referenced_as_rvalue(f: &Function, name: &str) -> bool {
     f.body.iter().any(|s| {
-        let mut texts: Vec<&str> = Vec::new();
-        match &s.op {
-            Op::AssignLocal { expr, .. } | Op::WriteShared { expr, .. } => texts.push(expr),
-            Op::AtomicStore { value, .. } | Op::ChannelSend { value, .. } => texts.push(value),
-            Op::AtomicCas {
-                expected, desired, ..
-            } => {
-                texts.push(expected);
-                texts.push(desired);
-            }
-            Op::Func { args, .. } | Op::Spawn { args, .. } | Op::AsyncCall { args, .. } => {
-                texts.extend(args.iter().map(String::as_str));
-            }
-            Op::Return { value: Some(value) } => texts.push(value),
-            Op::Branch { cond, .. } => texts.push(cond),
-            Op::Switch { var, .. } => texts.push(var),
-            _ => {}
+        let mut texts = s.op.rvalue_exprs();
+        if let Op::Switch { var, .. } = &s.op {
+            texts.push(var);
         }
         texts.iter().any(|t| contains_word(t, name))
     })
