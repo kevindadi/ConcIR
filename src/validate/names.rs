@@ -159,7 +159,8 @@ fn check_contracts(
                 );
             }
         }
-        for (i, name) in m.requires.functions.iter().enumerate() {
+        for (i, req) in m.requires.functions.iter().enumerate() {
+            let name = req.name();
             if !is_fqn(name) {
                 diags.push(
                     Diagnostic::error(
@@ -249,8 +250,7 @@ fn check_function_references(program: &Program, diags: &mut Vec<Diagnostic>) {
                 );
             }
             if is_fqn(func) {
-                let required: HashSet<&str> =
-                    m.requires.functions.iter().map(String::as_str).collect();
+                let required: HashSet<&str> = m.requires.function_names().into_iter().collect();
                 if split_fqn(func).map(|(mod_name, _)| mod_name) != Some(m.name.as_str())
                     && !required.contains(func)
                 {

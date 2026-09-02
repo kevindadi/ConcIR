@@ -17,16 +17,40 @@ contract.
 }
 ```
 
-| Field        | Type    | Required | Description                     |
-| ------------ | ------- | :------: | ------------------------------- |
-| `name`       | ident   |   yes    | Module identity                 |
-| `provides`   | NameSet |    no    | Short names this module exports |
-| `requires`   | NameSet |    no    | FQNs this module imports        |
-| `resources`  | array   |    no    | Resources owned by this module  |
-| `protection` | array   |    no    | Var → lock mapping              |
-| `functions`  | array   |    no    | Function definitions            |
+| Field        | Type       | Required | Description                     |
+| ------------ | ---------- | :------: | ------------------------------- |
+| `name`       | ident      |   yes    | Module identity                 |
+| `provides`   | NameSet    |    no    | Short names this module exports |
+| `requires`   | RequireSet |    no    | FQNs this module imports        |
+| `resources`  | array      |    no    | Resources owned by this module  |
+| `protection` | array      |    no    | Var → lock mapping              |
+| `functions`  | array      |    no    | Function definitions            |
 
-`NameSet` is `{ "resources": [...], "functions": [...] }` (both default `[]`).
+`NameSet` (`provides`) is `{ "resources": [...], "functions": [...] }`
+(both default `[]`). Short names only.
+
+`RequireSet` (`requires`) is the same shape, but each `functions` entry
+is either an FQN string (name-only, backward compatible) or a
+[function signature](function.md#concurrency-interface) object:
+
+```json
+"requires": {
+  "resources": ["storage::log_mtx"],
+  "functions": [
+    {
+      "name": "storage::flush",
+      "kind": "normal",
+      "may_block": false,
+      "locks": { "requires_held": ["log_mtx"] }
+    }
+  ]
+}
+```
+
+The signature is what the importing module believes. When the program is
+assembled, it must match the defining function (**E804**): `kind`,
+`may_block`, `locks`, and any listed `params` / `returns`. A name-only
+FQN still satisfies E108 and does not add an interface check.
 
 The validator consumes the assembled [`Program`](program.md). `provides` /
 `requires` are enforced (E108): a provided name must be declared here; a

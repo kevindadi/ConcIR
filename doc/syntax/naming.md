@@ -20,5 +20,7 @@ Rules:
 5. **Cross-module references must be FQNs** and must appear in the importing
    module's `requires`.
 6. **`provides` always uses short names** declared in this module.
-7. **`requires` always uses FQNs.**
+7. **`requires.resources` always uses FQNs.** `requires.functions` is either
+   an FQN string or a [signature object](function.md#concurrency-interface)
+   whose `name` is that FQN.
 8. **`entry` is always an FQN.**

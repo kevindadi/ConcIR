@@ -6,8 +6,8 @@ Nine passes; each emits diagnostics independently:
 structure  →  names  →  types  →  compat  →  protection
     E0xx       E1xx      E2xx     E3xx        E7xx
 
-→  concurrency  →  locks  →  control  →  dataflow
-       E4xx        E5xx      E6xx         E9xx
+→  concurrency  →  locks  →  interface  →  control  →  dataflow
+       E4xx        E5xx       E8xx         E6xx         E9xx
 ```
 
 JSON that does not match this grammar fails at deserialize (E000), including

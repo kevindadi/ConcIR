@@ -122,6 +122,19 @@ Pairing is by **handle**, not by function name.
 | E704 | VarWithoutProtection   | warning  | Var resource does not appear in protection            |
 | E705 | DuplicateProtection    |  error   | same Var appears more than once in protection         |
 
+## E8xx — Function concurrency interface
+
+Declared `may_block` / `locks` on a function, and imported signatures on
+`requires.functions`. See [`syntax/function.md`](syntax/function.md) and
+[`syntax/module.md`](syntax/module.md).
+
+| Code | Name | Severity | Description |
+| ---- | ---- | :------: | ----------- |
+| E801 | LockEffectNotLock | error | `locks.acquires` / `releases` / `requires_held` names a missing resource, a non-Mutex/RwLock, or a duplicate in the same list |
+| E802 | MayBlockMismatch | error / warning | `may_block: false` on a body with a blocking op (error); `may_block: true` on a non-blocking body (warning). Nobody functions are not checked |
+| E803 | RequiresHeldNotHeld | error | `call` of a function that declares `requires_held` without those locks held at the call site |
+| E804 | ImportSigMismatch | error | a `requires.functions` signature object does not match the defining function (`kind`, `may_block`, `locks`, listed `params` / `returns`), or its `name` is not an FQN |
+
 ## E9xx — Typed data flow
 
 Implemented against [`syntax/dataflow.md`](syntax/dataflow.md)

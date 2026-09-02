@@ -97,13 +97,32 @@ Program    = Ident,                     (* program *)
 
 Module     = Ident,                     (* name *)
              [ NameSet ],               (* provides: short names *)
-             [ NameSet ],               (* requires: FQNs *)
+             [ RequireSet ],            (* requires: FQNs or function signatures *)
              { Resource },
              { Protection },
              { Function } ;
 
-NameSet    = { Ident | Fqn },           (* resources *)
-             { Ident | Fqn } ;          (* functions *)
+NameSet    = { Ident },                 (* resources; short names *)
+             { Ident } ;                (* functions; short names *)
+
+RequireSet = { Fqn },                   (* resources *)
+             { RequiredFn } ;           (* functions: FQN or FunctionSig *)
+
+RequiredFn = Fqn
+           | FunctionSig ;
+
+FunctionSig
+           = Fqn,                       (* name *)
+             [ FnKind ],                (* kind *)
+             [ Boolean ],               (* may_block *)
+             [ LockEffects ],
+             { ParamDecl },             (* params; if present must match the definition *)
+             [ ParamDecl ] ;            (* returns *)
+
+LockEffects
+           = { Name },                  (* acquires *)
+             { Name },                  (* releases *)
+             { Name } ;                 (* requires_held *)
 ```
 
 ## Types
@@ -174,7 +193,9 @@ Function   = Ident,                     (* name *)
              [ ParamDecl ],             (* returns *)
              { LocalDecl },             (* locals *)
              { Stmt },                  (* body; empty = nobody placeholder *)
-             [ Effects ] ;
+             [ Effects ],
+             [ Boolean ],               (* may_block; omit = infer / unspecified *)
+             [ LockEffects ] ;
 
 FnKind     = "normal" | "async" ;
 

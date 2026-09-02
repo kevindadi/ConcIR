@@ -26,6 +26,38 @@
 An empty `body` is a nobody function: a codegen placeholder, not a call-chain
 element. Optionally attach `effects: { "reads": [...], "writes": [...] }`.
 
+## Concurrency interface
+
+A function may declare the protocol other modules rely on without reading
+its body. This is the contract a [`requires` signature](module.md) copies.
+
+| Field        | Type         | Default | Meaning |
+| ------------ | ------------ | ------- | ------- |
+| `may_block`  | bool         | omit    | `true` if the function may wait (join, recv, acquire, `select`, …). Omitted: infer from the body; nobody stays unspecified. Declaring `false` on a blocking body is **E802**. |
+| `locks`      | LockEffects  | `{}`    | Lock protocol. Names are Mutex / RwLock resources (**E801**). |
+
+`locks`:
+
+| Field           | Meaning |
+| --------------- | ------- |
+| `acquires`      | Locks this function takes (and is expected to release, unless listed only here as a transfer). |
+| `releases`      | Locks this function drops. |
+| `requires_held` | Locks the **caller** must already hold. A `call` that does not hold them is **E803**. |
+
+```json
+{
+  "name": "flush",
+  "kind": "normal",
+  "may_block": false,
+  "locks": { "requires_held": ["log_mtx"] },
+  "body": []
+}
+```
+
+On a nobody function this interface *is* the spec. On a bodied function
+the validator checks `may_block` against blocking ops and enforces
+`requires_held` at each `call` site.
+
 The `body` is a list of [statements](statement.md) (CFG nodes; fallthrough
 plus explicit `goto` / `branch` / `switch` / `return` / `select`).
 A [`scope`](statement.md#threads-and-calls) statement lists the functions to

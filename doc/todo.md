@@ -30,6 +30,7 @@ Status legend: `[x]` done · `[ ]` planned · `[~]` in progress
 - `[x]` Native `Module` with `provides` / `requires` as `{ resources, functions }`
 - `[x]` FQN rules: same-module short name; cross-module FQN listed in `requires`; `entry` is an FQN
 - `[x]` Schema-level module validation (E108)
+- `[x]` Function concurrency interface (`may_block`, `locks`) and `requires.functions` signatures (E8xx)
 - `[ ]` Concatenate independently authored module files into one `Program`
 
 ## Validation & diagnostics

@@ -8,7 +8,7 @@ names are ConcIR identifiers and FQNs, never backend crate paths or
 source-language keywords.
 
 The executable definition is `src/ast.rs`, `src/fqn.rs`, `src/env.rs`,
-`src/expr.rs`, and `src/validate/`.
+`src/expr.rs`, and `src/validate/` (including `interface.rs` for E8xx).
 The formal grammar is [`ebnf.md`](../ebnf.md). See
 [`error_codes.md`](../error_codes.md) for diagnostics and
 [`todo.md`](../todo.md) for the roadmap.

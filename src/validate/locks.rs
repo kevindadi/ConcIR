@@ -50,6 +50,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
             check_sync_lock_across_await(f, &cfg, &sync_lock_refs, &fn_path, diags);
             check_lock_ordering(f, &cfg, &lock_resources, &fn_path, diags);
             check_var_access_without_lock(program, m, f, &cfg, &protection_map, &fn_path, diags);
+            check_requires_held(program, m, f, &cfg, &fn_path, diags);
         }
     }
 }
@@ -380,6 +381,90 @@ fn check_var_access_without_lock(
             worklist.push((succ, held.clone()));
         }
     }
+}
+
+/// E803: `call` of a function that declares `requires_held` must hold those locks.
+fn check_requires_held(
+    program: &Program,
+    module: &Module,
+    f: &Function,
+    cfg: &Cfg,
+    fn_path: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let n = f.body.len();
+    if n == 0 {
+        return;
+    }
+
+    let mut visited: Vec<HashSet<BTreeSet<String>>> = vec![HashSet::new(); n];
+    let mut worklist: Vec<(usize, BTreeSet<String>)> = vec![(0, BTreeSet::new())];
+    let mut reported: HashSet<(usize, String)> = HashSet::new();
+
+    while let Some((idx, mut held)) = worklist.pop() {
+        if visited[idx].contains(&held) {
+            continue;
+        }
+        visited[idx].insert(held.clone());
+
+        let stmt = &f.body[idx];
+        if let Op::Func { func, .. } = &stmt.op {
+            if let Some((owner, callee)) = program.lookup_function(&module.name, func) {
+                for required in &callee.locks.requires_held {
+                    let held_here = lock_held(&held, required, &owner.name, &module.name);
+                    if held_here {
+                        continue;
+                    }
+                    let key = (idx, required.clone());
+                    if !reported.insert(key) {
+                        continue;
+                    }
+                    diags.push(
+                        Diagnostic::error(
+                            "E803",
+                            format!(
+                                "call to '{}' requires lock '{required}' held, but it is not held \
+                                 in function '{}'",
+                                callee.name, f.name
+                            ),
+                        )
+                        .with_path(format!("{fn_path}.body[{idx}]"))
+                        .with_fix("acquire the lock before this call, or drop requires_held on the callee"),
+                    );
+                }
+            }
+        }
+
+        if let Some(resource) = stmt.op.is_lock_acquire() {
+            held.insert(resource.to_string());
+        } else if let Some(resource) = stmt.op.is_lock_release() {
+            held.remove(resource);
+        }
+
+        for &succ in &cfg.successors[idx] {
+            worklist.push((succ, held.clone()));
+        }
+    }
+}
+
+fn lock_held(
+    held: &BTreeSet<String>,
+    required: &str,
+    callee_module: &str,
+    caller_module: &str,
+) -> bool {
+    let req_q = fqn::qualify(callee_module, required);
+    held.iter().any(|h| {
+        if h == required || h == &req_q {
+            return true;
+        }
+        let h_q = if fqn::is_fqn(h) {
+            h.clone()
+        } else {
+            fqn::qualify(caller_module, h)
+        };
+        h_q == req_q
+    })
 }
 
 fn short_name(name: &str) -> &str {
