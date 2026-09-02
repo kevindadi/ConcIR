@@ -7,7 +7,7 @@ use crate::diagnostic::Diagnostic;
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let resource_types = build_resource_type_map(program);
     check_branch_conditions(program, diags);
-    check_switch_variables(program, diags, &resource_types);
+    check_switch_variables(program, diags);
     check_write_types(program, diags, &resource_types);
     check_channel_payload_types(program, diags, &resource_types);
 }
@@ -90,50 +90,64 @@ fn check_branch_conditions(program: &Program, diags: &mut Vec<Diagnostic>) {
 }
 
 /// E202, E207: switch variable type and case label validation.
-fn check_switch_variables(
-    program: &Program,
-    diags: &mut Vec<Diagnostic>,
-    resource_types: &HashMap<String, ResType>,
-) {
-    program.walk_stmts(|mi, fi, si, _, _, stmt| {
+fn check_switch_variables(program: &Program, diags: &mut Vec<Diagnostic>) {
+    program.walk_stmts(|mi, fi, si, m, f, stmt| {
         let Some((var, cases, _)) = stmt.switch() else {
             return;
         };
         let path = Program::stmt_path(mi, fi, si);
-        if let Some(rt) = resource_types.get(var) {
-            let bt = res_type_to_base(rt);
-            match bt {
-                Some(BaseType::Primitive(ref p)) if p == "Int" => {}
-                Some(BaseType::Complex(ComplexBaseType::BoundedInt { .. })) => {}
-                Some(BaseType::Complex(ComplexBaseType::Enum(_))) => {}
-                Some(ref other) => {
+        let env = crate::env::NameEnv::build(program, m, f);
+        let Some(slot) = env.get(var) else {
+            diags.push(
+                Diagnostic::error(
+                    "E935",
+                    format!("switch scrutinee '{var}' is not a declared slot"),
+                )
+                .with_path(format!("{path}.var"))
+                .with_fix("switch on a local, param, Var, or Atomic of Enum or Int type"),
+            );
+            return;
+        };
+        if !slot.is_value_slot() {
+            diags.push(
+                Diagnostic::error(
+                    "E935",
+                    format!("switch scrutinee '{var}' is not a value slot"),
+                )
+                .with_path(format!("{path}.var"))
+                .with_fix("switch on a local, param, Var, or Atomic of Enum or Int type"),
+            );
+            return;
+        }
+        let Some(bt) = slot.ty.as_ref() else {
+            return;
+        };
+        match bt {
+            BaseType::Primitive(p) if p == "Int" => {}
+            BaseType::Complex(ComplexBaseType::BoundedInt { .. }) => {}
+            BaseType::Complex(ComplexBaseType::Enum(_)) => {}
+            other => {
+                diags.push(
+                    Diagnostic::error(
+                        "E202",
+                        format!("switch variable '{var}' is of type {other}, expected Enum or Int"),
+                    )
+                    .with_path(format!("{path}.var"))
+                    .with_fix("use an Enum or Int typed slot, or use branch instead"),
+                );
+            }
+        }
+        if let BaseType::Complex(ComplexBaseType::Enum(ref variants)) = bt {
+            for label in cases.keys() {
+                if !variants.contains(label) {
                     diags.push(
                         Diagnostic::error(
-                            "E202",
-                            format!(
-                                "switch variable '{var}' is of type {other}, expected Enum or Int"
-                            ),
+                            "E207",
+                            format!("switch case label '{label}' is not a variant of enum '{var}'"),
                         )
-                        .with_path(format!("{path}.var"))
-                        .with_fix("use an Enum or Int typed resource, or use branch instead"),
+                        .with_path(format!("{path}.cases"))
+                        .with_fix("use a valid enum variant as the case label"),
                     );
-                }
-                None => {}
-            }
-            if let Some(BaseType::Complex(ComplexBaseType::Enum(ref variants))) = bt {
-                for label in cases.keys() {
-                    if !variants.contains(label) {
-                        diags.push(
-                            Diagnostic::error(
-                                "E207",
-                                format!(
-                                    "switch case label '{label}' is not a variant of enum '{var}'"
-                                ),
-                            )
-                            .with_path(format!("{path}.cases"))
-                            .with_fix("use a valid enum variant as the case label"),
-                        );
-                    }
                 }
             }
         }
@@ -338,6 +352,7 @@ fn infer_literal_type(val: &str) -> Option<BaseType> {
     None
 }
 
+#[allow(dead_code)]
 pub(crate) fn res_type_to_base(rt: &ResType) -> Option<BaseType> {
     match rt {
         ResType::Var(bt) | ResType::Atomic(bt) | ResType::Channel(bt) => Some(bt.clone()),

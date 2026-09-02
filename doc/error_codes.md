@@ -124,20 +124,26 @@ Pairing is by **handle**, not by function name.
 
 ## E9xx — Typed data flow
 
-The table is what the validator emits **today**.
-[`syntax/dataflow.md`](syntax/dataflow.md) proposes E912 as a warning,
-broadens E921 to any writable slot, and adds E914–E915 / E922–E924 /
-E931–E937. Do not list those codes here until `src/validate/` implements
-them.
+Implemented against [`syntax/dataflow.md`](syntax/dataflow.md) phase 1
+(name environment, unified dst, call vs concurrent entry). Expression
+parse codes E931–E934 land in phase 2.
 
-| Code | Name                        | Severity | Description                                                                              |
-| ---- | --------------------------- | :------: | ---------------------------------------------------------------------------------------- |
-| E910 | ParamNameCollides           |  error   | parameter name collides with a declared resource name                                    |
-| E911 | DuplicateParam              |  error   | duplicate parameter name within a function                                               |
-| E912 | UnmodeledParamReferenced    |  error   | expression references a `modeled: false` parameter (it is not in the CVN variable store) |
-| E913 | BareReturnWithModeledReturn | warning  | function models a return but some `return` statement carries no value (binds Unknown)    |
-| E920 | CallArityMismatch           |  error   | `call` argument count does not match the callee's modeled parameters                     |
-| E921 | CallCaptureNotVar           |  error   | `call` `dst` is not a writable Var/Atomic resource                                       |
+| Code | Name | Severity | Description |
+| ---- | ---- | :------: | ----------- |
+| E910 | ParamNameCollides | error | parameter name collides with a declared resource name |
+| E911 | DuplicateParam | error | duplicate parameter name within a function |
+| E912 | UnmodeledNameInNetExpr | warning | expression references a `modeled: false` param/local; the net treats it as Unknown |
+| E913 | BareReturnWithModeledReturn | warning | function models a return but some `return` statement carries no value (binds Unknown) |
+| E914 | LocalNameCollides | error | local name collides with a parameter or resource |
+| E915 | DuplicateLocal | error | duplicate local name within a function |
+| E920 | CallArityMismatch | error | `call` argument count does not match the callee's modeled parameters |
+| E921 | DstNotWritableSlot | error | dst is not a writable slot (local, param, Var, Atomic; `"_"` where allowed) |
+| E922 | ModeledParamOnConcurrentEntry | error | `spawn` / `async_call` / `scope` target has modeled parameters |
+| E923 | DstWithoutModeledReturn | error | `call` has `dst` but the callee has no modeled return |
+| E924 | SpawnArityMismatch | error | non-empty `spawn`/`async_call` `args` do not match unmodeled parameters |
+| E935 | SwitchScrutineeNotSlot | error | `switch.var` is not a value slot (local, param, return, Var, Atomic) |
+| E936 | AssignLocalToResource | error | `assign_local.target` is not a function local or parameter |
+| E937 | ModeledActivationOnConcurrentEntry | warning | spawn/scope/async target has modeled locals or a modeled return |
 
 ## Diagnostic output format
 

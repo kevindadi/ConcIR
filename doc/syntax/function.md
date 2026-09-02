@@ -64,7 +64,8 @@ values enter the CVN store. Unmodeled values are codegen-only.
 - Referencing a `modeled: false` parameter is E912.
 
 At a `call` site: `args` must match modeled parameters (E920); `dst`, if
-present, must be a writable Var/Atomic (E921).
+present, must be a writable slot — local, param, Var, or Atomic (E921).
+The callee must declare a modeled return (E923). See [Data flow](dataflow.md).
 
 ```json
 {

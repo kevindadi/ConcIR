@@ -1,12 +1,9 @@
 # Data flow (proposal, ConcIR 3.5)
 
-**Status:** proposal. This page is the target contract for closing
-ConcIR data flow. The validator on `main` still implements the weaker
-E9xx rules in [`function.md`](function.md) and [`error_codes.md`](../error_codes.md).
-Implementation should land against this page, then bump the default
-`version` to `3.5.0`.
-
-Control flow is already a closed CFG ([`statement.md`](statement.md)).
+**Status:** in progress. Phase 1 (name environment, unified dst, call vs
+spawn) is implemented in `src/env.rs` and `src/validate/dataflow.rs`.
+Phases 2–4 (expression parser, E309 on guards, version 3.5.0) are not
+done. Control flow is already a closed CFG ([`statement.md`](statement.md)).
 This page closes **names, values, and updates** so every string that
 today sits in `expr` / `cond` / `args` / `dst` has a single resolution
 and a single type.

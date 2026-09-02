@@ -65,9 +65,207 @@ fn unmodeled_param_referenced_in_body_is_e912() {
              ]}
         ]"#,
     );
-    assert!(!report.valid);
+    assert!(
+        report.valid,
+        "E912 is a warning, got: {:?}",
+        report.diagnostics
+    );
     assert!(
         codes(&report).contains(&"E912"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn call_capture_into_local_is_valid() {
+    let report = wrap(
+        "[]",
+        r#"[
+            {"name": "main", "kind": "normal",
+             "locals": [{"name": "out", "type": "Int", "modeled": true}],
+             "body": [
+                {"sid": "s1", "kind": "call", "func": "worker", "args": ["1"], "dst": "out"},
+                {"sid": "s2", "kind": "return"}
+             ]},
+            {"name": "worker", "kind": "normal",
+             "params": [{"name": "n", "type": "Int", "modeled": true}],
+             "returns": {"name": "r", "type": "Int", "modeled": true},
+             "body": [{"sid": "s1", "kind": "return", "value": "n + 1"}]}
+        ]"#,
+    );
+    assert!(report.valid, "got: {:?}", report.diagnostics);
+}
+
+#[test]
+fn call_capture_without_modeled_return_is_e923() {
+    let report = wrap(
+        r#"[{"name": "flag", "kind": "var", "type": "Var", "base": "Int", "init": 0}]"#,
+        r#"[
+            {"name": "main", "kind": "normal", "body": [
+                {"sid": "s1", "kind": "call", "func": "worker", "args": [], "dst": "flag"},
+                {"sid": "s2", "kind": "return"}
+            ]},
+            {"name": "worker", "kind": "normal",
+             "body": [{"sid": "s1", "kind": "return"}]}
+        ]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E923"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn assign_local_to_resource_is_e936() {
+    let report = wrap(
+        r#"[{"name": "count", "kind": "var", "type": "Var", "base": "Int", "init": 0}]"#,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "assign_local", "target": "count", "expr": "1"},
+            {"sid": "s2", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E936"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn local_colliding_with_resource_is_e914() {
+    let report = wrap(
+        r#"[{"name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync"}]"#,
+        r#"[{"name": "main", "kind": "normal",
+            "locals": [{"name": "mtx", "type": "Int", "modeled": false}],
+            "body": [{"sid": "s1", "kind": "return"}]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E914"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn duplicate_local_is_e915() {
+    let report = wrap(
+        "[]",
+        r#"[{"name": "main", "kind": "normal",
+            "locals": [
+                {"name": "tmp", "type": "Int", "modeled": false},
+                {"name": "tmp", "type": "Bool", "modeled": false}
+            ],
+            "body": [{"sid": "s1", "kind": "return"}]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E915"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn switch_on_undefined_name_is_e935() {
+    let report = wrap(
+        "[]",
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "switch", "var": "missing",
+             "cases": {"A": "s2"}, "default": "s2"},
+            {"sid": "s2", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E935"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn switch_on_local_enum_is_valid() {
+    let report = wrap(
+        "[]",
+        r#"[{"name": "main", "kind": "normal",
+            "locals": [{"name": "st", "type": {"Enum": ["A", "B"]}, "modeled": true, "init": "A"}],
+            "body": [
+                {"sid": "s1", "kind": "switch", "var": "st",
+                 "cases": {"A": "s2", "B": "s3"}, "default": "s2"},
+                {"sid": "s2", "kind": "return"},
+                {"sid": "s3", "kind": "return"}
+            ]}]"#,
+    );
+    assert!(report.valid, "got: {:?}", report.diagnostics);
+}
+
+#[test]
+fn scope_of_modeled_param_function_is_e922() {
+    let report = wrap(
+        "[]",
+        r#"[
+            {"name": "main", "kind": "normal", "body": [
+                {"sid": "s1", "kind": "scope", "funcs": ["worker"]},
+                {"sid": "s2", "kind": "return"}
+            ]},
+            {"name": "worker", "kind": "normal",
+             "params": [{"name": "n", "type": "Int", "modeled": true}],
+             "body": [{"sid": "s1", "kind": "return"}]}
+        ]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E922"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn spawn_args_arity_mismatch_is_e924() {
+    let report = wrap(
+        "[]",
+        r#"[
+            {"name": "main", "kind": "normal", "body": [
+                {"sid": "s1", "kind": "spawn", "func": "worker", "args": ["a", "b"], "handle": "h"},
+                {"sid": "s2", "kind": "join", "handle": "h"},
+                {"sid": "s3", "kind": "return"}
+            ]},
+            {"name": "worker", "kind": "normal",
+             "params": [{"name": "label", "type": "String", "modeled": false}],
+             "body": [{"sid": "s1", "kind": "return"}]}
+        ]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E924"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn modeled_local_on_spawn_target_is_e937_warning() {
+    let report = wrap(
+        "[]",
+        r#"[
+            {"name": "main", "kind": "normal", "body": [
+                {"sid": "s1", "kind": "scope", "funcs": ["worker"]},
+                {"sid": "s2", "kind": "return"}
+            ]},
+            {"name": "worker", "kind": "normal",
+             "locals": [{"name": "tmp", "type": "Int", "modeled": true}],
+             "body": [{"sid": "s1", "kind": "return"}]}
+        ]"#,
+    );
+    assert!(report.valid, "warning only, got: {:?}", report.diagnostics);
+    assert!(
+        codes(&report).contains(&"E937"),
         "got: {:?}",
         report.diagnostics
     );
