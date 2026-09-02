@@ -4,6 +4,14 @@ use concir::ast::Program;
 use concir::validate::validate;
 
 fn wrap(resources: &str, functions: &str) -> concir::diagnostic::ValidationReport {
+    wrap_prot(resources, "[]", functions)
+}
+
+fn wrap_prot(
+    resources: &str,
+    protection: &str,
+    functions: &str,
+) -> concir::diagnostic::ValidationReport {
     let json = format!(
         r#"{{
             "program": "p",
@@ -12,7 +20,7 @@ fn wrap(resources: &str, functions: &str) -> concir::diagnostic::ValidationRepor
                 "provides": {{"resources": [], "functions": ["main"]}},
                 "requires": {{"resources": [], "functions": []}},
                 "resources": {resources},
-                "protection": [],
+                "protection": {protection},
                 "functions": {functions}
             }}],
             "entry": "main::main"
@@ -734,6 +742,140 @@ fn bare_identifier_branch_is_e201() {
     assert!(!report.valid);
     assert!(
         codes(&report).contains(&"E201"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+fn prot_count_mtx() -> (&'static str, &'static str) {
+    (
+        r#"[{"name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync"},
+            {"name": "count", "kind": "var", "type": "Var", "base": "Int", "init": 0}]"#,
+        r#"[{"var": "count", "lock": "mtx"}]"#,
+    )
+}
+
+#[test]
+fn branch_on_protected_var_without_lock_is_e309() {
+    let (resources, protection) = prot_count_mtx();
+    let report = wrap_prot(
+        resources,
+        protection,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "branch", "cond": "count > 0", "then": "s2", "else": "s3"},
+            {"sid": "s2", "kind": "return"},
+            {"sid": "s3", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E309"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn fqn_in_guard_without_lock_is_e309() {
+    let (resources, protection) = prot_count_mtx();
+    let report = wrap_prot(
+        resources,
+        protection,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "branch", "cond": "main::count > 0", "then": "s2", "else": "s3"},
+            {"sid": "s2", "kind": "return"},
+            {"sid": "s3", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E309"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn branch_on_protected_var_with_lock_is_valid() {
+    let (resources, protection) = prot_count_mtx();
+    let report = wrap_prot(
+        resources,
+        protection,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "mutex_lock", "resource": "mtx"},
+            {"sid": "s2", "kind": "branch", "cond": "count > 0", "then": "s3", "else": "s3"},
+            {"sid": "s3", "kind": "mutex_unlock", "resource": "mtx"},
+            {"sid": "s4", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(
+        report.valid,
+        "holding the lock covers a guard on the Var. got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn write_expr_reading_other_protected_var_is_e309() {
+    let report = wrap_prot(
+        r#"[{"name": "mtx", "kind": "sync", "type": "Mutex", "mode": "Sync"},
+            {"name": "count", "kind": "var", "type": "Var", "base": "Int", "init": 0},
+            {"name": "out", "kind": "var", "type": "Var", "base": "Int", "init": 0}]"#,
+        r#"[{"var": "count", "lock": "mtx"}]"#,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "write_shared", "resource": "out", "expr": "count + 1"},
+            {"sid": "s2", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E309"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn call_arg_protected_var_without_lock_is_e309() {
+    let (resources, protection) = prot_count_mtx();
+    let report = wrap_prot(
+        resources,
+        protection,
+        r#"[
+            {"name": "main", "kind": "normal", "body": [
+                {"sid": "s1", "kind": "call", "func": "worker", "args": ["count"]},
+                {"sid": "s2", "kind": "return"}
+            ]},
+            {"name": "worker", "kind": "normal",
+             "params": [{"name": "n", "type": "Int", "modeled": true}],
+             "body": [
+                {"sid": "s1", "kind": "return"}
+             ]}
+        ]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E309"),
+        "got: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn switch_on_protected_var_without_lock_is_e309() {
+    let (resources, protection) = prot_count_mtx();
+    let report = wrap_prot(
+        resources,
+        protection,
+        r#"[{"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "switch", "var": "count",
+             "cases": {"0": "s2"}, "default": "s2"},
+            {"sid": "s2", "kind": "return"}
+        ]}]"#,
+    );
+    assert!(!report.valid);
+    assert!(
+        codes(&report).contains(&"E309"),
         "got: {:?}",
         report.diagnostics
     );

@@ -61,7 +61,7 @@ domain (e.g. writing `11` to an `Int{[0,10]}` variable).
 | E306 | SendOnNonChannel      |  error   | `channel_send` / `channel_recv` on a non-Channel                     |
 | E307 | LoadOnNonAtomic       |  error   | `atomic_*` on a non-Atomic                                           |
 | E308 | ReadWriteOnNonVar     |  error   | `read_shared` / `write_shared` on a non-Var                          |
-| E309 | VarAccessWithoutLock  |  error   | read/write of a protected Var without holding the corresponding lock |
+| E309 | VarAccessWithoutLock  |  error   | read/write of a protected Var without holding the corresponding lock, including `read_shared`/`write_shared` and r-values in `branch`/`switch`/`expr`/`args` |
 
 **Call / statement–resource compatibility**:
 

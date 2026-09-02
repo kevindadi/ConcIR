@@ -63,20 +63,20 @@ impl Expr {
     }
 
     /// Resource names (Var/Atomic) read by this expression.
-    pub fn value_resource_names<'a>(&'a self, env: &'a NameEnv) -> Vec<&'a str> {
+    pub fn value_resource_names(&self, env: &NameEnv) -> Vec<String> {
         let mut out = Vec::new();
         collect_names(self, env, &mut out);
         out
     }
 }
 
-fn collect_names<'a>(expr: &'a Expr, env: &'a NameEnv, out: &mut Vec<&'a str>) {
+fn collect_names(expr: &Expr, env: &NameEnv, out: &mut Vec<String>) {
     match expr {
         Expr::Lit(_) => {}
         Expr::Name(n) => {
             if let Some(slot) = env.get(n) {
                 if matches!(slot.kind, SlotKind::Var | SlotKind::Atomic) {
-                    out.push(n.as_str());
+                    out.push(n.clone());
                 }
             }
         }
