@@ -483,6 +483,10 @@ fn protected_var_accesses(op: &Op, env: &NameEnv) -> Vec<String> {
     if let Some((resource, _)) = op.shared_var_access() {
         names.push(resource.to_string());
     }
+    if let Op::SeqHole { reads, writes, .. } = op {
+        names.extend(reads.iter().cloned());
+        names.extend(writes.iter().cloned());
+    }
     if let Op::Switch { var, .. } = op {
         if env.get(var).is_some_and(|s| s.kind == SlotKind::Var) {
             names.push(var.clone());

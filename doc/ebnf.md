@@ -227,6 +227,7 @@ Op         = Nop
            | ReadShared
            | WriteShared
            | AbstractStep
+           | SeqHole
            | AtomicLoad
            | AtomicStore
            | AtomicCas
@@ -267,7 +268,10 @@ WriteShared
 
 AbstractStep
            = "abstract_step", { Name }, { Name }, [ String ] ;
-               (* reads, writes, desc *)
+               (* reads, writes, desc — modeled concurrent step *)
+
+SeqHole    = "seq_hole", Ident, [ String ], { Name }, { Name } ;
+               (* id, desc, reads, writes — sequential fill site; not in the net *)
 
 AtomicLoad = "atomic_load", Name, Ident ;
                (* dst := current value, Atomic base type *)

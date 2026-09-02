@@ -31,6 +31,7 @@ Status legend: `[x]` done · `[ ]` planned · `[~]` in progress
 - `[x]` FQN rules: same-module short name; cross-module FQN listed in `requires`; `entry` is an FQN
 - `[x]` Schema-level module validation (E108)
 - `[x]` Function concurrency interface (`may_block`, `locks`) and `requires.functions` signatures (E8xx)
+- `[x]` `seq_hole` as an explicit sequential fill site, distinct from `abstract_step` and nobody functions
 - `[ ]` Concatenate independently authored module files into one `Program`
 
 ## Validation & diagnostics

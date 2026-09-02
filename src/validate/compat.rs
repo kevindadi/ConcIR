@@ -163,6 +163,27 @@ fn check_op(
                 "atomic_* requires an Atomic",
             );
         }
+        Op::SeqHole { reads, writes, .. } => {
+            for name in reads.iter().chain(writes.iter()) {
+                if let Some(rt) = rt_map.get(name) {
+                    if !matches!(rt, ResType::Var(_) | ResType::Atomic(_)) {
+                        diags.push(
+                            Diagnostic::error(
+                                "E310",
+                                format!(
+                                    "seq_hole footprint '{name}' is a sync primitive; sequential \
+                                     holes may name only Var or Atomic"
+                                ),
+                            )
+                            .with_path(path.to_string())
+                            .with_fix(
+                                "move lock/wait/send into the skeleton; keep seq_hole to sequential data",
+                            ),
+                        );
+                    }
+                }
+            }
+        }
         Op::ReadShared { resource, .. } | Op::WriteShared { resource, .. } => {
             if let Some(rt) = rt_map.get(resource) {
                 if !matches!(rt, ResType::Var(_)) {

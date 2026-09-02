@@ -16,6 +16,7 @@ Unknown `kind` tags and leftover fields from the old block shape
 | E000 | JsonParseError        |  error   | JSON syntax error or invalid top-level structure; deserialization failed                   |
 | E001 | MissingField          |  error   | Resource declaration missing a field required by its type (Semaphore `count`; Channel `base` and `capacity`; Var/Atomic `base`/`init`). Channel `capacity` must be ≥ 0. |
 | E005 | InvalidSidFormat      |  error   | sid format is not `"s"` + digits (e.g. `"s1"`, `"s10"`)                                    |
+| E006 | InvalidSeqHoleId      |  error   | `seq_hole.id` is not an identifier `[A-Za-z_][A-Za-z0-9_]*`                                |
 | E008 | InvalidKind           |  error   | Resource `kind` is not `"sync"` / `"var"`, or sync `type` value is illegal                 |
 | E009 | InvalidMode           |  error   | `mode` is not `"Sync"` / `"Async"`                                                         |
 | E010 | InvalidFnKind         |  error   | Function `kind` is not `"normal"` / `"async"`, or `form` is not `"function"` / `"closure"` |
@@ -33,6 +34,7 @@ Unknown `kind` tags and leftover fields from the old block shape
 | E106 | DuplicateSid      |  error   | Duplicate sid within the same function body                                                                                                                                              |
 | E107 | UndefinedEntry    |  error   | `entry` is not an FQN, or the FQN is not a defined function                                                                                                                              |
 | E108 | ModuleContract    |  error   | Duplicate module name; `provides` names a missing local entity; `requires` is not an FQN or does not resolve to an exported entity; cross-module call not listed in `requires.functions` |
+| E109 | DuplicateSeqHoleId |  error  | two `seq_hole` statements in the same function share an `id` |
 
 ## E2xx — Type errors
 
@@ -61,7 +63,8 @@ domain (e.g. writing `11` to an `Int{[0,10]}` variable).
 | E306 | SendOnNonChannel      |  error   | `channel_send` / `channel_recv` on a non-Channel                     |
 | E307 | LoadOnNonAtomic       |  error   | `atomic_*` on a non-Atomic                                           |
 | E308 | ReadWriteOnNonVar     |  error   | `read_shared` / `write_shared` on a non-Var                          |
-| E309 | VarAccessWithoutLock  |  error   | read/write of a protected Var without holding the corresponding lock, including `read_shared`/`write_shared` and r-values in `branch`/`switch`/`expr`/`args` |
+| E309 | VarAccessWithoutLock  |  error   | read/write of a protected Var without holding the corresponding lock, including `read_shared`/`write_shared`, `seq_hole` reads/writes, and r-values in `branch`/`switch`/`expr`/`args` |
+| E310 | SeqHoleSyncResource   |  error   | `seq_hole` `reads` / `writes` names a Mutex, RwLock, Condvar, Semaphore, or Channel |
 
 **Call / statement–resource compatibility**:
 

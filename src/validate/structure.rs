@@ -251,7 +251,7 @@ fn check_functions(program: &Program, diags: &mut Vec<Diagnostic>) {
                 );
             }
 
-            // E005: sid format
+            // E005: sid format; E006: seq_hole id is an identifier
             for (si, stmt) in f.body.iter().enumerate() {
                 if !is_valid_sid(&stmt.sid) {
                     diags.push(
@@ -262,6 +262,21 @@ fn check_functions(program: &Program, diags: &mut Vec<Diagnostic>) {
                         .with_path(format!("{fn_path}.body[{si}].sid"))
                         .with_fix("sid must be \"s\" followed by a number, e.g. \"s1\", \"s10\""),
                     );
+                }
+                if let Op::SeqHole { id, .. } = &stmt.op {
+                    if !crate::fqn::is_ident(id) {
+                        diags.push(
+                            Diagnostic::error(
+                                "E006",
+                                format!(
+                                    "seq_hole id '{id}' in function '{}' is not an identifier",
+                                    f.name
+                                ),
+                            )
+                            .with_path(format!("{fn_path}.body[{si}].id"))
+                            .with_fix("use an identifier: [A-Za-z_][A-Za-z0-9_]*"),
+                        );
+                    }
                 }
             }
         }

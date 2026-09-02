@@ -44,7 +44,8 @@ lock is E309.
 | `assign_local`  | `target`, `expr`                         | Write a function-local    |
 | `read_shared`   | `resource`, optional `dst`               | Read a `Var`              |
 | `write_shared`  | `resource`, `expr`                       | Write a `Var`             |
-| `abstract_step` | `reads`, `writes`, `desc`                | Opaque modeled step       |
+| `abstract_step` | `reads`, `writes`, `desc`                | Opaque **modeled** step (enters the CVN) |
+| `seq_hole`      | `id`, `desc`, `reads`, `writes`          | Sequential fill site (not in the net) |
 | `atomic_load`   | `resource`, `dst`                        | Instantaneous Atomic read; `dst` := current value |
 | `atomic_store`  | `resource`, `value`                      | Atomic write              |
 | `atomic_cas`    | `resource`, `expected`, `desired`, `dst` | Compare-and-swap; `dst` := **old value** (see below) |
@@ -72,6 +73,20 @@ the old value happens to be Bool). Test success with a `branch`:
 
 On the back-edge, `ret` is the new current value; the next CAS should use it
 as `expected` (via `assign_local` or by passing `ret` in `expected`).
+
+### `seq_hole` vs `abstract_step` vs nobody
+
+| Construct | In the net? | Role |
+| --------- | :---------: | ---- |
+| `abstract_step` | yes | Opaque concurrent step with a resource footprint |
+| `seq_hole` | no | Hole where an LLM (or later pass) fills **sequential** code. `id` is unique per function (E109). `reads` / `writes` may name only Var / Atomic (E310); protected Vars still need the lock (E309). |
+| empty `body` (nobody) | no | Whole-function placeholder; interface is `may_block` / `locks` / `effects` |
+
+```json
+{ "sid": "s3", "kind": "seq_hole", "id": "validate_payload", "desc": "checksum then store", "reads": ["buf"], "writes": [] }
+```
+
+Do not put lock / wait / send inside a hole — those belong in the skeleton.
 
 ## Synchronization
 

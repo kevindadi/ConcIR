@@ -474,6 +474,18 @@ pub enum Op {
         #[serde(default)]
         desc: String,
     },
+    /// Sequential fill site. Does **not** enter the concurrent store
+    /// (unlike [`Op::AbstractStep`]). `id` is unique per function.
+    #[serde(rename = "seq_hole")]
+    SeqHole {
+        id: String,
+        #[serde(default)]
+        desc: String,
+        #[serde(default)]
+        reads: Vec<String>,
+        #[serde(default)]
+        writes: Vec<String>,
+    },
     #[serde(rename = "atomic_load")]
     AtomicLoad { resource: String, dst: String },
     #[serde(rename = "atomic_store")]
@@ -783,6 +795,16 @@ impl Op {
             | Op::CondvarNotify { condvar, .. }
             | Op::CondvarNotifyAll { condvar, .. } => Some(condvar),
             Op::ReadShared { resource, .. } | Op::WriteShared { resource, .. } => Some(resource),
+            _ => None,
+        }
+    }
+
+    /// Resource names in a sequential footprint (`abstract_step` / `seq_hole`).
+    pub fn footprint(&self) -> Option<(&[String], &[String])> {
+        match self {
+            Op::AbstractStep { reads, writes, .. } | Op::SeqHole { reads, writes, .. } => {
+                Some((reads, writes))
+            }
             _ => None,
         }
     }

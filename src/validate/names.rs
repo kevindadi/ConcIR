@@ -70,6 +70,7 @@ fn check_duplicate_sids(program: &Program, diags: &mut Vec<Diagnostic>) {
     for (mi, m) in program.modules.iter().enumerate() {
         for (fi, f) in m.functions.iter().enumerate() {
             let mut seen = HashSet::new();
+            let mut hole_ids = HashSet::new();
             for (si, stmt) in f.body.iter().enumerate() {
                 if !seen.insert(stmt.sid.clone()) {
                     diags.push(
@@ -83,6 +84,18 @@ fn check_duplicate_sids(program: &Program, diags: &mut Vec<Diagnostic>) {
                         .with_path(format!("{}.body[{si}].sid", Program::fn_path(mi, fi)))
                         .with_fix("assign a unique statement id"),
                     );
+                }
+                if let Op::SeqHole { id, .. } = &stmt.op {
+                    if !hole_ids.insert(id.clone()) {
+                        diags.push(
+                            Diagnostic::error(
+                                "E109",
+                                format!("duplicate seq_hole id '{id}' in function '{}'", f.name),
+                            )
+                            .with_path(format!("{}.body[{si}].id", Program::fn_path(mi, fi)))
+                            .with_fix("give each seq_hole a unique id within the function"),
+                        );
+                    }
                 }
             }
         }
@@ -197,6 +210,17 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
                         .with_path(path.clone())
                         .with_fix("declare the resource or import it via requires"),
                 );
+            }
+        }
+        if let Some((reads, writes)) = stmt.op.footprint() {
+            for resource in reads.iter().chain(writes.iter()) {
+                if !resource_defined(program, &m.name, resource) {
+                    diags.push(
+                        Diagnostic::error("E101", format!("undefined resource '{resource}'"))
+                            .with_path(path.clone())
+                            .with_fix("declare the resource or import it via requires"),
+                    );
+                }
             }
         }
         if let Op::CondvarWait { lock, .. } = &stmt.op {
