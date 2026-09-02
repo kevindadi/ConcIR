@@ -3,6 +3,11 @@ Cargo.lock
 
 .vscode
 .cursor
+.claude
+.agents
+.opencode
+.codex
+/.github/skills/
 
 .DS_Store
 **.snap

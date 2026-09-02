@@ -40,6 +40,7 @@ items, and the process exits with exit code 1.
 | [`doc/ebnf.md`](doc/ebnf.md)     | ISO EBNF abstract syntax                                             |
 | [`doc/error_codes.md`](doc/error_codes.md) | Validation error reference (E0xx–E9xx) and diagnostic output format |
 | [`doc/todo.md`](doc/todo.md)     | Roadmap: modeling scope, call semantics, modular generation     |
+| [`skills/`](skills/README.md)    | Agent skill for generating ConcIR; `./skills/install.sh` installs it into Cursor / Claude Code / Codex / OpenCode |
 
 ## Project structure
 
@@ -78,4 +79,20 @@ examples/
   with_summary.json         Body-less function call chain
   state_machine.json        State machine + Switch
   complex_rwlock.json       RwLock + Condvar combined example
+skills/
+  generate-concir/     Agent skill (SKILL.md) for ConcIR generation
+  install.sh           Copy or link the skill into a coding agent
 ```
+
+## Agent skills
+
+`skills/` is the portable source. It is not a client-specific hidden
+directory. To make Cursor, Claude Code, Codex, or OpenCode load the
+generator skill:
+
+```bash
+./skills/install.sh
+```
+
+See [`skills/README.md`](skills/README.md) for `--scope user`, individual
+targets, and uninstall.
