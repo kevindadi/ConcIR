@@ -33,6 +33,7 @@ Status legend: `[x]` done · `[ ]` planned · `[~]` in progress
 - `[x]` Function concurrency interface (`may_block`, `locks`) and `requires.functions` signatures (E8xx)
 - `[x]` `seq_hole` as an explicit sequential fill site, distinct from `abstract_step` and nobody functions
 - `[x]` Module-level `types` with `provides.types` / `requires.types` (E110–E113)
+- `[x]` Diagnostic `location` is `module::function.sid` (JSON `path` is secondary)
 - `[ ]` Concatenate independently authored module files into one `Program`
 
 ## Validation & diagnostics

@@ -1,7 +1,7 @@
 # ConcIR Error Code Reference
 
-The validator emits structured diagnostics. Locations use JSON paths, e.g.
-`modules[0].functions[1].body[3].call`.
+The validator emits structured diagnostics. The **primary** location is
+`module::function.sid` (a control location). The JSON `path` is secondary.
 
 See [`syntax/`](syntax/README.md) for the grammar and [`todo.md`](todo.md) for the roadmap.
 
@@ -178,6 +178,7 @@ Each diagnostic includes the following fields:
   "code": "E501",
   "severity": "error",
   "message": "lock 'mtx' not unlocked on return path in function 'worker'",
+  "location": "main::worker.s4",
   "path": "modules[0].functions[1].body[3]",
   "fix_hint": "add mutex_unlock/rwlock_unlock before return"
 }
@@ -188,5 +189,6 @@ Each diagnostic includes the following fields:
 | `code`     | Error code (e.g. `E501`)                                       |
 | `severity` | `"error"` or `"warning"`; only error affects the `valid` field |
 | `message`  | Human-readable error description                               |
-| `path`     | JSON path location (optional)                                  |
+| `location` | **Primary** anchor: `module::function.sid` for a statement, `module::function` for a function-level diagnostic |
+| `path`     | JSON path (optional, secondary)                                |
 | `fix_hint` | Suggested fix (optional)                                       |

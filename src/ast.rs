@@ -673,6 +673,16 @@ impl Program {
         format!("modules[{mi}].functions[{fi}].body[{si}]")
     }
 
+    /// Control location `module::function.sid`.
+    pub fn stmt_location(module: &Module, function: &Function, stmt: &Stmt) -> String {
+        fqn::location(&module.name, &function.name, &stmt.sid)
+    }
+
+    /// Function-level location `module::function` (no sid).
+    pub fn fn_location(module: &Module, function: &Function) -> String {
+        fqn::fqn(&module.name, &function.name)
+    }
+
     /// Resolve a function name from `from_module` (short or FQN).
     pub fn lookup_function(&self, from_module: &str, name: &str) -> Option<(&Module, &Function)> {
         let (module, entity) = if let Some(pair) = fqn::split_fqn(name) {

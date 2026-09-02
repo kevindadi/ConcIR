@@ -83,6 +83,7 @@ fn check_duplicate_sids(program: &Program, diags: &mut Vec<Diagnostic>) {
                             ),
                         )
                         .with_path(format!("{}.body[{si}].sid", Program::fn_path(mi, fi)))
+                        .with_location(Program::stmt_location(m, f, stmt))
                         .with_fix("assign a unique statement id"),
                     );
                 }
@@ -94,6 +95,7 @@ fn check_duplicate_sids(program: &Program, diags: &mut Vec<Diagnostic>) {
                                 format!("duplicate seq_hole id '{id}' in function '{}'", f.name),
                             )
                             .with_path(format!("{}.body[{si}].id", Program::fn_path(mi, fi)))
+                            .with_location(Program::stmt_location(m, f, stmt))
                             .with_fix("give each seq_hole a unique id within the function"),
                         );
                     }
@@ -252,13 +254,15 @@ fn resource_defined(program: &Program, from_module: &str, name: &str) -> bool {
 }
 
 fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
-    program.walk_stmts(|mi, fi, si, m, _, stmt| {
+    program.walk_stmts(|mi, fi, si, m, f, stmt| {
         let path = Program::stmt_path(mi, fi, si);
+        let loc = Program::stmt_location(m, f, stmt);
         if let Some(resource) = stmt.op.resource_name() {
             if !resource_defined(program, &m.name, resource) {
                 diags.push(
                     Diagnostic::error("E101", format!("undefined resource '{resource}'"))
                         .with_path(path.clone())
+                        .with_location(&loc)
                         .with_fix("declare the resource or import it via requires"),
                 );
             }
@@ -269,6 +273,7 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
                     diags.push(
                         Diagnostic::error("E101", format!("undefined resource '{resource}'"))
                             .with_path(path.clone())
+                            .with_location(&loc)
                             .with_fix("declare the resource or import it via requires"),
                     );
                 }
@@ -282,6 +287,7 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
                         format!("undefined resource '{lock}' referenced in condvar_wait"),
                     )
                     .with_path(path.clone())
+                    .with_location(&loc)
                     .with_fix("declare this lock resource"),
                 );
             }
@@ -293,6 +299,7 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
                         diags.push(
                             Diagnostic::error("E101", format!("undefined resource '{resource}'"))
                                 .with_path(path.clone())
+                                .with_location(&loc)
                                 .with_fix("declare the resource or import it via requires"),
                         );
                     }
@@ -305,6 +312,7 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
                                 format!("undefined resource '{lock}' referenced in condvar_wait"),
                             )
                             .with_path(path.clone())
+                            .with_location(&loc)
                             .with_fix("declare this lock resource"),
                         );
                     }
@@ -315,12 +323,14 @@ fn check_resource_references(program: &Program, diags: &mut Vec<Diagnostic>) {
 }
 
 fn check_function_references(program: &Program, diags: &mut Vec<Diagnostic>) {
-    program.walk_stmts(|mi, fi, si, m, _, stmt| {
+    program.walk_stmts(|mi, fi, si, m, f, stmt| {
+        let loc = Program::stmt_location(m, f, stmt);
         for func in stmt.op.callee_funcs() {
             if program.lookup_function(&m.name, func).is_none() {
                 diags.push(
                     Diagnostic::error("E102", format!("undefined function '{func}' referenced"))
                         .with_path(Program::stmt_path(mi, fi, si))
+                        .with_location(&loc)
                         .with_fix("define the function or import it via requires"),
                 );
             }
@@ -337,6 +347,7 @@ fn check_function_references(program: &Program, diags: &mut Vec<Diagnostic>) {
                             ),
                         )
                         .with_path(Program::stmt_path(mi, fi, si))
+                        .with_location(&loc)
                         .with_fix("add this FQN to the module's requires.functions"),
                     );
                 }
@@ -349,7 +360,7 @@ fn check_sid_references(program: &Program, diags: &mut Vec<Diagnostic>) {
     for (mi, m) in program.modules.iter().enumerate() {
         for (fi, f) in m.functions.iter().enumerate() {
             let sids: HashSet<&str> = f.body.iter().map(|s| s.sid.as_str()).collect();
-            for (si, _) in f.body.iter().enumerate() {
+            for (si, stmt) in f.body.iter().enumerate() {
                 for t in f.successors(si) {
                     if !sids.contains(t) {
                         diags.push(
@@ -358,6 +369,7 @@ fn check_sid_references(program: &Program, diags: &mut Vec<Diagnostic>) {
                                 format!("undefined statement id '{t}' in function '{}'", f.name),
                             )
                             .with_path(Program::stmt_path(mi, fi, si))
+                            .with_location(Program::stmt_location(m, f, stmt))
                             .with_fix("use an existing statement id from this function"),
                         );
                     }

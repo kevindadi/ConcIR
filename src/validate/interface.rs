@@ -23,7 +23,7 @@ fn check_declared_interfaces(
         for (fi, f) in m.functions.iter().enumerate() {
             let fn_path = Program::fn_path(mi, fi);
             check_lock_effect_names(program, m, f, &fn_path, rt_map, diags);
-            check_may_block_vs_body(f, &fn_path, diags);
+            check_may_block_vs_body(m, f, &fn_path, diags);
         }
     }
 }
@@ -54,6 +54,7 @@ fn check_lock_effect_names(
                         ),
                     )
                     .with_path(path.clone())
+                    .with_location(Program::fn_location(module, f))
                     .with_fix("list each lock at most once in this field"),
                 );
             }
@@ -67,6 +68,7 @@ fn check_lock_effect_names(
                         ),
                     )
                     .with_path(path)
+                    .with_location(Program::fn_location(module, f))
                     .with_fix("name a Mutex or RwLock visible in this module"),
                 );
                 continue;
@@ -87,6 +89,7 @@ fn check_lock_effect_names(
                         ),
                     )
                     .with_path(path)
+                    .with_location(Program::fn_location(module, f))
                     .with_fix("use a Mutex or RwLock name"),
                 );
             }
@@ -94,7 +97,12 @@ fn check_lock_effect_names(
     }
 }
 
-fn check_may_block_vs_body(f: &Function, fn_path: &str, diags: &mut Vec<Diagnostic>) {
+fn check_may_block_vs_body(
+    module: &Module,
+    f: &Function,
+    fn_path: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
     let Some(declared) = f.may_block else {
         return;
     };
@@ -112,6 +120,7 @@ fn check_may_block_vs_body(f: &Function, fn_path: &str, diags: &mut Vec<Diagnost
                 ),
             )
             .with_path(format!("{fn_path}.may_block"))
+            .with_location(Program::fn_location(module, f))
             .with_fix("set may_block to false, or add a blocking statement"),
         );
     } else if !declared && inferred {
@@ -124,6 +133,7 @@ fn check_may_block_vs_body(f: &Function, fn_path: &str, diags: &mut Vec<Diagnost
                 ),
             )
             .with_path(format!("{fn_path}.may_block"))
+            .with_location(Program::fn_location(module, f))
             .with_fix("set may_block to true, or remove the blocking operation"),
         );
     }

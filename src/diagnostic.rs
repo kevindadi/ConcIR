@@ -12,6 +12,11 @@ pub struct Diagnostic {
     pub code: &'static str,
     pub severity: Severity,
     pub message: String,
+    /// Primary anchor: `module::function.sid` for a statement,
+    /// `module::function` for a function-level diagnostic.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    /// JSON path; secondary to [`Self::location`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -30,6 +35,7 @@ impl Diagnostic {
             code,
             severity: Severity::Error,
             message: message.into(),
+            location: None,
             path: None,
             fix_hint: None,
         }
@@ -40,9 +46,15 @@ impl Diagnostic {
             code,
             severity: Severity::Warning,
             message: message.into(),
+            location: None,
             path: None,
             fix_hint: None,
         }
+    }
+
+    pub fn with_location(mut self, loc: impl Into<String>) -> Self {
+        self.location = Some(loc.into());
+        self
     }
 
     pub fn with_path(mut self, path: impl Into<String>) -> Self {

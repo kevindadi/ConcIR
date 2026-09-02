@@ -275,6 +275,7 @@ fn check_functions(program: &Program, diags: &mut Vec<Diagnostic>) {
                             format!("invalid sid format '{}' in function '{}'", stmt.sid, f.name),
                         )
                         .with_path(format!("{fn_path}.body[{si}].sid"))
+                        .with_location(Program::stmt_location(m, f, stmt))
                         .with_fix("sid must be \"s\" followed by a number, e.g. \"s1\", \"s10\""),
                     );
                 }
@@ -289,6 +290,7 @@ fn check_functions(program: &Program, diags: &mut Vec<Diagnostic>) {
                                 ),
                             )
                             .with_path(format!("{fn_path}.body[{si}].id"))
+                            .with_location(Program::stmt_location(m, f, stmt))
                             .with_fix("use an identifier: [A-Za-z_][A-Za-z0-9_]*"),
                         );
                     }

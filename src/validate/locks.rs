@@ -46,9 +46,9 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
             let cfg = build_cfg(f);
             let fn_path = Program::fn_path(mi, fi);
 
-            check_lock_drop_pairing(f, &cfg, &lock_resources, &fn_path, diags);
-            check_sync_lock_across_await(f, &cfg, &sync_lock_refs, &fn_path, diags);
-            check_lock_ordering(f, &cfg, &lock_resources, &fn_path, diags);
+            check_lock_drop_pairing(m, f, &cfg, &lock_resources, &fn_path, diags);
+            check_sync_lock_across_await(m, f, &cfg, &sync_lock_refs, &fn_path, diags);
+            check_lock_ordering(m, f, &cfg, &lock_resources, &fn_path, diags);
             check_var_access_without_lock(program, m, f, &cfg, &protection_map, &fn_path, diags);
             check_requires_held(program, m, f, &cfg, &fn_path, diags);
         }
@@ -83,6 +83,7 @@ fn build_cfg(f: &Function) -> Cfg {
 
 /// E501, E502, E503: lock/drop pairing via worklist algorithm.
 fn check_lock_drop_pairing(
+    module: &Module,
     f: &Function,
     cfg: &Cfg,
     lock_resources: &HashSet<&str>,
@@ -117,6 +118,7 @@ fn check_lock_drop_pairing(
                             ),
                         )
                         .with_path(format!("{fn_path}.body[{idx}]"))
+                        .with_location(Program::stmt_location(module, f, stmt))
                         .with_fix("unlock before re-locking"),
                     );
                 }
@@ -134,6 +136,7 @@ fn check_lock_drop_pairing(
                             ),
                         )
                         .with_path(format!("{fn_path}.body[{idx}]"))
+                        .with_location(Program::stmt_location(module, f, stmt))
                         .with_fix("lock before unlock, or remove the unlock"),
                     );
                 }
@@ -152,6 +155,7 @@ fn check_lock_drop_pairing(
                         ),
                     )
                     .with_path(format!("{fn_path}.body[{idx}]"))
+                    .with_location(Program::stmt_location(module, f, stmt))
                     .with_fix("add mutex_unlock/rwlock_unlock before return"),
                 );
             }
@@ -165,6 +169,7 @@ fn check_lock_drop_pairing(
 
 /// E504: Sync-mode lock held across await point in async function.
 fn check_sync_lock_across_await(
+    module: &Module,
     f: &Function,
     cfg: &Cfg,
     sync_locks: &HashSet<&str>,
@@ -213,6 +218,7 @@ fn check_sync_lock_across_await(
                             ),
                         )
                         .with_path(format!("{fn_path}.body[{idx}]"))
+                        .with_location(Program::stmt_location(module, f, stmt))
                         .with_fix("unlock before await and re-acquire after, or use Async-mode lock"),
                     );
             }
@@ -226,6 +232,7 @@ fn check_sync_lock_across_await(
 
 /// E505: Lock ordering violation.
 fn check_lock_ordering(
+    module: &Module,
     f: &Function,
     cfg: &Cfg,
     lock_resources: &HashSet<&str>,
@@ -306,6 +313,7 @@ fn check_lock_ordering(
                             ),
                         )
                         .with_path(fn_path.to_string())
+                        .with_location(Program::fn_location(module, f))
                         .with_fix("use a consistent lock acquisition order across all paths"),
                     );
                 }
@@ -366,6 +374,7 @@ fn check_var_access_without_lock(
                     ),
                 )
                 .with_path(format!("{fn_path}.body[{idx}]"))
+                .with_location(Program::stmt_location(module, f, stmt))
                 .with_fix("acquire the lock before accessing this variable"),
             );
         }
@@ -429,6 +438,7 @@ fn check_requires_held(
                             ),
                         )
                         .with_path(format!("{fn_path}.body[{idx}]"))
+                        .with_location(Program::stmt_location(module, f, stmt))
                         .with_fix("acquire the lock before this call, or drop requires_held on the callee"),
                     );
                 }
