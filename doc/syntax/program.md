@@ -7,7 +7,7 @@ the IR.
 ```json
 {
   "program": "app",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "modules": [ ... ],
   "entry": "core::main"
 }
@@ -16,7 +16,7 @@ the IR.
 | Field     | Type   | Required | Description                              |
 | --------- | ------ | :------: | ---------------------------------------- |
 | `program` | string |   yes    | Program name                             |
-| `version` | string |    no    | Defaults to `"3.4.0"`                    |
+| `version` | string |    no    | Defaults to `"3.5.0"`                    |
 | `modules` | array  |   yes    | One or more [`Module`](module.md)s       |
 | `entry`   | FQN    |   yes    | Entry function, e.g. `core::main`        |
 

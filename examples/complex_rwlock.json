@@ -1,6 +1,6 @@
 {
   "program": "complex_rwlock",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "modules": [
     {
       "name": "main",
@@ -109,7 +109,7 @@
               "sid": "s3",
               "kind": "write_shared",
               "resource": "shared_map",
-              "expr": "{100, true}"
+              "expr": "{size: 100, ready: true}"
             },
             {
               "sid": "s4",

@@ -2,6 +2,9 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::ast::*;
 use crate::diagnostic::Diagnostic;
+use crate::env::{NameEnv, SlotKind};
+use crate::expr;
+use crate::fqn;
 use crate::validate::types::{build_resource_type_map, ResType};
 
 /// E5xx (+ E309): Lock safety analysis via CFG path traversal.
@@ -46,14 +49,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
             check_lock_drop_pairing(f, &cfg, &lock_resources, &fn_path, diags);
             check_sync_lock_across_await(f, &cfg, &sync_lock_refs, &fn_path, diags);
             check_lock_ordering(f, &cfg, &lock_resources, &fn_path, diags);
-            check_var_access_without_lock(
-                f,
-                &cfg,
-                &lock_resources,
-                &protection_map,
-                &fn_path,
-                diags,
-            );
+            check_var_access_without_lock(program, m, f, &cfg, &protection_map, &fn_path, diags);
         }
     }
 }
@@ -318,10 +314,15 @@ fn check_lock_ordering(
 }
 
 /// E309: Var read/write without holding the required protection lock.
+///
+/// Covers `read_shared` / `write_shared` of the Var itself, plus every
+/// parsed r-value (guards, write exprs, call/spawn args, …) and
+/// `switch.var` when the scrutinee is that Var.
 fn check_var_access_without_lock(
+    program: &Program,
+    module: &Module,
     f: &Function,
     cfg: &Cfg,
-    lock_resources: &HashSet<&str>,
     protection_map: &HashMap<String, String>,
     fn_path: &str,
     diags: &mut Vec<Diagnostic>,
@@ -331,8 +332,10 @@ fn check_var_access_without_lock(
         return;
     }
 
+    let env = NameEnv::build(program, module, f);
     let mut visited: Vec<HashSet<BTreeSet<String>>> = vec![HashSet::new(); n];
     let mut worklist: Vec<(usize, BTreeSet<String>)> = vec![(0, BTreeSet::new())];
+    let mut reported: HashSet<(usize, String)> = HashSet::new();
 
     while let Some((idx, mut held)) = worklist.pop() {
         if visited[idx].contains(&held) {
@@ -342,38 +345,70 @@ fn check_var_access_without_lock(
 
         let stmt = &f.body[idx];
 
-        let s = &stmt.op;
-        if let Some((resource, _)) = s.shared_var_access() {
-            if let Some(required_lock) = protection_map.get(resource) {
-                if !held.contains(required_lock) {
-                    diags.push(
-                            Diagnostic::error(
-                                "E309",
-                                format!(
-                                    "access to protected Var '{resource}' without holding lock '{required_lock}' in function '{}'",
-                                    f.name
-                                ),
-                            )
-                            .with_path(format!("{fn_path}.body[{idx}]"))
-                            .with_fix("acquire the lock before accessing this variable"),
-                        );
-                }
+        for resource in protected_var_accesses(&stmt.op, &env) {
+            let Some(required_lock) = required_lock(protection_map, &resource) else {
+                continue;
+            };
+            if held.contains(required_lock) {
+                continue;
             }
+            let key = (idx, short_name(&resource).to_string());
+            if !reported.insert(key) {
+                continue;
+            }
+            diags.push(
+                Diagnostic::error(
+                    "E309",
+                    format!(
+                        "access to protected Var '{resource}' without holding lock '{required_lock}' in function '{}'",
+                        f.name
+                    ),
+                )
+                .with_path(format!("{fn_path}.body[{idx}]"))
+                .with_fix("acquire the lock before accessing this variable"),
+            );
         }
+
+        let s = &stmt.op;
         if let Some(resource) = s.is_lock_acquire() {
-            if lock_resources.contains(resource) {
-                held.insert(resource.to_string());
-            }
+            held.insert(resource.to_string());
         } else if let Some(resource) = s.is_lock_release() {
-            if lock_resources.contains(resource) {
-                held.remove(resource);
-            }
+            held.remove(resource);
         }
 
         for &succ in &cfg.successors[idx] {
             worklist.push((succ, held.clone()));
         }
     }
+}
+
+fn short_name(name: &str) -> &str {
+    fqn::split_fqn(name).map(|(_, e)| e).unwrap_or(name)
+}
+
+fn required_lock<'a>(protection_map: &'a HashMap<String, String>, name: &str) -> Option<&'a str> {
+    if let Some(lock) = protection_map.get(name) {
+        return Some(lock.as_str());
+    }
+    protection_map.get(short_name(name)).map(String::as_str)
+}
+
+fn protected_var_accesses(op: &Op, env: &NameEnv) -> Vec<String> {
+    let mut names = Vec::new();
+    if let Some((resource, _)) = op.shared_var_access() {
+        names.push(resource.to_string());
+    }
+    if let Op::Switch { var, .. } = op {
+        if env.get(var).is_some_and(|s| s.kind == SlotKind::Var) {
+            names.push(var.clone());
+        }
+    }
+    for text in op.rvalue_exprs() {
+        if let Ok(expr) = expr::parse(text, env) {
+            names.extend(expr.value_resource_names(env));
+        }
+    }
+    names
 }
 
 fn has_order_conflict(a: &[String], b: &[String]) -> bool {

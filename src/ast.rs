@@ -9,7 +9,7 @@ use crate::fqn;
 // ──────────────────── Top-level ────────────────────
 
 fn default_version() -> String {
-    "3.4.0".to_string()
+    "3.5.0".to_string()
 }
 
 fn default_form() -> String {
@@ -600,6 +600,23 @@ impl Op {
             Op::ReadShared { resource, .. } => Some((resource, false)),
             Op::WriteShared { resource, .. } => Some((resource, true)),
             _ => None,
+        }
+    }
+
+    /// Expression strings in r-value position (still stored as JSON strings).
+    pub fn rvalue_exprs(&self) -> Vec<&str> {
+        match self {
+            Op::AssignLocal { expr, .. } | Op::WriteShared { expr, .. } => vec![expr],
+            Op::AtomicStore { value, .. } | Op::ChannelSend { value, .. } => vec![value],
+            Op::AtomicCas {
+                expected, desired, ..
+            } => vec![expected, desired],
+            Op::Func { args, .. } | Op::Spawn { args, .. } | Op::AsyncCall { args, .. } => {
+                args.iter().map(String::as_str).collect()
+            }
+            Op::Return { value: Some(value) } => vec![value],
+            Op::Branch { cond, .. } => vec![cond],
+            _ => vec![],
         }
     }
 

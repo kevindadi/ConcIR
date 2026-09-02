@@ -61,7 +61,7 @@ domain (e.g. writing `11` to an `Int{[0,10]}` variable).
 | E306 | SendOnNonChannel      |  error   | `channel_send` / `channel_recv` on a non-Channel                     |
 | E307 | LoadOnNonAtomic       |  error   | `atomic_*` on a non-Atomic                                           |
 | E308 | ReadWriteOnNonVar     |  error   | `read_shared` / `write_shared` on a non-Var                          |
-| E309 | VarAccessWithoutLock  |  error   | read/write of a protected Var without holding the corresponding lock |
+| E309 | VarAccessWithoutLock  |  error   | read/write of a protected Var without holding the corresponding lock, including `read_shared`/`write_shared` and r-values in `branch`/`switch`/`expr`/`args` |
 
 **Call / statement–resource compatibility**:
 
@@ -124,14 +124,30 @@ Pairing is by **handle**, not by function name.
 
 ## E9xx — Typed data flow
 
-| Code | Name                        | Severity | Description                                                                              |
-| ---- | --------------------------- | :------: | ---------------------------------------------------------------------------------------- |
-| E910 | ParamNameCollides           |  error   | parameter name collides with a declared resource name                                    |
-| E911 | DuplicateParam              |  error   | duplicate parameter name within a function                                               |
-| E912 | UnmodeledParamReferenced    |  error   | expression references a `modeled: false` parameter (it is not in the CVN variable store) |
-| E913 | BareReturnWithModeledReturn | warning  | function models a return but some `return` statement carries no value (binds Unknown)    |
-| E920 | CallArityMismatch           |  error   | `call` argument count does not match the callee's modeled parameters                     |
-| E921 | CallCaptureNotVar           |  error   | `call` `dst` is not a writable Var/Atomic resource                                       |
+Implemented against [`syntax/dataflow.md`](syntax/dataflow.md)
+(name environment, unified dst, call vs concurrent entry, expression
+parser, E309 on r-values). Default program version is `3.5.0`.
+
+| Code | Name | Severity | Description |
+| ---- | ---- | :------: | ----------- |
+| E910 | ParamNameCollides | error | parameter name collides with a declared resource name |
+| E911 | DuplicateParam | error | duplicate parameter name within a function |
+| E912 | UnmodeledNameInNetExpr | warning | expression references a `modeled: false` param/local; the net treats it as Unknown |
+| E913 | BareReturnWithModeledReturn | warning | function models a return but some `return` statement carries no value (binds Unknown) |
+| E914 | LocalNameCollides | error | local name collides with a parameter or resource |
+| E915 | DuplicateLocal | error | duplicate local name within a function |
+| E920 | CallArityMismatch | error | `call` argument count does not match the callee's modeled parameters |
+| E921 | DstNotWritableSlot | error | dst is not a writable slot (local, param, Var, Atomic; `"_"` where allowed) |
+| E922 | ModeledParamOnConcurrentEntry | error | `spawn` / `async_call` / `scope` target has modeled parameters |
+| E923 | DstWithoutModeledReturn | error | `call` has `dst` but the callee has no modeled return |
+| E924 | SpawnArityMismatch | error | non-empty `spawn`/`async_call` `args` do not match unmodeled parameters |
+| E931 | ExprParseError | error | expression string does not parse, or names an unknown identifier |
+| E932 | ExprTypeMismatch | error | expression type does not match the destination / operands |
+| E933 | BadProjection | error | missing, extra, or invalid struct field |
+| E934 | NonValueResourceInExpr | error | Mutex/RwLock/Condvar/Semaphore/Channel used as an r-value |
+| E935 | SwitchScrutineeNotSlot | error | `switch.var` is not a value slot (local, param, return, Var, Atomic) |
+| E936 | AssignLocalToResource | error | `assign_local.target` is not a function local or parameter |
+| E937 | ModeledActivationOnConcurrentEntry | warning | spawn/scope/async target has modeled locals or a modeled return |
 
 ## Diagnostic output format
 

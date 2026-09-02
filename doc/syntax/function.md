@@ -34,8 +34,10 @@ the same function N times is a `branch` loop, not a count field.
 
 ## Typed data flow (params / returns / locals)
 
-Each declaration has a `modeled` flag (projection): only `modeled: true`
-values enter the CVN store. Unmodeled values are codegen-only.
+Rules for `modeled`, destinations, arguments, and expressions are in
+[Data flow](dataflow.md). Each declaration has a `modeled` flag
+(projection): only `modeled: true` values enter the CVN store.
+Unmodeled values are codegen-only.
 
 ```json
 {
@@ -60,7 +62,8 @@ values enter the CVN store. Unmodeled values are codegen-only.
 - Referencing a `modeled: false` parameter is E912.
 
 At a `call` site: `args` must match modeled parameters (E920); `dst`, if
-present, must be a writable Var/Atomic (E921).
+present, must be a writable slot — local, param, Var, or Atomic (E921).
+The callee must declare a modeled return (E923). See [Data flow](dataflow.md).
 
 ```json
 {

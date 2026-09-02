@@ -36,6 +36,7 @@ items, and the process exits with exit code 1.
 | Document                         | Contents                                                        |
 | -------------------------------- | --------------------------------------------------------------- |
 | [`doc/syntax/`](doc/syntax/README.md) | Prose grammar, split by top-level construct |
+| [`doc/syntax/dataflow.md`](doc/syntax/dataflow.md) | Names, dst, expressions, call vs spawn (ConcIR 3.5) |
 | [`doc/ebnf.md`](doc/ebnf.md)     | ISO EBNF abstract syntax                                             |
 | [`doc/error_codes.md`](doc/error_codes.md) | Validation error reference (E0xx–E9xx) and diagnostic output format |
 | [`doc/todo.md`](doc/todo.md)     | Roadmap: modeling scope, call semantics, modular generation     |
@@ -47,19 +48,21 @@ src/
   main.rs              Entry: read JSON → deserialize → validate → emit report
   lib.rs               Module declarations
   ast.rs               IR types (Program, Module, Stmt, Op)
+  env.rs               Per-function name environment
+  expr.rs              Expression parser and type checker
   fqn.rs               Identifier and FQN rules
   diagnostic.rs        Diagnostic types (Diagnostic, ValidationReport)
   validate/
     mod.rs             Validation entry: chains the 9 passes
     structure.rs       E0xx  Structural validity
     names.rs           E1xx  Name resolution and module contracts
-    types.rs           E2xx  Type checking
+    types.rs           E2xx  Type checking (parser-backed)
     compat.rs          E3xx  Resource–operation compatibility
     protection.rs      E7xx  Protection mapping
     concurrency.rs     E4xx  Handle pairing, scope statement
-    locks.rs           E5xx  Lock safety (includes E309)
+    locks.rs           E5xx  Lock safety (E309 includes expr r-values)
     control.rs         E6xx  Control flow
-    dataflow.rs        E9xx  Typed params / returns / call arity
+    dataflow.rs        E9xx  Name env, unified dst, call vs spawn
   export/
     dot.rs             Graphviz DOT from statements / calls / control edges
 doc/

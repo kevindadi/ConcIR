@@ -15,3 +15,6 @@ unknown `kind` tags, leftover `statements` / `terminator` / `call` fields,
 or a statement missing `kind`.
 
 See [`error_codes.md`](../error_codes.md) for the full diagnostic catalog.
+The E9xx pass implements [data flow](dataflow.md)
+(name environment, parsed expressions, unified dst, E922).
+E309 (in the locks pass) covers expression r-values of protected Vars.

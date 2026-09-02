@@ -2,12 +2,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::ast::*;
 use crate::diagnostic::Diagnostic;
-use crate::validate::types::{build_resource_type_map, ResType};
+use crate::env::NameEnv;
 
 /// E6xx: Control flow checks.
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
-    let rt_map = build_resource_type_map(program);
-
     for (mi, m) in program.modules.iter().enumerate() {
         for (fi, f) in m.functions.iter().enumerate() {
             if f.body.is_empty() {
@@ -32,11 +30,12 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                 }
             }
 
+            let env = NameEnv::build(program, m, f);
             let fn_path = Program::fn_path(mi, fi);
             check_reachability(f, &successors, n, &fn_path, diags);
             check_return_paths(f, &successors, n, &fn_path, diags);
             check_branch_targets_same(f, &fn_path, diags);
-            check_switch_exhaustive(f, &rt_map, &fn_path, diags);
+            check_switch_exhaustive(f, &env, &fn_path, diags);
             check_infinite_loop(f, &successors, n, &fn_path, diags);
         }
     }
@@ -137,36 +136,33 @@ fn check_branch_targets_same(f: &Function, fn_path: &str, diags: &mut Vec<Diagno
 /// E604: switch not exhaustive for Enum types
 fn check_switch_exhaustive(
     f: &Function,
-    rt_map: &HashMap<String, ResType>,
+    env: &NameEnv,
     fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
     for (si, stmt) in f.body.iter().enumerate() {
         if let Some((var, cases, _)) = stmt.switch() {
-            if let Some(rt) = rt_map.get(var) {
-                let bt = crate::validate::types::res_type_to_base(rt);
-                if let Some(BaseType::Complex(ComplexBaseType::Enum(ref variants))) = bt {
-                    let covered: HashSet<&str> = cases.keys().map(String::as_str).collect();
+            if let Some(BaseType::Complex(ComplexBaseType::Enum(ref variants))) = env.ty(var) {
+                let covered: HashSet<&str> = cases.keys().map(String::as_str).collect();
 
-                    let missing: Vec<&str> = variants
-                        .iter()
-                        .filter(|v| !covered.contains(v.as_str()))
-                        .map(|v| v.as_str())
-                        .collect();
+                let missing: Vec<&str> = variants
+                    .iter()
+                    .filter(|v| !covered.contains(v.as_str()))
+                    .map(|v| v.as_str())
+                    .collect();
 
-                    if !missing.is_empty() {
-                        diags.push(
-                            Diagnostic::error(
-                                "E604",
-                                format!(
-                                    "switch on '{var}' is not exhaustive; missing variants: [{}]",
-                                    missing.join(", ")
-                                ),
-                            )
-                            .with_path(format!("{fn_path}.body[{si}].cases"))
-                            .with_fix("add case branches for the missing variants"),
-                        );
-                    }
+                if !missing.is_empty() {
+                    diags.push(
+                        Diagnostic::error(
+                            "E604",
+                            format!(
+                                "switch on '{var}' is not exhaustive; missing variants: [{}]",
+                                missing.join(", ")
+                            ),
+                        )
+                        .with_path(format!("{fn_path}.body[{si}].cases"))
+                        .with_fix("add case branches for the missing variants"),
+                    );
                 }
             }
         }
