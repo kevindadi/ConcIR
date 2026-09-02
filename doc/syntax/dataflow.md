@@ -1,16 +1,18 @@
-# Data flow (proposal, ConcIR 3.5)
+# Data flow
 
-**Status:** in progress. Phases 1–3 are implemented (`src/env.rs`,
-`src/expr.rs`, `src/validate/dataflow.rs`, `src/validate/types.rs`,
-`src/validate/locks.rs`). Phase 4 (docs, default version 3.5.0) is not
-done. Control flow is already a closed CFG ([`statement.md`](statement.md)).
-This page closes **names, values, and updates** so every string that
-today sits in `expr` / `cond` / `args` / `dst` has a single resolution
-and a single type.
+**Status:** ConcIR 3.5. Implemented in `src/env.rs`, `src/expr.rs`,
+`src/validate/dataflow.rs`, `src/validate/types.rs`,
+`src/validate/locks.rs`. Control flow is a closed CFG
+([`statement.md`](statement.md)). This page is the normative account of
+**names, values, and updates**: every string in `expr` / `cond` /
+`args` / `dst` has a single resolution and a single type.
+
+JSON still stores expressions as strings; `src/expr.rs` parses them at
+validation time. The grammar also lives in [`ebnf.md`](../ebnf.md).
 
 ## Abstraction (does not change)
 
-These constraints are inputs, not outcomes of this proposal:
+These constraints are inputs, not outcomes of this page:
 
 - One function body is shared by every activation (no thread-instance
   places). Multiple tokens may sit on the same `sid`.
@@ -24,21 +26,21 @@ Under a shared body, **only globally named resources are a sound
 concurrent store**. Function locals and parameters are sequential
 scratch for one activation. Putting them in the net as a single slot
 can *remove* deadlocks (a corrupted local takes the unlock arm). This
-proposal therefore splits the two stores instead of pretending a local
+page therefore splits the two stores instead of pretending a local
 is thread-private memory.
 
-## What is not closed today
+## What 3.5 closes
 
-| Hole | Example | Effect |
-| ---- | ------- | ------ |
-| Expressions are unparsed strings | `Expr = ? string ?` in [`ebnf.md`](../ebnf.md) | No def-use; types only on literals (E203–E206) |
-| Two left-hand sides | `write_shared` uses resource `count`; `channel_recv` writes a local | Same value, two namespaces, no common dst rule |
-| `call.dst` ≠ other dsts | E921 requires Var/Atomic; `atomic_cas.dst` may be a local | Returns cannot land in the sequential store |
-| Guards bypass protection | E309 watches `read_shared` / `write_shared`, not `branch` on `count` | A guard can read a protected Var without the lock |
-| `switch.var` is resource-only | `types.rs` looks up `resource_types` | A local enum cannot be a scrutinee |
-| Fork has no data story | `scope` passes `[]`; `spawn.args` are not arity-checked | Modeled params on a spawned function become one shared slot |
-| `modeled: false` is a hard error | E912 | Sequential names cannot appear in a guard even as Unknown |
-| Struct values are informal | `"expr": "{100, true}"` | Not in the expression grammar the translator actually parses |
+| Hole | Rule |
+| ---- | ---- |
+| Expressions were unparsed strings | Parsed grammar below; E201, E931–E934 |
+| Two left-hand sides | Unified dst (E921 / E936) |
+| `call.dst` ≠ other dsts | Returns may land in a local |
+| Guards bypassed protection | E309 on every Var r-value, including `branch` / `switch` / `args` |
+| `switch.var` was resource-only | Any value slot of Enum or Int (E935, E202) |
+| Fork had no data story | E922 / E924 / E937 |
+| `modeled: false` was a hard error | E912 is a warning; net treats the name as Unknown |
+| Struct values were informal | Named `{field: expr}`; positional is E931 |
 
 ## Two stores
 
@@ -277,15 +279,12 @@ not a count on `scope`.
 
 ## Protection × expressions
 
-E309 today: `read_shared` / `write_shared` of a protected Var without
-holding the lock.
-
-**Extend E309 to every resolved r-value and write of that Var in the
-statement**, including:
+E309 covers `read_shared` / `write_shared` of a protected Var **and**
+every resolved r-value or write of that Var in the statement:
 
 - `branch.cond`, `write_shared.expr`, `atomic_cas` expected/desired,
-  `channel_send.value`, `assign_local.expr`, `return.value`, `call` args
-  that name the Var;
+  `channel_send.value`, `assign_local.expr`, `return.value`, `call` /
+  `spawn` / `async_call` args that name the Var;
 - `switch.var` when it is that Var.
 
 `read_shared` with the lock held still covers the "I intend to read
@@ -295,32 +294,31 @@ Atomic resources stay out of `protection` (E703). Channel payloads
 are protected by the channel resource itself, not by a mutex, unless
 the dst is a protected Var (then the write to the Var needs the lock).
 
-## Error catalog (E9xx target)
+## Error catalog (E9xx)
 
-| Code | Name | Severity | Change |
-| ---- | ---- | :------: | ------ |
-| E910 | ParamNameCollides | error | unchanged |
-| E911 | DuplicateParam | error | unchanged |
-| E912 | UnmodeledNameInNetExpr | **warning** | no longer an error; name is `Unknown` in the CVN |
-| E913 | BareReturnWithModeledReturn | warning | unchanged |
-| E914 | LocalNameCollides | error | **new** — local vs resource or vs param |
-| E915 | DuplicateLocal | error | **new** |
-| E920 | CallArityMismatch | error | still `call` × modeled params |
-| E921 | DstNotWritableSlot | error | **broadened** — local/param/Var/Atomic/`_` as specified |
-| E922 | ModeledParamOnConcurrentEntry | error | **new** — spawn / async_call / scope target |
-| E923 | DstWithoutModeledReturn | error | **new** |
-| E924 | SpawnArityMismatch | error | **new** — optional; unmodeled params only |
-| E931 | ExprParseError | error | **new** |
-| E932 | ExprTypeMismatch | error | **new** — non-literal cases E2xx do not cover |
-| E933 | BadProjection | error | **new** — missing/unknown struct field |
-| E934 | NonValueResourceInExpr | error | **new** |
-| E935 | SwitchScrutineeNotSlot | error | **new** — also covers locals; E202 remains for bad types |
-| E936 | AssignLocalToResource | error | **new** |
-| E937 | ModeledActivationOnConcurrentEntry | warning | **new** — modeled local/return on a spawn target |
+| Code | Name | Severity | Notes |
+| ---- | ---- | :------: | ----- |
+| E910 | ParamNameCollides | error | |
+| E911 | DuplicateParam | error | |
+| E912 | UnmodeledNameInNetExpr | **warning** | name is `Unknown` in the CVN |
+| E913 | BareReturnWithModeledReturn | warning | |
+| E914 | LocalNameCollides | error | local vs resource or vs param |
+| E915 | DuplicateLocal | error | |
+| E920 | CallArityMismatch | error | `call` × modeled params |
+| E921 | DstNotWritableSlot | error | local/param/Var/Atomic/`_` as specified |
+| E922 | ModeledParamOnConcurrentEntry | error | spawn / async_call / scope target |
+| E923 | DstWithoutModeledReturn | error | |
+| E924 | SpawnArityMismatch | error | optional; unmodeled params only |
+| E931 | ExprParseError | error | |
+| E932 | ExprTypeMismatch | error | non-literal cases E2xx do not cover |
+| E933 | BadProjection | error | missing/unknown struct field |
+| E934 | NonValueResourceInExpr | error | |
+| E935 | SwitchScrutineeNotSlot | error | also covers locals; E202 remains for bad types |
+| E936 | AssignLocalToResource | error | |
+| E937 | ModeledActivationOnConcurrentEntry | warning | modeled local/return on a spawn target |
 
 E2xx keep their codes for resource-typed writes (E203–E206, E201).
-Once the parser exists, E201 is "condition is not a Bool `CmpExpr`"
-rather than "string lacks a comparison operator".
+E201 is "condition is not a Bool `CmpExpr`".
 
 ## JSON compatibility
 
@@ -328,21 +326,19 @@ No new top-level fields. No change to statement `kind` tags.
 Straight-line programs that already write `count + 1` and
 `count > 0` parse unchanged.
 
-Required edits when this lands:
+Programs written against 3.4 must:
 
-- `"expr": "{100, true}"` → `"{size: 100, ready: true}"` (field names
-  from the Struct type). Touches `examples/complex_rwlock.json`.
-- `call` into a function with a modeled return may capture into a
-  local; existing captures into a Var remain valid.
-- A `scope`/`spawn` of a function that currently has modeled params
-  must move those inputs to resources or mark the params unmodeled.
-- Programs that referenced unmodeled params to *force* E912 will
-  become warnings; tests in `tests/validate_dataflow.rs` must follow
-  the new severity.
+- rewrite `"expr": "{100, true}"` as `"{size: 100, ready: true}"`
+  (field names from the Struct type);
+- capture a modeled return into a local if they want it sequential
+  (`dst` on a Var remains valid);
+- move modeled params off `scope`/`spawn` targets, or mark them
+  unmodeled;
+- treat unmodeled names in expressions as **E912 warnings**, not
+  errors.
 
-Default `Program.version` becomes `"3.5.0"` in the same change set
-that turns these rules on. Older files without `version` keep
-deserializing; the new checks apply to every program (no
+Default `Program.version` is `"3.5.0"`. Older files without `version`
+keep deserializing; the new checks apply to every program (no
 mode-by-version fork).
 
 ## Worked examples
@@ -357,9 +353,8 @@ From `examples/producer_consumer.json` — already in the closed shape:
 ```
 
 `count` is a Var in the concurrent store. E309 applies to both
-statements once protection×expr lands. `read_shared` without `dst` is
-not redundant: it is the modeled read event; the branch names the
-same slot.
+statements. `read_shared` without `dst` is not redundant: it is the
+modeled read event; the branch names the same slot.
 
 ### Recv payload then sequential branch
 
@@ -387,12 +382,12 @@ where `last_msg` is a Var (protected if other threads read it).
 { "sid": "s1", "kind": "call", "func": "process", "args": ["budget", "10"], "dst": "tmp" }
 ```
 
-`tmp` may be a local. Today this is E921; after closure it is legal.
-If `process` must publish the result to another thread, `dst` is a Var.
+`tmp` may be a local (E921). If `process` must publish the result to
+another thread, `dst` is a Var.
 
 ### Concurrent entry: no modeled params
 
-Illegal after E922:
+Illegal (E922):
 
 ```json
 { "sid": "s1", "kind": "scope", "funcs": ["worker"] }
@@ -403,55 +398,19 @@ with `worker.params = [{ "name": "n", "type": "Int", "modeled": true }]`.
 Legal: `worker` reads a Var `budget` that `main` wrote before the
 `scope`, or `worker` has only unmodeled params.
 
-## Implementation phases
+## Implementation
 
-Do not land a half-parser behind the old E912 error. Each phase should
-compile and keep `cargo test` green.
+Shipped in four commits on this change set:
 
-### Phase 1 — Name environment and unified dst
+1. Name environment and unified dst (`src/env.rs`, `src/validate/dataflow.rs`).
+2. Expression parser (`src/expr.rs`) and type checks (E201, E931–E934).
+3. E309 on parsed r-values (`src/validate/locks.rs`).
+4. This page as the normative grammar; default version `3.5.0`.
 
-- Add `src/env.rs` (or `validate/env.rs`): per-function slot table
-  (locals, params, return name, in-scope resources).
-- Resolve every `dst` / `assign_local.target` / `switch.var` through
-  that table. Implement E914, E915, E921 (new meaning), E936, E935.
-- Extend E920-style arity to `spawn` / `async_call` as E924; add E922.
-- Rewrite `tests/validate_dataflow.rs` for the new E921/E912.
-- Files: `src/validate/dataflow.rs`, `src/validate/types.rs` (switch),
-  `doc/error_codes.md`.
-
-### Phase 2 — Expression parser in this crate
-
-- Add `src/expr.rs`: `Expr` AST, parser, `type_of(expr, env)`.
-- Keep the string in JSON; parse at validation time. Do not change
-  serde shapes.
-- Wire E201, E931, E932, E933, E934 onto parsed trees. Literal
-  bounded-Int checks stay in E2xx.
-- Share the grammar with `cir2cvn` later by making this module the
-  source of truth (translator currently owns a copy in
-  `src/translator/expr_parser.rs`).
-- Unit tests for parse/type; re-parse every `examples/*.json` expr.
-
-### Phase 3 — Protection on expr reads
-
-- In the E309 worklist, collect resource r-values from the parsed expr
-  of the current statement (plus existing `read_shared`/`write_shared`).
-- Same held-set algorithm as `validate/locks.rs`.
-- Test: `branch` on a protected Var without lock → E309; producer-
-  consumer remains valid.
-
-### Phase 4 — Docs and examples
-
-- Fold this page into the normative grammar: replace the `Expr = ?
-  string ?` comment in [`ebnf.md`](../ebnf.md); point
-  [`function.md`](function.md) at this page for `modeled` / dst / args.
-- Fix `examples/complex_rwlock.json` struct literals.
-- Default version `3.5.0`.
-- Downstream `cir2cvn`: drop the duplicate parser; honour E922 (do not
-  bind modeled params at spawn); project unmodeled names as `Unknown`.
-
-Phase 1 is enough for dst/call/spawn to stop lying. Phase 2 is the
-actual closure. Phase 3 is required for E309 to match the name
-environment. Phase 4 is the public contract bump.
+`cir2cvn` should drop its duplicate parser and call ConcIR's, honour
+E922 (do not bind modeled params at spawn), and project unmodeled
+names as `Unknown`. Field projection and named struct literals are
+now in ConcIR; the translator still has to consume them.
 
 ## Out of scope
 
@@ -465,9 +424,8 @@ environment. Phase 4 is the public contract bump.
 
 ## Downstream note
 
-`cir2cvn` already parses the arithmetic/comparison subset and aliases
-modeled params to CVN variables. After Phase 2 it should call ConcIR's
-parser so a program that validates cannot fail translation on expr
-syntax. Field projection and struct literals are new work on both
-sides; until Phase 2 lands, the translator may keep rejecting
-`shared_map.ready`.
+`cir2cvn` currently owns a copy of the arithmetic/comparison parser
+and aliases modeled params to CVN variables. A program that validates
+here must not fail translation on expr syntax; that means calling
+`concir::expr` instead of the duplicate, and accepting field
+projection (`shared_map.ready`) and named struct literals.

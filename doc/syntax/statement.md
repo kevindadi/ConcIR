@@ -31,10 +31,10 @@ In the CVN, a `read_shared` of a lock-protected Var (lock already held)
 and an `atomic_load` are instantaneous data-flow steps — they do not
 queue like `mutex_lock`.
 
-`expr` / `cond` / `value` fields are strings. The live validator only
-subset-checks literals (E2xx). The closed grammar, unified `dst` rules,
-and protection-on-guards are specified in [Data flow](dataflow.md)
-(proposal, 3.5).
+`expr` / `cond` / `value` fields are strings that parse as the
+[expression grammar](dataflow.md). Destinations follow the unified
+`dst` rules. A `branch` or `switch` on a protected Var without the
+lock is E309.
 
 ## Data
 
@@ -101,11 +101,11 @@ loop of `spawn`, not a count on `scope`.
 
 | `kind`  | Key fields                     | Notes |
 | ------- | ------------------------------ | ----- |
-| `call`  | `func`, `args`, optional `dst` | Sequential call |
-| `spawn` | `func`, `args`, `handle`       | Unstructured fork; unpaired handle is E401 |
+| `call`  | `func`, `args`, optional `dst` | Sequential; `args` match modeled params (E920); `dst` is a writable slot (E921) |
+| `spawn` | `func`, `args`, `handle`       | Unstructured fork; unpaired handle is E401; target must have no modeled params (E922) |
 | `scope` | `funcs`                        | Spawn each listed function and join them all (E410 if `funcs` is empty) |
 | `join`  | `handle`                       | Join one unstructured spawn |
-| `async_call` | `func`, `args`, `handle`  | |
+| `async_call` | `func`, `args`, `handle`  | Same E922 as spawn |
 | `await` | `handle`                       | |
 
 ```json

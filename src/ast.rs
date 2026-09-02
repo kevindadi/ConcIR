@@ -9,7 +9,7 @@ use crate::fqn;
 // ──────────────────── Top-level ────────────────────
 
 fn default_version() -> String {
-    "3.4.0".to_string()
+    "3.5.0".to_string()
 }
 
 fn default_form() -> String {

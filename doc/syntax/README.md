@@ -7,15 +7,15 @@ verification-oriented IR. A function body is a flat list of statements
 names are ConcIR identifiers and FQNs, never backend crate paths or
 source-language keywords.
 
-The executable definition is `src/ast.rs`, `src/fqn.rs`, and `src/validate/`.
+The executable definition is `src/ast.rs`, `src/fqn.rs`, `src/env.rs`,
+`src/expr.rs`, and `src/validate/`.
 The formal grammar is [`ebnf.md`](../ebnf.md). See
 [`error_codes.md`](../error_codes.md) for diagnostics and
 [`todo.md`](../todo.md) for the roadmap.
 
-[Data flow](dataflow.md) is a **3.5 proposal**: the CFG is already
-closed; names, destinations, and expressions are not. Until that page
-is implemented, [`function.md`](function.md) and E9xx describe what the
-validator actually enforces.
+[Data flow](dataflow.md) is the ConcIR 3.5 account of names,
+destinations, expressions, and call vs spawn. [`function.md`](function.md)
+and E9xx match that page.
 
 | Page | Topic |
 | ---- | ----- |
@@ -26,5 +26,5 @@ validator actually enforces.
 | [Protection](protection.md) | Var → lock mapping |
 | [Function](function.md) | `kind` / `form`, params / returns / locals |
 | [Statement](statement.md) | CFG node: data, sync, threads, calls, control ops |
-| [Data flow](dataflow.md) | **Proposal:** two stores, unified dst, expression language |
+| [Data flow](dataflow.md) | Two stores, unified dst, expression language, call vs spawn |
 | [Validation](validation.md) | Nine-pass pipeline |

@@ -34,12 +34,10 @@ the same function N times is a `branch` loop, not a count field.
 
 ## Typed data flow (params / returns / locals)
 
-> **3.5 proposal.** The rules below are what the validator enforces
-> today. Closing names, destinations, expressions, and spawn-vs-call is
-> specified in [Data flow](dataflow.md) and is not yet implemented.
-
-Each declaration has a `modeled` flag (projection): only `modeled: true`
-values enter the CVN store. Unmodeled values are codegen-only.
+Rules for `modeled`, destinations, arguments, and expressions are in
+[Data flow](dataflow.md). Each declaration has a `modeled` flag
+(projection): only `modeled: true` values enter the CVN store.
+Unmodeled values are codegen-only.
 
 ```json
 {

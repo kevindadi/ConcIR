@@ -124,9 +124,9 @@ Pairing is by **handle**, not by function name.
 
 ## E9xx — Typed data flow
 
-Implemented against [`syntax/dataflow.md`](syntax/dataflow.md) phases 1–2
+Implemented against [`syntax/dataflow.md`](syntax/dataflow.md)
 (name environment, unified dst, call vs concurrent entry, expression
-parser). E309 on expression r-values is phase 3.
+parser, E309 on r-values). Default program version is `3.5.0`.
 
 | Code | Name | Severity | Description |
 | ---- | ---- | :------: | ----------- |

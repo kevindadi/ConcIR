@@ -39,10 +39,44 @@ Name       = Ident | Fqn ;
 Location   = Fqn, ".", Sid ;
                (* control place, e.g. core::main.s3 *)
 
-Expr       = ? string ? ;
-               (* unparsed today; E2xx / E9xx subset-check literals.
-                  Target grammar (parsed strings, ConcIR 3.5):
-                  see syntax/dataflow.md *)
+Expr       = CmpExpr ;
+               (* JSON stores the expression as a string; this is the
+                  parsed grammar. See syntax/dataflow.md. *)
+
+CmpExpr    = AddExpr
+           | AddExpr, CmpOp, AddExpr ;
+
+CmpOp      = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
+
+AddExpr    = MulExpr, { AddOp, MulExpr } ;
+AddOp      = "+" | "-" ;
+
+MulExpr    = Unary, { MulOp, Unary } ;
+MulOp      = "*" | "/" | "%" ;
+
+Unary      = [ "-" ], Atom ;
+
+Atom       = Literal
+           | Slot
+           | Field
+           | StructLit
+           | "(", Expr, ")" ;
+
+Slot       = Name ;                 (* resolved by the name environment *)
+
+Field      = Atom, ".", Ident ;     (* Struct field; Atom must have Struct type *)
+
+StructLit  = "{", [ Ident, ":", Expr, { ",", Ident, ":", Expr } ], "}" ;
+               (* named fields only; positional "{1, 2}" is E931 *)
+
+Literal    = "true" | "false"
+           | Integer
+           | Float
+           | StringLiteral
+           | Ident ;                (* enum variant, if not a slot *)
+
+Float          = ? decimal number ? ;
+StringLiteral  = '"' , { ? any except '"' ? } , '"' ;
 
 JsonValue  = ? JSON value ? ;
 Integer    = ? JSON integer ? ;
@@ -57,7 +91,7 @@ Naming constraints (not encoded as extra nonterminals): `provides` uses
 
 ```ebnf
 Program    = Ident,                     (* program *)
-             [ String ],                (* version; default "3.2.0" *)
+             [ String ],                (* version; default "3.5.0" *)
              { Module }-,               (* modules; at least one *)
              Fqn ;                      (* entry = module::function *)
 
