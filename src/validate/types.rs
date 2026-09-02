@@ -4,6 +4,7 @@ use crate::ast::*;
 use crate::diagnostic::Diagnostic;
 use crate::env::NameEnv;
 use crate::expr;
+use crate::typedef::TypeEnv;
 
 /// E2xx: Type checking, now parser-backed (E931–E934).
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
@@ -24,20 +25,22 @@ pub(crate) enum ResType {
 }
 
 pub(crate) fn build_resource_type_map(program: &Program) -> HashMap<String, ResType> {
+    let tenv = TypeEnv::from_program(program);
     let mut map = HashMap::new();
     for m in &program.modules {
         for r in &m.resources {
+            let resolve = |bt: &BaseType| tenv.resolve(&m.name, bt).unwrap_or_else(|| bt.clone());
             let rt = match (r.kind.as_str(), r.res_type.as_str()) {
                 ("var", "Var") => {
                     if let Some(ref bt) = r.base {
-                        ResType::Var(bt.clone())
+                        ResType::Var(resolve(bt))
                     } else {
                         continue;
                     }
                 }
                 ("var", "Atomic") => {
                     if let Some(ref bt) = r.base {
-                        ResType::Atomic(bt.clone())
+                        ResType::Atomic(resolve(bt))
                     } else {
                         continue;
                     }
@@ -48,7 +51,7 @@ pub(crate) fn build_resource_type_map(program: &Program) -> HashMap<String, ResT
                 ("sync", "Semaphore") => ResType::Semaphore,
                 ("sync", "Channel") => {
                     if let Some(ref bt) = r.base {
-                        ResType::Channel(bt.clone())
+                        ResType::Channel(resolve(bt))
                     } else {
                         continue;
                     }

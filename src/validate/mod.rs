@@ -19,6 +19,7 @@ pub fn validate(program: &Program) -> ValidationReport {
 
     structure::check(program, &mut diags);
     names::check(program, &mut diags);
+    crate::typedef::check(program, &mut diags);
     types::check(program, &mut diags);
     compat::check(program, &mut diags);
     protection::check(program, &mut diags);

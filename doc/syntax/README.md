@@ -21,7 +21,7 @@ and E9xx match that page.
 | ---- | ----- |
 | [Naming](naming.md) | Identifiers, entity FQNs, control locations |
 | [Program](program.md) | Top-level `{ program, version, modules, entry }` |
-| [Module](module.md) | `provides` / `requires`, resources, functions |
+| [Module](module.md) | `provides` / `requires`, types, resources, functions |
 | [Resource](resource.md) | Sync primitives, shared vars, `base` types, Channel |
 | [Protection](protection.md) | Var → lock mapping |
 | [Function](function.md) | `kind` / `form`, params / returns / locals |

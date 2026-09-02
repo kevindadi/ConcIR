@@ -22,12 +22,38 @@ contract.
 | `name`       | ident      |   yes    | Module identity                 |
 | `provides`   | NameSet    |    no    | Short names this module exports |
 | `requires`   | RequireSet |    no    | FQNs this module imports        |
+| `types`      | TypeDef[]  |    no    | Named types owned by this module |
 | `resources`  | array      |    no    | Resources owned by this module  |
 | `protection` | array      |    no    | Var → lock mapping              |
 | `functions`  | array      |    no    | Function definitions            |
 
-`NameSet` (`provides`) is `{ "resources": [...], "functions": [...] }`
-(both default `[]`). Short names only.
+`NameSet` (`provides`) is `{ "resources": [...], "functions": [...], "types": [...] }`
+(all default `[]`). Short names only.
+
+## Named types
+
+A module may declare types once and reuse them as `base` / param / local
+types. A [`BaseType`](resource.md) string that is not `Bool` / `Int` /
+`Float` / `String` is a type name: same-module short name, or a FQN
+listed in `requires.types`.
+
+```json
+{
+  "name": "storage",
+  "types": [
+    { "name": "Record", "type": { "Struct": { "size": "Int", "ready": "Bool" } } }
+  ],
+  "provides": { "types": ["Record"], "resources": ["shared_map"], "functions": [] },
+  "resources": [
+    { "name": "shared_map", "kind": "var", "type": "Var", "base": "Record", "init": { "size": 0, "ready": false } }
+  ]
+}
+```
+
+Another module writes `"requires": { "types": ["storage::Record"] }` and
+`"base": "storage::Record"`. Builtin names (`Int`, …) cannot be
+redeclared (**E112**). Duplicate names are **E110**; an unknown name is
+**E111**; a cyclic alias is **E113**.
 
 `RequireSet` (`requires`) is the same shape, but each `functions` entry
 is either an FQN string (name-only, backward compatible) or a

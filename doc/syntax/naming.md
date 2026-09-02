@@ -22,5 +22,8 @@ Rules:
 6. **`provides` always uses short names** declared in this module.
 7. **`requires.resources` always uses FQNs.** `requires.functions` is either
    an FQN string or a [signature object](function.md#concurrency-interface)
-   whose `name` is that FQN.
+   whose `name` is that FQN. `requires.types` uses FQNs of exported types.
 8. **`entry` is always an FQN.**
+9. **Type names** are identifiers. In-module short name; cross-module FQN
+   listed in `requires.types`. Builtin primitives (`Bool`, `Int`, `Float`,
+   `String`) are not type names.

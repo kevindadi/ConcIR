@@ -40,6 +40,8 @@ pub struct NameSet {
     pub resources: Vec<String>,
     #[serde(default)]
     pub functions: Vec<String>,
+    #[serde(default)]
+    pub types: Vec<String>,
 }
 
 /// Imported names. Resources stay FQN strings. Functions may be an FQN
@@ -51,6 +53,8 @@ pub struct RequireSet {
     pub resources: Vec<String>,
     #[serde(default)]
     pub functions: Vec<RequiredFunction>,
+    #[serde(default)]
+    pub types: Vec<String>,
 }
 
 impl RequireSet {
@@ -152,12 +156,25 @@ pub struct Module {
     pub provides: NameSet,
     #[serde(default)]
     pub requires: RequireSet,
+    /// Module-level named types. Referenced as a short name in-module or
+    /// as an FQN listed in `requires.types`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub types: Vec<TypeDef>,
     #[serde(default)]
     pub resources: Vec<Resource>,
     #[serde(default)]
     pub protection: Vec<Protection>,
     #[serde(default)]
     pub functions: Vec<Function>,
+}
+
+/// A named type in a module: `{"name": "Record", "type": {"Struct": ...}}`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeDef {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: BaseType,
 }
 
 // ──────────────────── Resources ────────────────────
@@ -666,6 +683,17 @@ impl Program {
         let m = self.lookup_module(module)?;
         let f = m.functions.iter().find(|f| f.name == entity)?;
         Some((m, f))
+    }
+
+    pub fn lookup_type(&self, from_module: &str, name: &str) -> Option<(&Module, &TypeDef)> {
+        let (module, entity) = if let Some(pair) = fqn::split_fqn(name) {
+            pair
+        } else {
+            (from_module, name)
+        };
+        let m = self.lookup_module(module)?;
+        let t = m.types.iter().find(|t| t.name == entity)?;
+        Some((m, t))
     }
 
     pub fn lookup_resource(&self, from_module: &str, name: &str) -> Option<(&Module, &Resource)> {

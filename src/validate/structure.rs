@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::diagnostic::Diagnostic;
+use crate::typedef::TypeEnv;
 
 /// E0xx: Structural validation (post-deserialization checks that serde cannot enforce).
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
@@ -8,6 +9,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
 }
 
 fn check_resources(program: &Program, diags: &mut Vec<Diagnostic>) {
+    let tenv = TypeEnv::from_program(program);
     for (mi, m) in program.modules.iter().enumerate() {
         for (i, r) in m.resources.iter().enumerate() {
             let path_prefix = format!("modules[{mi}].resources[{i}]");
@@ -28,7 +30,7 @@ fn check_resources(program: &Program, diags: &mut Vec<Diagnostic>) {
             if r.kind == "sync" {
                 check_sync_resource(r, &path_prefix, diags);
             } else {
-                check_var_resource(r, &path_prefix, diags);
+                check_var_resource(r, &m.name, &tenv, &path_prefix, diags);
             }
         }
     }
@@ -130,7 +132,13 @@ fn check_sync_resource(r: &Resource, path: &str, diags: &mut Vec<Diagnostic>) {
     }
 }
 
-fn check_var_resource(r: &Resource, path: &str, diags: &mut Vec<Diagnostic>) {
+fn check_var_resource(
+    r: &Resource,
+    module: &str,
+    tenv: &TypeEnv,
+    path: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
     let valid_types = ["Var", "Atomic"];
     if !valid_types.contains(&r.res_type.as_str()) {
         diags.push(
@@ -170,9 +178,16 @@ fn check_var_resource(r: &Resource, path: &str, diags: &mut Vec<Diagnostic>) {
         );
     }
 
-    // E208: init value type matches base
+    // E208: init value type matches base (resolve named types first)
     if let (Some(base), Some(init)) = (&r.base, &r.init) {
-        check_init_type_match(&r.name, base, init, path, diags);
+        let resolved = tenv.resolve(module, base);
+        check_init_type_match(
+            &r.name,
+            resolved.as_ref().unwrap_or(base),
+            init,
+            path,
+            diags,
+        );
     }
 }
 

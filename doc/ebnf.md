@@ -98,15 +98,20 @@ Program    = Ident,                     (* program *)
 Module     = Ident,                     (* name *)
              [ NameSet ],               (* provides: short names *)
              [ RequireSet ],            (* requires: FQNs or function signatures *)
+             { TypeDef },
              { Resource },
              { Protection },
              { Function } ;
 
 NameSet    = { Ident },                 (* resources; short names *)
-             { Ident } ;                (* functions; short names *)
+             { Ident },                 (* functions; short names *)
+             { Ident } ;                (* types; short names *)
 
 RequireSet = { Fqn },                   (* resources *)
-             { RequiredFn } ;           (* functions: FQN or FunctionSig *)
+             { RequiredFn },            (* functions: FQN or FunctionSig *)
+             { Fqn } ;                  (* types *)
+
+TypeDef    = Ident, BaseType ;          (* name, type; name must not be a builtin *)
 
 RequiredFn = Fqn
            | FunctionSig ;

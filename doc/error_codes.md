@@ -33,8 +33,12 @@ Unknown `kind` tags and leftover fields from the old block shape
 | E105 | DuplicateFunction |  error   | Duplicate function name in the same module                                                                                                                                               |
 | E106 | DuplicateSid      |  error   | Duplicate sid within the same function body                                                                                                                                              |
 | E107 | UndefinedEntry    |  error   | `entry` is not an FQN, or the FQN is not a defined function                                                                                                                              |
-| E108 | ModuleContract    |  error   | Duplicate module name; `provides` names a missing local entity; `requires` is not an FQN or does not resolve to an exported entity; cross-module call not listed in `requires.functions` |
+| E108 | ModuleContract    |  error   | Duplicate module name; `provides` names a missing local entity; `requires` is not an FQN or does not resolve to an exported entity; cross-module call not listed in `requires.functions`; same rules for `types` |
 | E109 | DuplicateSeqHoleId |  error  | two `seq_hole` statements in the same function share an `id` |
+| E110 | DuplicateType     |  error   | two `types` entries in the same module share a name, or the name is not an identifier |
+| E111 | UndefinedType     |  error   | a named type used as `base` / param / local / alias is not declared and not imported |
+| E112 | TypeNameReserved  |  error   | a module type is named `Bool`, `Int`, `Float`, or `String` |
+| E113 | TypeAliasCycle    |  error   | a named type aliases itself (directly or through other aliases) |
 
 ## E2xx — Type errors
 

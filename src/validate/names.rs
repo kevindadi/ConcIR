@@ -9,8 +9,9 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     check_duplicate_modules(program, diags);
     let resource_fqns = check_duplicate_resources(program, diags);
     let function_fqns = check_duplicate_functions(program, diags);
+    let type_fqns = collect_type_fqns(program);
     check_duplicate_sids(program, diags);
-    check_contracts(program, diags, &resource_fqns, &function_fqns);
+    check_contracts(program, diags, &resource_fqns, &function_fqns, &type_fqns);
     check_resource_references(program, diags);
     check_function_references(program, diags);
     check_sid_references(program, diags);
@@ -102,11 +103,20 @@ fn check_duplicate_sids(program: &Program, diags: &mut Vec<Diagnostic>) {
     }
 }
 
+fn collect_type_fqns(program: &Program) -> HashSet<String> {
+    program
+        .modules
+        .iter()
+        .flat_map(|m| m.types.iter().map(|t| fqn::fqn(&m.name, &t.name)))
+        .collect()
+}
+
 fn check_contracts(
     program: &Program,
     diags: &mut Vec<Diagnostic>,
     resource_fqns: &HashSet<String>,
     function_fqns: &HashSet<String>,
+    type_fqns: &HashSet<String>,
 ) {
     let provided_res: HashSet<String> = program
         .modules
@@ -118,10 +128,16 @@ fn check_contracts(
         .iter()
         .flat_map(|m| m.provides.functions.iter().map(|n| fqn::fqn(&m.name, n)))
         .collect();
+    let provided_ty: HashSet<String> = program
+        .modules
+        .iter()
+        .flat_map(|m| m.provides.types.iter().map(|n| fqn::fqn(&m.name, n)))
+        .collect();
 
     for (mi, m) in program.modules.iter().enumerate() {
         let local_res: HashSet<&str> = m.resources.iter().map(|r| r.name.as_str()).collect();
         let local_fn: HashSet<&str> = m.functions.iter().map(|f| f.name.as_str()).collect();
+        let local_ty: HashSet<&str> = m.types.iter().map(|t| t.name.as_str()).collect();
         for (i, name) in m.provides.resources.iter().enumerate() {
             if !local_res.contains(name.as_str()) {
                 diags.push(
@@ -134,6 +150,21 @@ fn check_contracts(
                     )
                     .with_path(format!("modules[{mi}].provides.resources[{i}]"))
                     .with_fix("declare the resource in this module or remove it from provides"),
+                );
+            }
+        }
+        for (i, name) in m.provides.types.iter().enumerate() {
+            if !local_ty.contains(name.as_str()) {
+                diags.push(
+                    Diagnostic::error(
+                        "E108",
+                        format!(
+                            "module '{}' provides type '{name}' which it does not declare",
+                            m.name
+                        ),
+                    )
+                    .with_path(format!("modules[{mi}].provides.types[{i}]"))
+                    .with_fix("declare the type in this module or remove it from provides"),
                 );
             }
         }
@@ -190,6 +221,26 @@ fn check_contracts(
                     Diagnostic::error("E108", format!("unresolved import of function '{name}'"))
                         .with_path(format!("modules[{mi}].requires.functions[{i}]"))
                         .with_fix("export it from the owning module's provides.functions"),
+                );
+            }
+        }
+        for (i, name) in m.requires.types.iter().enumerate() {
+            if !is_fqn(name) {
+                diags.push(
+                    Diagnostic::error(
+                        "E108",
+                        format!("requires type '{name}' must be an FQN (module::entity)"),
+                    )
+                    .with_path(format!("modules[{mi}].requires.types[{i}]"))
+                    .with_fix("write the type as module::Name"),
+                );
+                continue;
+            }
+            if !type_fqns.contains(name) || !provided_ty.contains(name) {
+                diags.push(
+                    Diagnostic::error("E108", format!("unresolved import of type '{name}'"))
+                        .with_path(format!("modules[{mi}].requires.types[{i}]"))
+                        .with_fix("export it from the owning module's provides.types"),
                 );
             }
         }

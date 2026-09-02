@@ -4,4 +4,5 @@ pub mod env;
 pub mod export;
 pub mod expr;
 pub mod fqn;
+pub mod typedef;
 pub mod validate;
