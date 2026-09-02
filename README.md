@@ -51,6 +51,7 @@ src/
   env.rs               Per-function name environment
   expr.rs              Expression parser and type checker
   fqn.rs               Identifier and FQN rules
+  typedef.rs           Module-level named types
   diagnostic.rs        Diagnostic types (Diagnostic, ValidationReport)
   validate/
     mod.rs             Validation entry: chains the 9 passes
@@ -60,7 +61,8 @@ src/
     compat.rs          E3xx  Resource–operation compatibility
     protection.rs      E7xx  Protection mapping
     concurrency.rs     E4xx  Handle pairing, scope statement
-    locks.rs           E5xx  Lock safety (E309 includes expr r-values)
+    locks.rs           E5xx  Lock safety (E309 includes expr r-values; E803 requires_held)
+    interface.rs       E8xx  Function may_block / locks; imported signatures; bound (E960/E961)
     control.rs         E6xx  Control flow
     dataflow.rs        E9xx  Name env, unified dst, call vs spawn
   export/

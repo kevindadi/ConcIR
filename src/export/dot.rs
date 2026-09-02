@@ -261,6 +261,12 @@ fn node_style(stmt: &Stmt) -> NodeStyle {
             penwidth: 2,
             ..Default::default()
         },
+        Op::SeqHole { .. } => NodeStyle {
+            shape: "octagon",
+            style: "filled,dashed".to_string(),
+            fillcolor: "#e8f4ff",
+            ..Default::default()
+        },
         _ => NodeStyle::default(),
     }
 }
@@ -308,6 +314,13 @@ fn format_op_compact(op: &Op) -> String {
                 "abstract_step".into()
             } else {
                 format!("abstract_step({desc})")
+            }
+        }
+        Op::SeqHole { id, desc, .. } => {
+            if desc.is_empty() {
+                format!("seq_hole({id})")
+            } else {
+                format!("seq_hole({id}: {desc})")
             }
         }
         Op::AtomicLoad { resource, .. } => format!("atomic_load({resource})"),

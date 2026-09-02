@@ -46,10 +46,11 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
             let cfg = build_cfg(f);
             let fn_path = Program::fn_path(mi, fi);
 
-            check_lock_drop_pairing(f, &cfg, &lock_resources, &fn_path, diags);
-            check_sync_lock_across_await(f, &cfg, &sync_lock_refs, &fn_path, diags);
-            check_lock_ordering(f, &cfg, &lock_resources, &fn_path, diags);
+            check_lock_drop_pairing(m, f, &cfg, &lock_resources, &fn_path, diags);
+            check_sync_lock_across_await(m, f, &cfg, &sync_lock_refs, &fn_path, diags);
+            check_lock_ordering(m, f, &cfg, &lock_resources, &fn_path, diags);
             check_var_access_without_lock(program, m, f, &cfg, &protection_map, &fn_path, diags);
+            check_requires_held(program, m, f, &cfg, &fn_path, diags);
         }
     }
 }
@@ -82,6 +83,7 @@ fn build_cfg(f: &Function) -> Cfg {
 
 /// E501, E502, E503: lock/drop pairing via worklist algorithm.
 fn check_lock_drop_pairing(
+    module: &Module,
     f: &Function,
     cfg: &Cfg,
     lock_resources: &HashSet<&str>,
@@ -116,6 +118,7 @@ fn check_lock_drop_pairing(
                             ),
                         )
                         .with_path(format!("{fn_path}.body[{idx}]"))
+                        .with_location(Program::stmt_location(module, f, stmt))
                         .with_fix("unlock before re-locking"),
                     );
                 }
@@ -133,6 +136,7 @@ fn check_lock_drop_pairing(
                             ),
                         )
                         .with_path(format!("{fn_path}.body[{idx}]"))
+                        .with_location(Program::stmt_location(module, f, stmt))
                         .with_fix("lock before unlock, or remove the unlock"),
                     );
                 }
@@ -151,6 +155,7 @@ fn check_lock_drop_pairing(
                         ),
                     )
                     .with_path(format!("{fn_path}.body[{idx}]"))
+                    .with_location(Program::stmt_location(module, f, stmt))
                     .with_fix("add mutex_unlock/rwlock_unlock before return"),
                 );
             }
@@ -164,6 +169,7 @@ fn check_lock_drop_pairing(
 
 /// E504: Sync-mode lock held across await point in async function.
 fn check_sync_lock_across_await(
+    module: &Module,
     f: &Function,
     cfg: &Cfg,
     sync_locks: &HashSet<&str>,
@@ -212,6 +218,7 @@ fn check_sync_lock_across_await(
                             ),
                         )
                         .with_path(format!("{fn_path}.body[{idx}]"))
+                        .with_location(Program::stmt_location(module, f, stmt))
                         .with_fix("unlock before await and re-acquire after, or use Async-mode lock"),
                     );
             }
@@ -225,6 +232,7 @@ fn check_sync_lock_across_await(
 
 /// E505: Lock ordering violation.
 fn check_lock_ordering(
+    module: &Module,
     f: &Function,
     cfg: &Cfg,
     lock_resources: &HashSet<&str>,
@@ -305,6 +313,7 @@ fn check_lock_ordering(
                             ),
                         )
                         .with_path(fn_path.to_string())
+                        .with_location(Program::fn_location(module, f))
                         .with_fix("use a consistent lock acquisition order across all paths"),
                     );
                 }
@@ -365,6 +374,7 @@ fn check_var_access_without_lock(
                     ),
                 )
                 .with_path(format!("{fn_path}.body[{idx}]"))
+                .with_location(Program::stmt_location(module, f, stmt))
                 .with_fix("acquire the lock before accessing this variable"),
             );
         }
@@ -382,6 +392,91 @@ fn check_var_access_without_lock(
     }
 }
 
+/// E803: `call` of a function that declares `requires_held` must hold those locks.
+fn check_requires_held(
+    program: &Program,
+    module: &Module,
+    f: &Function,
+    cfg: &Cfg,
+    fn_path: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let n = f.body.len();
+    if n == 0 {
+        return;
+    }
+
+    let mut visited: Vec<HashSet<BTreeSet<String>>> = vec![HashSet::new(); n];
+    let mut worklist: Vec<(usize, BTreeSet<String>)> = vec![(0, BTreeSet::new())];
+    let mut reported: HashSet<(usize, String)> = HashSet::new();
+
+    while let Some((idx, mut held)) = worklist.pop() {
+        if visited[idx].contains(&held) {
+            continue;
+        }
+        visited[idx].insert(held.clone());
+
+        let stmt = &f.body[idx];
+        if let Op::Func { func, .. } = &stmt.op {
+            if let Some((owner, callee)) = program.lookup_function(&module.name, func) {
+                for required in &callee.locks.requires_held {
+                    let held_here = lock_held(&held, required, &owner.name, &module.name);
+                    if held_here {
+                        continue;
+                    }
+                    let key = (idx, required.clone());
+                    if !reported.insert(key) {
+                        continue;
+                    }
+                    diags.push(
+                        Diagnostic::error(
+                            "E803",
+                            format!(
+                                "call to '{}' requires lock '{required}' held, but it is not held \
+                                 in function '{}'",
+                                callee.name, f.name
+                            ),
+                        )
+                        .with_path(format!("{fn_path}.body[{idx}]"))
+                        .with_location(Program::stmt_location(module, f, stmt))
+                        .with_fix("acquire the lock before this call, or drop requires_held on the callee"),
+                    );
+                }
+            }
+        }
+
+        if let Some(resource) = stmt.op.is_lock_acquire() {
+            held.insert(resource.to_string());
+        } else if let Some(resource) = stmt.op.is_lock_release() {
+            held.remove(resource);
+        }
+
+        for &succ in &cfg.successors[idx] {
+            worklist.push((succ, held.clone()));
+        }
+    }
+}
+
+fn lock_held(
+    held: &BTreeSet<String>,
+    required: &str,
+    callee_module: &str,
+    caller_module: &str,
+) -> bool {
+    let req_q = fqn::qualify(callee_module, required);
+    held.iter().any(|h| {
+        if h == required || h == &req_q {
+            return true;
+        }
+        let h_q = if fqn::is_fqn(h) {
+            h.clone()
+        } else {
+            fqn::qualify(caller_module, h)
+        };
+        h_q == req_q
+    })
+}
+
 fn short_name(name: &str) -> &str {
     fqn::split_fqn(name).map(|(_, e)| e).unwrap_or(name)
 }
@@ -397,6 +492,10 @@ fn protected_var_accesses(op: &Op, env: &NameEnv) -> Vec<String> {
     let mut names = Vec::new();
     if let Some((resource, _)) = op.shared_var_access() {
         names.push(resource.to_string());
+    }
+    if let Op::SeqHole { reads, writes, .. } = op {
+        names.extend(reads.iter().cloned());
+        names.extend(writes.iter().cloned());
     }
     if let Op::Switch { var, .. } = op {
         if env.get(var).is_some_and(|s| s.kind == SlotKind::Var) {

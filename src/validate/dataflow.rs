@@ -29,12 +29,12 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
             check_param_decls(f, &resource_names, mi, fi, diags);
             check_local_decls(f, &resource_names, mi, fi, diags);
             check_return_decl(f, mi, fi, diags);
-            check_unmodeled_refs(f, mi, fi, diags);
-            check_destinations(f, &env, mi, fi, diags);
-            check_call_sites(f, &callees, &env, mi, fi, diags);
-            check_concurrent_sites(f, &callees, mi, fi, diags);
+            check_unmodeled_refs(m, f, mi, fi, diags);
+            check_destinations(m, f, &env, mi, fi, diags);
+            check_call_sites(m, f, &callees, &env, mi, fi, diags);
+            check_concurrent_sites(m, f, &callees, mi, fi, diags);
             if concurrent_entries.contains(&fqn::fqn(&m.name, &f.name)) {
-                check_modeled_activation_on_entry(f, mi, fi, diags);
+                check_modeled_activation_on_entry(m, f, mi, fi, diags);
             }
         }
     }
@@ -162,7 +162,13 @@ fn check_return_decl(f: &Function, mi: usize, fi: usize, diags: &mut Vec<Diagnos
 }
 
 /// E912: unmodeled activation names used as r-values are legal but Unknown in the net.
-fn check_unmodeled_refs(f: &Function, mi: usize, fi: usize, diags: &mut Vec<Diagnostic>) {
+fn check_unmodeled_refs(
+    module: &Module,
+    f: &Function,
+    mi: usize,
+    fi: usize,
+    diags: &mut Vec<Diagnostic>,
+) {
     let unmodeled: Vec<&str> = f
         .params
         .iter()
@@ -188,6 +194,7 @@ fn check_unmodeled_refs(f: &Function, mi: usize, fi: usize, diags: &mut Vec<Diag
                 ),
             )
             .with_path(Program::fn_path(mi, fi))
+            .with_location(Program::fn_location(module, f))
             .with_fix(
                 "set \"modeled\": true only if a single shared slot is acceptable, \
                  or use a Var for concurrent data; otherwise both branch arms are enabled",
@@ -197,6 +204,7 @@ fn check_unmodeled_refs(f: &Function, mi: usize, fi: usize, diags: &mut Vec<Diag
 }
 
 fn check_destinations(
+    module: &Module,
     f: &Function,
     env: &NameEnv,
     mi: usize,
@@ -205,18 +213,21 @@ fn check_destinations(
 ) {
     for (si, stmt) in f.body.iter().enumerate() {
         let path = Program::stmt_path(mi, fi, si);
+        let loc = Program::stmt_location(module, f, stmt);
         match &stmt.op {
-            Op::AssignLocal { target, .. } => check_assign_local_dst(env, target, &path, diags),
-            Op::ReadShared { dst: Some(dst), .. } => {
-                check_value_or_discard_dst(env, dst, &path, diags);
+            Op::AssignLocal { target, .. } => {
+                check_assign_local_dst(env, target, &path, &loc, diags)
             }
-            Op::AtomicLoad { dst, .. } => check_value_or_discard_dst(env, dst, &path, diags),
-            Op::AtomicCas { dst, .. } => check_value_dst(env, dst, &path, diags),
-            Op::ChannelRecv { dst, .. } => check_value_or_discard_dst(env, dst, &path, diags),
+            Op::ReadShared { dst: Some(dst), .. } => {
+                check_value_or_discard_dst(env, dst, &path, &loc, diags);
+            }
+            Op::AtomicLoad { dst, .. } => check_value_or_discard_dst(env, dst, &path, &loc, diags),
+            Op::AtomicCas { dst, .. } => check_value_dst(env, dst, &path, &loc, diags),
+            Op::ChannelRecv { dst, .. } => check_value_or_discard_dst(env, dst, &path, &loc, diags),
             Op::Select { branches, .. } => {
                 for branch in branches {
                     if let SelectGuard::ChannelRecv { dst, .. } = &branch.guard {
-                        check_value_or_discard_dst(env, dst, &path, diags);
+                        check_value_or_discard_dst(env, dst, &path, &loc, diags);
                     }
                 }
             }
@@ -225,7 +236,13 @@ fn check_destinations(
     }
 }
 
-fn check_assign_local_dst(env: &NameEnv, name: &str, path: &str, diags: &mut Vec<Diagnostic>) {
+fn check_assign_local_dst(
+    env: &NameEnv,
+    name: &str,
+    path: &str,
+    location: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
     let ok = env.get(name).is_some_and(|s| s.is_assign_local_target());
     if !ok {
         diags.push(
@@ -234,12 +251,19 @@ fn check_assign_local_dst(env: &NameEnv, name: &str, path: &str, diags: &mut Vec
                 format!("assign_local target '{name}' is not a function local or parameter"),
             )
             .with_path(path.to_string())
+            .with_location(location)
             .with_fix("assign to a declared local, or use write_shared for a Var"),
         );
     }
 }
 
-fn check_value_dst(env: &NameEnv, name: &str, path: &str, diags: &mut Vec<Diagnostic>) {
+fn check_value_dst(
+    env: &NameEnv,
+    name: &str,
+    path: &str,
+    location: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
     let ok = env.get(name).is_some_and(|s| s.is_writable_value());
     if !ok {
         diags.push(
@@ -248,12 +272,19 @@ fn check_value_dst(env: &NameEnv, name: &str, path: &str, diags: &mut Vec<Diagno
                 format!("'{name}' is not a writable slot (local, param, Var, or Atomic)"),
             )
             .with_path(path.to_string())
+            .with_location(location)
             .with_fix("bind dst to a declared local, parameter, Var, or Atomic"),
         );
     }
 }
 
-fn check_value_or_discard_dst(env: &NameEnv, name: &str, path: &str, diags: &mut Vec<Diagnostic>) {
+fn check_value_or_discard_dst(
+    env: &NameEnv,
+    name: &str,
+    path: &str,
+    location: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
     let ok = env
         .get(name)
         .is_some_and(|s| s.is_writable_value() || s.is_discard());
@@ -264,12 +295,14 @@ fn check_value_or_discard_dst(env: &NameEnv, name: &str, path: &str, diags: &mut
                 format!("'{name}' is not a writable slot (local, param, Var, Atomic, or \"_\")"),
             )
             .with_path(path.to_string())
+            .with_location(location)
             .with_fix("bind dst to a declared local, parameter, Var, Atomic, or \"_\""),
         );
     }
 }
 
 fn check_call_sites(
+    module: &Module,
     f: &Function,
     callees: &HashMap<String, &Function>,
     env: &NameEnv,
@@ -279,6 +312,7 @@ fn check_call_sites(
 ) {
     for (si, stmt) in f.body.iter().enumerate() {
         let path = Program::stmt_path(mi, fi, si);
+        let loc = Program::stmt_location(module, f, stmt);
         if let Op::Func { func, args, dst } = &stmt.op {
             let Some(callee) = callees.get(func) else {
                 continue;
@@ -297,6 +331,7 @@ fn check_call_sites(
                         ),
                     )
                     .with_path(path.clone())
+                    .with_location(&loc)
                     .with_fix(
                         "supply one argument per modeled parameter, or mark unused parameters \
                          \"modeled\": false",
@@ -304,7 +339,7 @@ fn check_call_sites(
                 );
             }
             if let Some(out_name) = dst {
-                check_value_dst(env, out_name, &path, diags);
+                check_value_dst(env, out_name, &path, &loc, diags);
                 let has_modeled_return = callee.returns.as_ref().is_some_and(|r| r.modeled);
                 if !has_modeled_return {
                     diags.push(
@@ -316,6 +351,7 @@ fn check_call_sites(
                             ),
                         )
                         .with_path(path)
+                        .with_location(&loc)
                         .with_fix("declare a modeled return on the callee, or drop dst"),
                     );
                 }
@@ -325,6 +361,7 @@ fn check_call_sites(
 }
 
 fn check_concurrent_sites(
+    module: &Module,
     f: &Function,
     callees: &HashMap<String, &Function>,
     mi: usize,
@@ -333,17 +370,18 @@ fn check_concurrent_sites(
 ) {
     for (si, stmt) in f.body.iter().enumerate() {
         let path = Program::stmt_path(mi, fi, si);
+        let loc = Program::stmt_location(module, f, stmt);
         match &stmt.op {
             Op::Spawn { func, args, .. } | Op::AsyncCall { func, args, .. } => {
                 let op = match &stmt.op {
                     Op::Spawn { .. } => "spawn",
                     _ => "async_call",
                 };
-                check_concurrent_callee(op, func, Some(args), callees, &path, diags);
+                check_concurrent_callee(op, func, Some(args), callees, &path, &loc, diags);
             }
             Op::Scope { funcs } => {
                 for func in funcs {
-                    check_concurrent_callee("scope", func, None, callees, &path, diags);
+                    check_concurrent_callee("scope", func, None, callees, &path, &loc, diags);
                 }
             }
             _ => {}
@@ -357,6 +395,7 @@ fn check_concurrent_callee(
     args: Option<&[String]>,
     callees: &HashMap<String, &Function>,
     path: &str,
+    location: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
     let Some(callee) = callees.get(func) else {
@@ -373,6 +412,7 @@ fn check_concurrent_callee(
                 ),
             )
             .with_path(path.to_string())
+            .with_location(location)
             .with_fix(
                 "set the callee's parameters to \"modeled\": false and communicate via a Var, \
                  Atomic, or Channel",
@@ -395,6 +435,7 @@ fn check_concurrent_callee(
                     ),
                 )
                 .with_path(path.to_string())
+                .with_location(location)
                 .with_fix("pass one codegen argument per unmodeled parameter, or omit args"),
             );
         }
@@ -402,6 +443,7 @@ fn check_concurrent_callee(
 }
 
 fn check_modeled_activation_on_entry(
+    module: &Module,
     f: &Function,
     mi: usize,
     fi: usize,
@@ -422,6 +464,7 @@ fn check_modeled_activation_on_entry(
             ),
         )
         .with_path(Program::fn_path(mi, fi))
+        .with_location(Program::fn_location(module, f))
         .with_fix("keep activation slots unmodeled, or publish concurrent values through a Var"),
     );
 }

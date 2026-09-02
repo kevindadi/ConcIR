@@ -1,7 +1,7 @@
 # ConcIR Error Code Reference
 
-The validator emits structured diagnostics. Locations use JSON paths, e.g.
-`modules[0].functions[1].body[3].call`.
+The validator emits structured diagnostics. The **primary** location is
+`module::function.sid` (a control location). The JSON `path` is secondary.
 
 See [`syntax/`](syntax/README.md) for the grammar and [`todo.md`](todo.md) for the roadmap.
 
@@ -16,6 +16,7 @@ Unknown `kind` tags and leftover fields from the old block shape
 | E000 | JsonParseError        |  error   | JSON syntax error or invalid top-level structure; deserialization failed                   |
 | E001 | MissingField          |  error   | Resource declaration missing a field required by its type (Semaphore `count`; Channel `base` and `capacity`; Var/Atomic `base`/`init`). Channel `capacity` must be ≥ 0. |
 | E005 | InvalidSidFormat      |  error   | sid format is not `"s"` + digits (e.g. `"s1"`, `"s10"`)                                    |
+| E006 | InvalidSeqHoleId      |  error   | `seq_hole.id` is not an identifier `[A-Za-z_][A-Za-z0-9_]*`                                |
 | E008 | InvalidKind           |  error   | Resource `kind` is not `"sync"` / `"var"`, or sync `type` value is illegal                 |
 | E009 | InvalidMode           |  error   | `mode` is not `"Sync"` / `"Async"`                                                         |
 | E010 | InvalidFnKind         |  error   | Function `kind` is not `"normal"` / `"async"`, or `form` is not `"function"` / `"closure"` |
@@ -32,7 +33,12 @@ Unknown `kind` tags and leftover fields from the old block shape
 | E105 | DuplicateFunction |  error   | Duplicate function name in the same module                                                                                                                                               |
 | E106 | DuplicateSid      |  error   | Duplicate sid within the same function body                                                                                                                                              |
 | E107 | UndefinedEntry    |  error   | `entry` is not an FQN, or the FQN is not a defined function                                                                                                                              |
-| E108 | ModuleContract    |  error   | Duplicate module name; `provides` names a missing local entity; `requires` is not an FQN or does not resolve to an exported entity; cross-module call not listed in `requires.functions` |
+| E108 | ModuleContract    |  error   | Duplicate module name; `provides` names a missing local entity; `requires` is not an FQN or does not resolve to an exported entity; cross-module call not listed in `requires.functions`; same rules for `types` |
+| E109 | DuplicateSeqHoleId |  error  | two `seq_hole` statements in the same function share an `id` |
+| E110 | DuplicateType     |  error   | two `types` entries in the same module share a name, or the name is not an identifier |
+| E111 | UndefinedType     |  error   | a named type used as `base` / param / local / alias is not declared and not imported |
+| E112 | TypeNameReserved  |  error   | a module type is named `Bool`, `Int`, `Float`, or `String` |
+| E113 | TypeAliasCycle    |  error   | a named type aliases itself (directly or through other aliases) |
 
 ## E2xx — Type errors
 
@@ -61,7 +67,8 @@ domain (e.g. writing `11` to an `Int{[0,10]}` variable).
 | E306 | SendOnNonChannel      |  error   | `channel_send` / `channel_recv` on a non-Channel                     |
 | E307 | LoadOnNonAtomic       |  error   | `atomic_*` on a non-Atomic                                           |
 | E308 | ReadWriteOnNonVar     |  error   | `read_shared` / `write_shared` on a non-Var                          |
-| E309 | VarAccessWithoutLock  |  error   | read/write of a protected Var without holding the corresponding lock, including `read_shared`/`write_shared` and r-values in `branch`/`switch`/`expr`/`args` |
+| E309 | VarAccessWithoutLock  |  error   | read/write of a protected Var without holding the corresponding lock, including `read_shared`/`write_shared`, `seq_hole` reads/writes, and r-values in `branch`/`switch`/`expr`/`args` |
+| E310 | SeqHoleSyncResource   |  error   | `seq_hole` `reads` / `writes` names a Mutex, RwLock, Condvar, Semaphore, or Channel |
 
 **Call / statement–resource compatibility**:
 
@@ -122,6 +129,19 @@ Pairing is by **handle**, not by function name.
 | E704 | VarWithoutProtection   | warning  | Var resource does not appear in protection            |
 | E705 | DuplicateProtection    |  error   | same Var appears more than once in protection         |
 
+## E8xx — Function concurrency interface
+
+Declared `may_block` / `locks` on a function, and imported signatures on
+`requires.functions`. See [`syntax/function.md`](syntax/function.md) and
+[`syntax/module.md`](syntax/module.md).
+
+| Code | Name | Severity | Description |
+| ---- | ---- | :------: | ----------- |
+| E801 | LockEffectNotLock | error | `locks.acquires` / `releases` / `requires_held` names a missing resource, a non-Mutex/RwLock, or a duplicate in the same list |
+| E802 | MayBlockMismatch | error / warning | `may_block: false` on a body with a blocking op (error); `may_block: true` on a non-blocking body (warning). Nobody functions are not checked |
+| E803 | RequiresHeldNotHeld | error | `call` of a function that declares `requires_held` without those locks held at the call site |
+| E804 | ImportSigMismatch | error | a `requires.functions` signature object does not match the defining function (`kind`, `may_block`, `locks`, listed `params` / `returns`), or its `name` is not an FQN |
+
 ## E9xx — Typed data flow
 
 Implemented against [`syntax/dataflow.md`](syntax/dataflow.md)
@@ -148,6 +168,8 @@ parser, E309 on r-values). Default program version is `3.5.0`.
 | E935 | SwitchScrutineeNotSlot | error | `switch.var` is not a value slot (local, param, return, Var, Atomic) |
 | E936 | AssignLocalToResource | error | `assign_local.target` is not a function local or parameter |
 | E937 | ModeledActivationOnConcurrentEntry | warning | spawn/scope/async target has modeled locals or a modeled return |
+| E960 | BoundNotPositive | error | function `bound` is present and less than 1 |
+| E961 | BoundOnSequentialOnly | warning | function declares `bound` but is not a spawn / scope / async_call target |
 
 ## Diagnostic output format
 
@@ -158,6 +180,7 @@ Each diagnostic includes the following fields:
   "code": "E501",
   "severity": "error",
   "message": "lock 'mtx' not unlocked on return path in function 'worker'",
+  "location": "main::worker.s4",
   "path": "modules[0].functions[1].body[3]",
   "fix_hint": "add mutex_unlock/rwlock_unlock before return"
 }
@@ -168,5 +191,6 @@ Each diagnostic includes the following fields:
 | `code`     | Error code (e.g. `E501`)                                       |
 | `severity` | `"error"` or `"warning"`; only error affects the `valid` field |
 | `message`  | Human-readable error description                               |
-| `path`     | JSON path location (optional)                                  |
+| `location` | **Primary** anchor: `module::function.sid` for a statement, `module::function` for a function-level diagnostic |
+| `path`     | JSON path (optional, secondary)                                |
 | `fix_hint` | Suggested fix (optional)                                       |

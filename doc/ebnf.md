@@ -97,13 +97,37 @@ Program    = Ident,                     (* program *)
 
 Module     = Ident,                     (* name *)
              [ NameSet ],               (* provides: short names *)
-             [ NameSet ],               (* requires: FQNs *)
+             [ RequireSet ],            (* requires: FQNs or function signatures *)
+             { TypeDef },
              { Resource },
              { Protection },
              { Function } ;
 
-NameSet    = { Ident | Fqn },           (* resources *)
-             { Ident | Fqn } ;          (* functions *)
+NameSet    = { Ident },                 (* resources; short names *)
+             { Ident },                 (* functions; short names *)
+             { Ident } ;                (* types; short names *)
+
+RequireSet = { Fqn },                   (* resources *)
+             { RequiredFn },            (* functions: FQN or FunctionSig *)
+             { Fqn } ;                  (* types *)
+
+TypeDef    = Ident, BaseType ;          (* name, type; name must not be a builtin *)
+
+RequiredFn = Fqn
+           | FunctionSig ;
+
+FunctionSig
+           = Fqn,                       (* name *)
+             [ FnKind ],                (* kind *)
+             [ Boolean ],               (* may_block *)
+             [ LockEffects ],
+             { ParamDecl },             (* params; if present must match the definition *)
+             [ ParamDecl ] ;            (* returns *)
+
+LockEffects
+           = { Name },                  (* acquires *)
+             { Name },                  (* releases *)
+             { Name } ;                 (* requires_held *)
 ```
 
 ## Types
@@ -174,7 +198,10 @@ Function   = Ident,                     (* name *)
              [ ParamDecl ],             (* returns *)
              { LocalDecl },             (* locals *)
              { Stmt },                  (* body; empty = nobody placeholder *)
-             [ Effects ] ;
+             [ Effects ],
+             [ Boolean ],               (* may_block; omit = infer / unspecified *)
+             [ LockEffects ],
+             [ Integer ] ;              (* bound: max tokens on this spawn target *)
 
 FnKind     = "normal" | "async" ;
 
@@ -206,6 +233,7 @@ Op         = Nop
            | ReadShared
            | WriteShared
            | AbstractStep
+           | SeqHole
            | AtomicLoad
            | AtomicStore
            | AtomicCas
@@ -246,7 +274,10 @@ WriteShared
 
 AbstractStep
            = "abstract_step", { Name }, { Name }, [ String ] ;
-               (* reads, writes, desc *)
+               (* reads, writes, desc — modeled concurrent step *)
+
+SeqHole    = "seq_hole", Ident, [ String ], { Name }, { Name } ;
+               (* id, desc, reads, writes — sequential fill site; not in the net *)
 
 AtomicLoad = "atomic_load", Name, Ident ;
                (* dst := current value, Atomic base type *)

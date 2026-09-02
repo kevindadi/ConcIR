@@ -6,9 +6,10 @@ use crate::validate::types::{build_resource_type_map, ResType};
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let rt_map = build_resource_type_map(program);
 
-    program.walk_stmts(|mi, fi, si, _, _, stmt| {
+    program.walk_stmts(|mi, fi, si, m, f, stmt| {
         let path = Program::stmt_path(mi, fi, si);
-        check_op(&rt_map, diags, &path, &stmt.op);
+        let loc = Program::stmt_location(m, f, stmt);
+        check_op(&rt_map, diags, &path, &loc, &stmt.op);
         if let Op::Select { branches, .. } = &stmt.op {
             for branch in branches {
                 match &branch.guard {
@@ -17,6 +18,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                             &rt_map,
                             diags,
                             &path,
+                            &loc,
                             channel,
                             |rt| matches!(rt, ResType::Channel(_)),
                             "E306",
@@ -28,6 +30,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                             &rt_map,
                             diags,
                             &path,
+                            &loc,
                             condvar,
                             |rt| matches!(rt, ResType::Condvar),
                             "E303",
@@ -41,6 +44,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                                         format!("wait lock '{lock}' is not a Mutex or RwLock"),
                                     )
                                     .with_path(path.clone())
+                                    .with_location(&loc)
                                     .with_fix("specify a Mutex or RwLock as the wait lock"),
                                 );
                             }
@@ -51,6 +55,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                             &rt_map,
                             diags,
                             &path,
+                            &loc,
                             resource,
                             |rt| matches!(rt, ResType::Semaphore),
                             "E305",
@@ -67,6 +72,7 @@ fn check_op(
     rt_map: &std::collections::HashMap<String, ResType>,
     diags: &mut Vec<Diagnostic>,
     path: &str,
+    location: &str,
     op: &Op,
 ) {
     match op {
@@ -75,6 +81,7 @@ fn check_op(
                 rt_map,
                 diags,
                 path,
+                location,
                 resource,
                 |rt| matches!(rt, ResType::Mutex),
                 "E301",
@@ -88,6 +95,7 @@ fn check_op(
                 rt_map,
                 diags,
                 path,
+                location,
                 resource,
                 |rt| matches!(rt, ResType::RwLock),
                 "E302",
@@ -99,6 +107,7 @@ fn check_op(
                 rt_map,
                 diags,
                 path,
+                location,
                 condvar,
                 |rt| matches!(rt, ResType::Condvar),
                 "E303",
@@ -112,6 +121,7 @@ fn check_op(
                             format!("wait lock '{lock}' is not a Mutex or RwLock"),
                         )
                         .with_path(path.to_string())
+                        .with_location(location)
                         .with_fix("specify a Mutex or RwLock as the wait lock"),
                     );
                 }
@@ -122,6 +132,7 @@ fn check_op(
                 rt_map,
                 diags,
                 path,
+                location,
                 condvar,
                 |rt| matches!(rt, ResType::Condvar),
                 "E303",
@@ -133,6 +144,7 @@ fn check_op(
                 rt_map,
                 diags,
                 path,
+                location,
                 resource,
                 |rt| matches!(rt, ResType::Semaphore),
                 "E305",
@@ -144,6 +156,7 @@ fn check_op(
                 rt_map,
                 diags,
                 path,
+                location,
                 channel,
                 |rt| matches!(rt, ResType::Channel(_)),
                 "E306",
@@ -157,11 +170,34 @@ fn check_op(
                 rt_map,
                 diags,
                 path,
+                location,
                 resource,
                 |rt| matches!(rt, ResType::Atomic(_)),
                 "E307",
                 "atomic_* requires an Atomic",
             );
+        }
+        Op::SeqHole { reads, writes, .. } => {
+            for name in reads.iter().chain(writes.iter()) {
+                if let Some(rt) = rt_map.get(name) {
+                    if !matches!(rt, ResType::Var(_) | ResType::Atomic(_)) {
+                        diags.push(
+                            Diagnostic::error(
+                                "E310",
+                                format!(
+                                    "seq_hole footprint '{name}' is a sync primitive; sequential \
+                                     holes may name only Var or Atomic"
+                                ),
+                            )
+                            .with_path(path.to_string())
+                            .with_location(location)
+                            .with_fix(
+                                "move lock/wait/send into the skeleton; keep seq_hole to sequential data",
+                            ),
+                        );
+                    }
+                }
+            }
         }
         Op::ReadShared { resource, .. } | Op::WriteShared { resource, .. } => {
             if let Some(rt) = rt_map.get(resource) {
@@ -172,6 +208,7 @@ fn check_op(
                             format!("cannot read/write non-Var resource '{resource}'"),
                         )
                         .with_path(path.to_string())
+                        .with_location(location)
                         .with_fix("use a Var-typed resource"),
                     );
                 }
@@ -185,6 +222,7 @@ fn check_rt(
     rt_map: &std::collections::HashMap<String, ResType>,
     diags: &mut Vec<Diagnostic>,
     path: &str,
+    location: &str,
     name: &str,
     ok: impl Fn(&ResType) -> bool,
     code: &'static str,
@@ -197,6 +235,7 @@ fn check_rt(
         diags.push(
             Diagnostic::error(code, format!("{msg} (resource '{name}')"))
                 .with_path(path.to_string())
+                .with_location(location)
                 .with_fix("use the matching resource type"),
         );
     }

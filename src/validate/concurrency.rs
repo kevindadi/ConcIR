@@ -12,12 +12,14 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let mut async_spawns: HashMap<String, Vec<OpInfo>> = HashMap::new();
     let mut awaits: HashMap<String, Vec<OpInfo>> = HashMap::new();
 
-    program.walk_stmts(|mi, fi, si, _, f, stmt| {
+    program.walk_stmts(|mi, fi, si, m, f, stmt| {
         let path = Program::stmt_path(mi, fi, si);
+        let location = Program::stmt_location(m, f, stmt);
         let info = OpInfo {
             fn_kind: f.kind.clone(),
             fn_name: f.name.clone(),
             path: path.clone(),
+            location: location.clone(),
         };
         match &stmt.op {
             Op::Spawn { handle, .. } => {
@@ -28,6 +30,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                     diags.push(
                         Diagnostic::error("E410", "scope funcs is empty".to_string())
                             .with_path(path.clone())
+                            .with_location(&location)
                             .with_fix("list at least one function to spawn in the scope"),
                     );
                 }
@@ -58,6 +61,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                     format!("spawn handle '{name}' has no matching join"),
                 )
                 .with_path(&info.path)
+                .with_location(&info.location)
                 .with_fix("add join on this handle, or use a scope statement (implicit join_all)"),
             );
         }
@@ -71,6 +75,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                         format!("join handle '{name}' has no matching spawn"),
                     )
                     .with_path(&info.path)
+                    .with_location(&info.location)
                     .with_fix("spawn onto this handle before join"),
                 );
             }
@@ -85,6 +90,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                         format!("async_call handle '{name}' has no matching await"),
                     )
                     .with_path(&info.path)
+                    .with_location(&info.location)
                     .with_fix("add await on this handle"),
                 );
             }
@@ -99,6 +105,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                         format!("await handle '{name}' has no matching async_call"),
                     )
                     .with_path(&info.path)
+                    .with_location(&info.location)
                     .with_fix("async_call onto this handle before await"),
                 );
             }
@@ -113,6 +120,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                         format!("spawn handle '{name}' is paired with await; use join instead"),
                     )
                     .with_path(&info.path)
+                    .with_location(&info.location)
                     .with_fix("change await to join"),
                 );
             }
@@ -129,6 +137,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                         ),
                     )
                     .with_path(&info.path)
+                    .with_location(&info.location)
                     .with_fix("change join to await"),
                 );
             }
@@ -146,6 +155,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                         ),
                     )
                     .with_path(&info.path)
+                    .with_location(&info.location)
                     .with_fix("use async_call + await"),
                 );
             }
@@ -160,6 +170,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
                         format!("await() in non-async function '{}'", info.fn_name),
                     )
                     .with_path(&info.path)
+                    .with_location(&info.location)
                     .with_fix("change the function to async, or use join"),
                 );
             }
@@ -171,6 +182,7 @@ struct OpInfo {
     fn_kind: String,
     fn_name: String,
     path: String,
+    location: String,
 }
 
 /// E409: `condvar_wait` is not a `select!` candidate in sync Rust.
@@ -197,6 +209,7 @@ fn check_select_guards(program: &Program, diags: &mut Vec<Diagnostic>) {
                         ),
                     )
                     .with_path(path.clone())
+                    .with_location(Program::stmt_location(m, f, stmt))
                     .with_fix(
                         "use condvar_wait as a statement in a wait loop, or make the function \
                          async and use an Async-mode Condvar (codegen: Notify/watch)",
@@ -215,6 +228,7 @@ fn check_select_guards(program: &Program, diags: &mut Vec<Diagnostic>) {
                             ),
                         )
                         .with_path(path.clone())
+                        .with_location(Program::stmt_location(m, f, stmt))
                         .with_fix("set the Condvar's mode to Async, or wait outside select"),
                     );
                 }

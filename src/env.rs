@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{BaseType, ComplexBaseType, Function, Module, Program, Resource};
 use crate::fqn;
+use crate::typedef::TypeEnv;
 
 /// Kind of a resolved name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +73,7 @@ pub struct NameEnv {
 
 impl NameEnv {
     pub fn build(program: &Program, module: &Module, function: &Function) -> Self {
+        let tenv = TypeEnv::from_program(program);
         let mut slots = HashMap::new();
 
         slots.insert(
@@ -88,7 +90,10 @@ impl NameEnv {
                 p.name.clone(),
                 Slot {
                     kind: SlotKind::Param,
-                    ty: Some(p.param_type.clone()),
+                    ty: Some(
+                        tenv.resolve(&module.name, &p.param_type)
+                            .unwrap_or_else(|| p.param_type.clone()),
+                    ),
                     modeled: p.modeled,
                 },
             );
@@ -98,7 +103,10 @@ impl NameEnv {
                 local.name.clone(),
                 Slot {
                     kind: SlotKind::Local,
-                    ty: Some(local.local_type.clone()),
+                    ty: Some(
+                        tenv.resolve(&module.name, &local.local_type)
+                            .unwrap_or_else(|| local.local_type.clone()),
+                    ),
                     modeled: local.modeled,
                 },
             );
@@ -106,7 +114,10 @@ impl NameEnv {
         if let Some(ret) = &function.returns {
             slots.entry(ret.name.clone()).or_insert(Slot {
                 kind: SlotKind::Return,
-                ty: Some(ret.param_type.clone()),
+                ty: Some(
+                    tenv.resolve(&module.name, &ret.param_type)
+                        .unwrap_or_else(|| ret.param_type.clone()),
+                ),
                 modeled: ret.modeled,
             });
         }
@@ -114,6 +125,7 @@ impl NameEnv {
         for m in &program.modules {
             for r in &m.resources {
                 let slot = resource_slot(r);
+                let slot = resolve_slot(&tenv, &m.name, slot);
                 if m.name == module.name {
                     slots.entry(r.name.clone()).or_insert_with(|| slot.clone());
                     slots
@@ -123,8 +135,9 @@ impl NameEnv {
             }
         }
         for req in &module.requires.resources {
-            if let Some((_, r)) = program.lookup_resource(&module.name, req) {
-                slots.entry(req.clone()).or_insert_with(|| resource_slot(r));
+            if let Some((owner, r)) = program.lookup_resource(&module.name, req) {
+                let slot = resolve_slot(&tenv, &owner.name, resource_slot(r));
+                slots.entry(req.clone()).or_insert(slot);
             }
         }
 
@@ -148,6 +161,13 @@ impl NameEnv {
         }
         out
     }
+}
+
+fn resolve_slot(tenv: &TypeEnv, owner: &str, mut slot: Slot) -> Slot {
+    if let Some(ty) = slot.ty.take() {
+        slot.ty = Some(tenv.resolve(owner, &ty).unwrap_or(ty));
+    }
+    slot
 }
 
 fn resource_slot(r: &Resource) -> Slot {

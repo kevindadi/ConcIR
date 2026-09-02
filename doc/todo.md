@@ -17,7 +17,8 @@ Status legend: `[x]` done · `[ ]` planned · `[~]` in progress
 - `[x]` Channel `capacity` required on the resource (message store; `0` = rendezvous, `n ≥ 1` = bounded buffer of `n` payload slots)
 - `[x]` Structured concurrency: `scope` is a statement (`funcs` array); implicit `join_all`; repeated copies use `branch`; function `kind` is only `normal` / `async`
 - `[ ]` Channel capacity in the CVN — bounded-buffer semantics from the `capacity` field
-- `[ ]` Dynamic thread identities / thread-local state — multiple spawns of the same function share control places (multi-token abstraction). Per-token locals are **rejected** by the data-flow spec; concurrent values stay in resources.
+- `[x]` Optional `bound` on a spawn/scope/async_call **target** (role multiplicity; no instance id). Tokens still share one body.
+- `[ ]` Dynamic thread identities / thread-local state — rejected. `bound` is the finite-token hint; per-token locals stay out of the net.
 
 ## Call semantics
 
@@ -30,6 +31,10 @@ Status legend: `[x]` done · `[ ]` planned · `[~]` in progress
 - `[x]` Native `Module` with `provides` / `requires` as `{ resources, functions }`
 - `[x]` FQN rules: same-module short name; cross-module FQN listed in `requires`; `entry` is an FQN
 - `[x]` Schema-level module validation (E108)
+- `[x]` Function concurrency interface (`may_block`, `locks`) and `requires.functions` signatures (E8xx)
+- `[x]` `seq_hole` as an explicit sequential fill site, distinct from `abstract_step` and nobody functions
+- `[x]` Module-level `types` with `provides.types` / `requires.types` (E110–E113)
+- `[x]` Diagnostic `location` is `module::function.sid` (JSON `path` is secondary)
 - `[ ]` Concatenate independently authored module files into one `Program`
 
 ## Validation & diagnostics

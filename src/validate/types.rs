@@ -4,6 +4,7 @@ use crate::ast::*;
 use crate::diagnostic::Diagnostic;
 use crate::env::NameEnv;
 use crate::expr;
+use crate::typedef::TypeEnv;
 
 /// E2xx: Type checking, now parser-backed (E931–E934).
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
@@ -24,20 +25,22 @@ pub(crate) enum ResType {
 }
 
 pub(crate) fn build_resource_type_map(program: &Program) -> HashMap<String, ResType> {
+    let tenv = TypeEnv::from_program(program);
     let mut map = HashMap::new();
     for m in &program.modules {
         for r in &m.resources {
+            let resolve = |bt: &BaseType| tenv.resolve(&m.name, bt).unwrap_or_else(|| bt.clone());
             let rt = match (r.kind.as_str(), r.res_type.as_str()) {
                 ("var", "Var") => {
                     if let Some(ref bt) = r.base {
-                        ResType::Var(bt.clone())
+                        ResType::Var(resolve(bt))
                     } else {
                         continue;
                     }
                 }
                 ("var", "Atomic") => {
                     if let Some(ref bt) = r.base {
-                        ResType::Atomic(bt.clone())
+                        ResType::Atomic(resolve(bt))
                     } else {
                         continue;
                     }
@@ -48,7 +51,7 @@ pub(crate) fn build_resource_type_map(program: &Program) -> HashMap<String, ResT
                 ("sync", "Semaphore") => ResType::Semaphore,
                 ("sync", "Channel") => {
                     if let Some(ref bt) = r.base {
-                        ResType::Channel(bt.clone())
+                        ResType::Channel(resolve(bt))
                     } else {
                         continue;
                     }
@@ -69,6 +72,7 @@ fn check_exprs(
 ) {
     program.walk_stmts(|mi, fi, si, m, f, stmt| {
         let path = Program::stmt_path(mi, fi, si);
+        let loc = Program::stmt_location(m, f, stmt);
         let env = NameEnv::build(program, m, f);
         match &stmt.op {
             Op::Branch { cond, .. } => {
@@ -78,29 +82,48 @@ fn check_exprs(
                     Some(&BaseType::Primitive("Bool".into())),
                     true,
                     &path,
+                    &loc,
                     "E201",
                     diags,
                 );
             }
             Op::AssignLocal { target, expr } => {
                 if let Some(ty) = env.ty(target) {
-                    check_expr(expr, &env, Some(ty), false, &path, "E932", diags);
+                    check_expr(expr, &env, Some(ty), false, &path, &loc, "E932", diags);
                 } else {
-                    check_expr(expr, &env, None, false, &path, "E932", diags);
+                    check_expr(expr, &env, None, false, &path, &loc, "E932", diags);
                 }
             }
             Op::WriteShared { resource, expr } => {
                 if let Some(ResType::Var(expected)) = resource_types.get(resource) {
-                    check_expr(expr, &env, Some(expected), false, &path, "E203", diags);
+                    check_expr(
+                        expr,
+                        &env,
+                        Some(expected),
+                        false,
+                        &path,
+                        &loc,
+                        "E203",
+                        diags,
+                    );
                 } else {
-                    check_expr(expr, &env, None, false, &path, "E203", diags);
+                    check_expr(expr, &env, None, false, &path, &loc, "E203", diags);
                 }
             }
             Op::AtomicStore { resource, value } => {
                 if let Some(ResType::Atomic(expected)) = resource_types.get(resource) {
-                    check_expr(value, &env, Some(expected), false, &path, "E204", diags);
+                    check_expr(
+                        value,
+                        &env,
+                        Some(expected),
+                        false,
+                        &path,
+                        &loc,
+                        "E204",
+                        diags,
+                    );
                 } else {
-                    check_expr(value, &env, None, false, &path, "E204", diags);
+                    check_expr(value, &env, None, false, &path, &loc, "E204", diags);
                 }
             }
             Op::AtomicCas {
@@ -110,8 +133,8 @@ fn check_exprs(
                 dst,
             } => {
                 if let Some(ResType::Atomic(ty)) = resource_types.get(resource) {
-                    check_expr(expected, &env, Some(ty), false, &path, "E205", diags);
-                    check_expr(desired, &env, Some(ty), false, &path, "E205", diags);
+                    check_expr(expected, &env, Some(ty), false, &path, &loc, "E205", diags);
+                    check_expr(desired, &env, Some(ty), false, &path, &loc, "E205", diags);
                     if let Some(dst_ty) = env.ty(dst) {
                         if dst_ty != ty && !(is_intish(dst_ty) && is_intish(ty)) {
                             diags.push(
@@ -124,6 +147,7 @@ fn check_exprs(
                                     ),
                                 )
                                 .with_path(path.clone())
+                                .with_location(&loc)
                                 .with_fix(
                                     "bind dst to a local or Var/Atomic of the same base type; \
                                      test success with branch(dst == expected)",
@@ -135,18 +159,27 @@ fn check_exprs(
             }
             Op::ChannelSend { channel, value } => {
                 if let Some(ResType::Channel(expected)) = resource_types.get(channel) {
-                    check_expr(value, &env, Some(expected), false, &path, "E206", diags);
+                    check_expr(
+                        value,
+                        &env,
+                        Some(expected),
+                        false,
+                        &path,
+                        &loc,
+                        "E206",
+                        diags,
+                    );
                 } else {
-                    check_expr(value, &env, None, false, &path, "E206", diags);
+                    check_expr(value, &env, None, false, &path, &loc, "E206", diags);
                 }
             }
             Op::ChannelRecv { channel, dst } => {
-                check_recv_dst(diags, &env, resource_types, channel, dst, &path);
+                check_recv_dst(diags, &env, resource_types, channel, dst, &path, &loc);
             }
             Op::Select { branches, .. } => {
                 for branch in branches {
                     if let SelectGuard::ChannelRecv { channel, dst } = &branch.guard {
-                        check_recv_dst(diags, &env, resource_types, channel, dst, &path);
+                        check_recv_dst(diags, &env, resource_types, channel, dst, &path, &loc);
                     }
                 }
             }
@@ -158,11 +191,12 @@ fn check_exprs(
                         Some(&ret.param_type),
                         false,
                         &path,
+                        &loc,
                         "E932",
                         diags,
                     );
                 } else {
-                    check_expr(value, &env, None, false, &path, "E932", diags);
+                    check_expr(value, &env, None, false, &path, &loc, "E932", diags);
                 }
             }
             Op::Func { func, args, .. } => {
@@ -176,22 +210,23 @@ fn check_exprs(
                             Some(&param.param_type),
                             false,
                             &path,
+                            &loc,
                             "E932",
                             diags,
                         );
                     }
                     for arg in args.iter().skip(modeled.len()) {
-                        check_expr(arg, &env, None, false, &path, "E932", diags);
+                        check_expr(arg, &env, None, false, &path, &loc, "E932", diags);
                     }
                 } else {
                     for arg in args {
-                        check_expr(arg, &env, None, false, &path, "E932", diags);
+                        check_expr(arg, &env, None, false, &path, &loc, "E932", diags);
                     }
                 }
             }
             Op::Spawn { args, .. } | Op::AsyncCall { args, .. } => {
                 for arg in args {
-                    check_expr(arg, &env, None, false, &path, "E932", diags);
+                    check_expr(arg, &env, None, false, &path, &loc, "E932", diags);
                 }
             }
             _ => {}
@@ -213,6 +248,7 @@ fn check_expr(
     expected: Option<&BaseType>,
     require_cmp: bool,
     path: &str,
+    location: &str,
     assign_code: &'static str,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -222,6 +258,7 @@ fn check_expr(
             diags.push(
                 Diagnostic::error("E931", e.message)
                     .with_path(path.to_string())
+                    .with_location(location)
                     .with_fix("fix the expression syntax, or use a declared slot or enum variant"),
             );
             return;
@@ -234,6 +271,7 @@ fn check_expr(
                 format!("branch condition \"{text}\" is not a comparison expression"),
             )
             .with_path(path.to_string())
+            .with_location(location)
             .with_fix("use a comparison operator: ==, !=, >, <, >=, <="),
         );
         return;
@@ -244,6 +282,7 @@ fn check_expr(
             diags.push(
                 Diagnostic::error(te.code, te.message)
                     .with_path(path.to_string())
+                    .with_location(location)
                     .with_fix("use a value name of the matching type"),
             );
             return;
@@ -261,6 +300,7 @@ fn check_expr(
         diags.push(
             Diagnostic::error(code, te.message)
                 .with_path(path.to_string())
+                .with_location(location)
                 .with_fix("change the value to match the expected type"),
         );
     }
@@ -273,6 +313,7 @@ fn check_recv_dst(
     channel: &str,
     dst: &str,
     path: &str,
+    location: &str,
 ) {
     if dst == "_" {
         return;
@@ -291,6 +332,7 @@ fn check_recv_dst(
                     ),
                 )
                 .with_path(path.to_string())
+                .with_location(location)
                 .with_fix(
                     "bind dst to a local or Var/Atomic of the Channel's base type, or use \
                      \"_\" to discard the payload",
@@ -307,6 +349,7 @@ fn check_switch_variables(program: &Program, diags: &mut Vec<Diagnostic>) {
             return;
         };
         let path = Program::stmt_path(mi, fi, si);
+        let loc = Program::stmt_location(m, f, stmt);
         let env = crate::env::NameEnv::build(program, m, f);
         let Some(slot) = env.get(var) else {
             diags.push(
@@ -315,6 +358,7 @@ fn check_switch_variables(program: &Program, diags: &mut Vec<Diagnostic>) {
                     format!("switch scrutinee '{var}' is not a declared slot"),
                 )
                 .with_path(format!("{path}.var"))
+                .with_location(&loc)
                 .with_fix("switch on a local, param, Var, or Atomic of Enum or Int type"),
             );
             return;
@@ -326,6 +370,7 @@ fn check_switch_variables(program: &Program, diags: &mut Vec<Diagnostic>) {
                     format!("switch scrutinee '{var}' is not a value slot"),
                 )
                 .with_path(format!("{path}.var"))
+                .with_location(&loc)
                 .with_fix("switch on a local, param, Var, or Atomic of Enum or Int type"),
             );
             return;
@@ -344,6 +389,7 @@ fn check_switch_variables(program: &Program, diags: &mut Vec<Diagnostic>) {
                         format!("switch variable '{var}' is of type {other}, expected Enum or Int"),
                     )
                     .with_path(format!("{path}.var"))
+                    .with_location(&loc)
                     .with_fix("use an Enum or Int typed slot, or use branch instead"),
                 );
             }
@@ -357,6 +403,7 @@ fn check_switch_variables(program: &Program, diags: &mut Vec<Diagnostic>) {
                             format!("switch case label '{label}' is not a variant of enum '{var}'"),
                         )
                         .with_path(format!("{path}.cases"))
+                        .with_location(&loc)
                         .with_fix("use a valid enum variant as the case label"),
                     );
                 }

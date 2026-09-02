@@ -32,7 +32,7 @@ pub struct Program {
     pub entry: String,
 }
 
-/// Exported / imported names. `provides` uses short names; `requires` uses FQNs.
+/// Exported names. `provides` uses short names only.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NameSet {
@@ -40,6 +40,111 @@ pub struct NameSet {
     pub resources: Vec<String>,
     #[serde(default)]
     pub functions: Vec<String>,
+    #[serde(default)]
+    pub types: Vec<String>,
+}
+
+/// Imported names. Resources stay FQN strings. Functions may be an FQN
+/// string (name-only, backward compatible) or a [`FunctionSig`] object.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RequireSet {
+    #[serde(default)]
+    pub resources: Vec<String>,
+    #[serde(default)]
+    pub functions: Vec<RequiredFunction>,
+    #[serde(default)]
+    pub types: Vec<String>,
+}
+
+impl RequireSet {
+    pub fn function_names(&self) -> Vec<&str> {
+        self.functions.iter().map(RequiredFunction::name).collect()
+    }
+
+    pub fn function_sig(&self, fqn: &str) -> Option<&FunctionSig> {
+        self.functions.iter().find_map(|r| match r {
+            RequiredFunction::Sig(sig) if sig.name == fqn => Some(sig),
+            _ => None,
+        })
+    }
+}
+
+/// One `requires.functions` entry: a bare FQN or an imported signature.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum RequiredFunction {
+    Name(String),
+    Sig(FunctionSig),
+}
+
+impl RequiredFunction {
+    pub fn name(&self) -> &str {
+        match self {
+            RequiredFunction::Name(n) => n,
+            RequiredFunction::Sig(sig) => &sig.name,
+        }
+    }
+
+    pub fn sig(&self) -> Option<&FunctionSig> {
+        match self {
+            RequiredFunction::Sig(sig) => Some(sig),
+            RequiredFunction::Name(_) => None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for RequiredFunction {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match value {
+            serde_json::Value::String(s) => Ok(RequiredFunction::Name(s)),
+            serde_json::Value::Object(_) => {
+                let sig: FunctionSig = serde_json::from_value(value).map_err(de::Error::custom)?;
+                Ok(RequiredFunction::Sig(sig))
+            }
+            _ => Err(de::Error::custom(
+                "requires.functions entry must be an FQN string or a function signature object",
+            )),
+        }
+    }
+}
+
+/// Imported concurrency interface. Copied from the defining function so a
+/// module can be generated without reading the callee body.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct FunctionSig {
+    /// FQN of the imported function (`module::entity`).
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub may_block: Option<bool>,
+    #[serde(default, skip_serializing_if = "LockEffects::is_empty")]
+    pub locks: LockEffects,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<ParamDecl>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returns: Option<ParamDecl>,
+}
+
+/// Lock protocol of a function: what it acquires, releases, and requires held.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct LockEffects {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub acquires: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub releases: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires_held: Vec<String>,
+}
+
+impl LockEffects {
+    pub fn is_empty(&self) -> bool {
+        self.acquires.is_empty() && self.releases.is_empty() && self.requires_held.is_empty()
+    }
 }
 
 /// One ConcIR module: resources, protection, functions, and a name-resolution contract.
@@ -50,13 +155,26 @@ pub struct Module {
     #[serde(default)]
     pub provides: NameSet,
     #[serde(default)]
-    pub requires: NameSet,
+    pub requires: RequireSet,
+    /// Module-level named types. Referenced as a short name in-module or
+    /// as an FQN listed in `requires.types`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub types: Vec<TypeDef>,
     #[serde(default)]
     pub resources: Vec<Resource>,
     #[serde(default)]
     pub protection: Vec<Protection>,
     #[serde(default)]
     pub functions: Vec<Function>,
+}
+
+/// A named type in a module: `{"name": "Record", "type": {"Struct": ...}}`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeDef {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: BaseType,
 }
 
 // ──────────────────── Resources ────────────────────
@@ -225,7 +343,7 @@ pub struct Protection {
 /// `modeled` controls whether the value is materialized in the CVN variable
 /// store (see `doc/syntax/function.md`). Unmodeled values are codegen-only placeholders
 /// and never enter the net.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ParamDecl {
     pub name: String,
@@ -271,6 +389,18 @@ pub struct Function {
     pub body: Vec<Stmt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effects: Option<FunctionEffects>,
+    /// Declared blocking: `true` / `false`. Omitted = infer from the body
+    /// (nobody functions stay unspecified).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub may_block: Option<bool>,
+    /// Lock protocol. On a nobody function this *is* the interface.
+    #[serde(default, skip_serializing_if = "LockEffects::is_empty")]
+    pub locks: LockEffects,
+    /// Max concurrent activations when this function is a spawn / scope /
+    /// `async_call` target. Tokens still share one body (no instance id).
+    /// `None` = unbounded over-approx.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bound: Option<i64>,
 }
 
 impl Function {
@@ -280,6 +410,34 @@ impl Function {
 
     pub fn is_closure(&self) -> bool {
         self.form == "closure"
+    }
+
+    /// Body contains a blocking op, or is empty while `may_block` is declared true.
+    pub fn body_may_block(&self) -> bool {
+        self.body.iter().any(|s| s.op.is_blocking())
+    }
+
+    /// Effective blocking flag: explicit `may_block`, else inferred from the body.
+    /// Nobody functions with no declaration stay `None`.
+    pub fn effective_may_block(&self) -> Option<bool> {
+        if self.may_block.is_some() {
+            return self.may_block;
+        }
+        if self.body.is_empty() {
+            return None;
+        }
+        Some(self.body_may_block())
+    }
+
+    pub fn to_sig(&self, fqn: impl Into<String>) -> FunctionSig {
+        FunctionSig {
+            name: fqn.into(),
+            kind: Some(self.kind.clone()),
+            may_block: self.effective_may_block(),
+            locks: self.locks.clone(),
+            params: self.params.clone(),
+            returns: self.returns.clone(),
+        }
     }
 
     /// CFG successors of `body[i]`. Non-control ops fall through to `body[i+1]`.
@@ -337,6 +495,18 @@ pub enum Op {
         writes: Vec<String>,
         #[serde(default)]
         desc: String,
+    },
+    /// Sequential fill site. Does **not** enter the concurrent store
+    /// (unlike [`Op::AbstractStep`]). `id` is unique per function.
+    #[serde(rename = "seq_hole")]
+    SeqHole {
+        id: String,
+        #[serde(default)]
+        desc: String,
+        #[serde(default)]
+        reads: Vec<String>,
+        #[serde(default)]
+        writes: Vec<String>,
     },
     #[serde(rename = "atomic_load")]
     AtomicLoad { resource: String, dst: String },
@@ -508,6 +678,16 @@ impl Program {
         format!("modules[{mi}].functions[{fi}].body[{si}]")
     }
 
+    /// Control location `module::function.sid`.
+    pub fn stmt_location(module: &Module, function: &Function, stmt: &Stmt) -> String {
+        fqn::location(&module.name, &function.name, &stmt.sid)
+    }
+
+    /// Function-level location `module::function` (no sid).
+    pub fn fn_location(module: &Module, function: &Function) -> String {
+        fqn::fqn(&module.name, &function.name)
+    }
+
     /// Resolve a function name from `from_module` (short or FQN).
     pub fn lookup_function(&self, from_module: &str, name: &str) -> Option<(&Module, &Function)> {
         let (module, entity) = if let Some(pair) = fqn::split_fqn(name) {
@@ -518,6 +698,17 @@ impl Program {
         let m = self.lookup_module(module)?;
         let f = m.functions.iter().find(|f| f.name == entity)?;
         Some((m, f))
+    }
+
+    pub fn lookup_type(&self, from_module: &str, name: &str) -> Option<(&Module, &TypeDef)> {
+        let (module, entity) = if let Some(pair) = fqn::split_fqn(name) {
+            pair
+        } else {
+            (from_module, name)
+        };
+        let m = self.lookup_module(module)?;
+        let t = m.types.iter().find(|t| t.name == entity)?;
+        Some((m, t))
     }
 
     pub fn lookup_resource(&self, from_module: &str, name: &str) -> Option<(&Module, &Resource)> {
@@ -647,6 +838,16 @@ impl Op {
             | Op::CondvarNotify { condvar, .. }
             | Op::CondvarNotifyAll { condvar, .. } => Some(condvar),
             Op::ReadShared { resource, .. } | Op::WriteShared { resource, .. } => Some(resource),
+            _ => None,
+        }
+    }
+
+    /// Resource names in a sequential footprint (`abstract_step` / `seq_hole`).
+    pub fn footprint(&self) -> Option<(&[String], &[String])> {
+        match self {
+            Op::AbstractStep { reads, writes, .. } | Op::SeqHole { reads, writes, .. } => {
+                Some((reads, writes))
+            }
             _ => None,
         }
     }

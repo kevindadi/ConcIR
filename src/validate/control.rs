@@ -32,17 +32,18 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
 
             let env = NameEnv::build(program, m, f);
             let fn_path = Program::fn_path(mi, fi);
-            check_reachability(f, &successors, n, &fn_path, diags);
-            check_return_paths(f, &successors, n, &fn_path, diags);
-            check_branch_targets_same(f, &fn_path, diags);
-            check_switch_exhaustive(f, &env, &fn_path, diags);
-            check_infinite_loop(f, &successors, n, &fn_path, diags);
+            check_reachability(m, f, &successors, n, &fn_path, diags);
+            check_return_paths(m, f, &successors, n, &fn_path, diags);
+            check_branch_targets_same(m, f, &fn_path, diags);
+            check_switch_exhaustive(m, f, &env, &fn_path, diags);
+            check_infinite_loop(m, f, &successors, n, &fn_path, diags);
         }
     }
 }
 
 /// E601: unreachable statements
 fn check_reachability(
+    module: &Module,
     f: &Function,
     successors: &[Vec<usize>],
     n: usize,
@@ -74,6 +75,7 @@ fn check_reachability(
                     ),
                 )
                 .with_path(format!("{fn_path}.body[{i}]"))
+                .with_location(Program::stmt_location(module, f, &f.body[i]))
                 .with_fix("remove the statement or fix control flow to reach it"),
             );
         }
@@ -82,6 +84,7 @@ fn check_reachability(
 
 /// E602: missing return — every path must end with a return
 fn check_return_paths(
+    module: &Module,
     f: &Function,
     successors: &[Vec<usize>],
     n: usize,
@@ -103,6 +106,7 @@ fn check_return_paths(
                     ),
                 )
                 .with_path(format!("{fn_path}.body[{i}]"))
+                .with_location(Program::stmt_location(module, f, stmt))
                 .with_fix("add a return statement at the end of this path"),
             );
         }
@@ -110,7 +114,12 @@ fn check_return_paths(
 }
 
 /// E603: branch with same true/false targets
-fn check_branch_targets_same(f: &Function, fn_path: &str, diags: &mut Vec<Diagnostic>) {
+fn check_branch_targets_same(
+    module: &Module,
+    f: &Function,
+    fn_path: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
     for (si, stmt) in f.body.iter().enumerate() {
         if let Op::Branch {
             then, else_target, ..
@@ -126,6 +135,7 @@ fn check_branch_targets_same(f: &Function, fn_path: &str, diags: &mut Vec<Diagno
                         ),
                     )
                     .with_path(format!("{fn_path}.body[{si}]"))
+                    .with_location(Program::stmt_location(module, f, stmt))
                     .with_fix("use goto instead, or correct the branch targets"),
                 );
             }
@@ -135,6 +145,7 @@ fn check_branch_targets_same(f: &Function, fn_path: &str, diags: &mut Vec<Diagno
 
 /// E604: switch not exhaustive for Enum types
 fn check_switch_exhaustive(
+    module: &Module,
     f: &Function,
     env: &NameEnv,
     fn_path: &str,
@@ -161,6 +172,7 @@ fn check_switch_exhaustive(
                             ),
                         )
                         .with_path(format!("{fn_path}.body[{si}].cases"))
+                        .with_location(Program::stmt_location(module, f, stmt))
                         .with_fix("add case branches for the missing variants"),
                     );
                 }
@@ -171,6 +183,7 @@ fn check_switch_exhaustive(
 
 /// E605: infinite loop with no exit and no blocking ops
 fn check_infinite_loop(
+    module: &Module,
     f: &Function,
     successors: &[Vec<usize>],
     n: usize,
@@ -210,6 +223,7 @@ fn check_infinite_loop(
                     ),
                 )
                 .with_path(format!("{fn_path}.body[{first}]"))
+                .with_location(Program::stmt_location(module, f, &f.body[first]))
                 .with_fix("add an exit condition or confirm this is an intentional event loop"),
             );
         }

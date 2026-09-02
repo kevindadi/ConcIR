@@ -34,6 +34,9 @@ semantics from `capacity` are on the roadmap.
 {"name": "flag",  "kind": "var", "type": "Atomic", "base": "Bool", "init": false}
 ```
 
+A string that is not a builtin primitive is a [module type](module.md#named-types)
+name (`"Record"` or `"storage::Record"`).
+
 **`base` values**:
 
 | Value                                | Description            | init example |

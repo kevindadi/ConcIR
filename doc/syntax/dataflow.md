@@ -419,8 +419,8 @@ now in ConcIR; the translator still has to consume them.
   the representation).
 - Replacing fallthrough CFG with old `op` + `transfer`.
 - `&&` / `||`, array index, pointer/aliasing.
-- Diagnostic `location: module::function.sid` (orthogonal; should
-  still happen, not in this change set).
+- Diagnostic `location: module::function.sid` is now the primary
+  diagnostic field (see [`error_codes.md`](../error_codes.md)).
 
 ## Downstream note
 
