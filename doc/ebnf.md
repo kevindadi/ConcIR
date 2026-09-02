@@ -200,7 +200,8 @@ Function   = Ident,                     (* name *)
              { Stmt },                  (* body; empty = nobody placeholder *)
              [ Effects ],
              [ Boolean ],               (* may_block; omit = infer / unspecified *)
-             [ LockEffects ] ;
+             [ LockEffects ],
+             [ Integer ] ;              (* bound: max tokens on this spawn target *)
 
 FnKind     = "normal" | "async" ;
 

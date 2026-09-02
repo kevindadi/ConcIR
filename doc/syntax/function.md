@@ -58,6 +58,21 @@ On a nobody function this interface *is* the spec. On a bodied function
 the validator checks `may_block` against blocking ops and enforces
 `requires_held` at each `call` site.
 
+## Concurrent-entry bound
+
+`bound` is an optional positive integer on a function that is a
+`spawn` / `scope` / `async_call` target. It is a **role multiplicity**,
+not an instance id: every activation still shares this body and its
+control places. The net may place at most `bound` tokens on that body.
+Omit it for the usual unbounded over-approx.
+
+`bound < 1` is **E960**. A `bound` on a function that is never spawned
+is warning **E961**.
+
+```json
+{ "name": "worker", "kind": "normal", "bound": 4, "body": [ ... ] }
+```
+
 The `body` is a list of [statements](statement.md) (CFG nodes; fallthrough
 plus explicit `goto` / `branch` / `switch` / `return` / `select`).
 A [`scope`](statement.md#threads-and-calls) statement lists the functions to

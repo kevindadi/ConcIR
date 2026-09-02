@@ -51,6 +51,7 @@ src/
   env.rs               Per-function name environment
   expr.rs              Expression parser and type checker
   fqn.rs               Identifier and FQN rules
+  typedef.rs           Module-level named types
   diagnostic.rs        Diagnostic types (Diagnostic, ValidationReport)
   validate/
     mod.rs             Validation entry: chains the 9 passes

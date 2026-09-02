@@ -396,6 +396,11 @@ pub struct Function {
     /// Lock protocol. On a nobody function this *is* the interface.
     #[serde(default, skip_serializing_if = "LockEffects::is_empty")]
     pub locks: LockEffects,
+    /// Max concurrent activations when this function is a spawn / scope /
+    /// `async_call` target. Tokens still share one body (no instance id).
+    /// `None` = unbounded over-approx.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bound: Option<i64>,
 }
 
 impl Function {

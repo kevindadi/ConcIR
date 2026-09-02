@@ -12,6 +12,7 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let rt_map = build_resource_type_map(program);
     check_declared_interfaces(program, &rt_map, diags);
     check_import_sigs(program, diags);
+    check_bound_on_sequential_only(program, diags);
 }
 
 fn check_declared_interfaces(
@@ -24,6 +25,7 @@ fn check_declared_interfaces(
             let fn_path = Program::fn_path(mi, fi);
             check_lock_effect_names(program, m, f, &fn_path, rt_map, diags);
             check_may_block_vs_body(m, f, &fn_path, diags);
+            check_bound(f, &fn_path, Program::fn_location(m, f), diags);
         }
     }
 }
@@ -136,6 +138,67 @@ fn check_may_block_vs_body(
             .with_location(Program::fn_location(module, f))
             .with_fix("set may_block to true, or remove the blocking operation"),
         );
+    }
+}
+
+fn check_bound(f: &Function, fn_path: &str, location: String, diags: &mut Vec<Diagnostic>) {
+    let Some(bound) = f.bound else {
+        return;
+    };
+    if bound < 1 {
+        diags.push(
+            Diagnostic::error(
+                "E960",
+                format!(
+                    "function '{}' has bound {bound}; concurrent-entry bound must be ≥ 1",
+                    f.name
+                ),
+            )
+            .with_path(format!("{fn_path}.bound"))
+            .with_location(location)
+            .with_fix("omit bound for unbounded, or set bound to a positive integer"),
+        );
+    }
+}
+
+fn check_bound_on_sequential_only(program: &Program, diags: &mut Vec<Diagnostic>) {
+    let mut spawned = HashSet::new();
+    program.walk_stmts(|_, _, _, m, _, stmt| match &stmt.op {
+        Op::Spawn { func, .. } | Op::AsyncCall { func, .. } => {
+            if let Some((owner, f)) = program.lookup_function(&m.name, func) {
+                spawned.insert(fqn::fqn(&owner.name, &f.name));
+            }
+        }
+        Op::Scope { funcs } => {
+            for func in funcs {
+                if let Some((owner, f)) = program.lookup_function(&m.name, func) {
+                    spawned.insert(fqn::fqn(&owner.name, &f.name));
+                }
+            }
+        }
+        _ => {}
+    });
+    for (mi, m) in program.modules.iter().enumerate() {
+        for (fi, f) in m.functions.iter().enumerate() {
+            if f.bound.is_none() {
+                continue;
+            }
+            if spawned.contains(&fqn::fqn(&m.name, &f.name)) {
+                continue;
+            }
+            diags.push(
+                Diagnostic::warning(
+                    "E961",
+                    format!(
+                        "function '{}' declares bound but is not a spawn/scope/async_call target",
+                        f.name
+                    ),
+                )
+                .with_path(format!("{}.bound", Program::fn_path(mi, fi)))
+                .with_location(Program::fn_location(m, f))
+                .with_fix("remove bound, or spawn/scope this function"),
+            );
+        }
     }
 }
 

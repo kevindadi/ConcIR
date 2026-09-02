@@ -168,6 +168,8 @@ parser, E309 on r-values). Default program version is `3.5.0`.
 | E935 | SwitchScrutineeNotSlot | error | `switch.var` is not a value slot (local, param, return, Var, Atomic) |
 | E936 | AssignLocalToResource | error | `assign_local.target` is not a function local or parameter |
 | E937 | ModeledActivationOnConcurrentEntry | warning | spawn/scope/async target has modeled locals or a modeled return |
+| E960 | BoundNotPositive | error | function `bound` is present and less than 1 |
+| E961 | BoundOnSequentialOnly | warning | function declares `bound` but is not a spawn / scope / async_call target |
 
 ## Diagnostic output format
 
