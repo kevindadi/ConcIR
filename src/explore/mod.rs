@@ -67,8 +67,11 @@ pub struct VerificationReport {
     pub contract_fingerprint: String,
     /// Semantic assumptions actually used.
     pub assumptions: crate::explore::contract::Assumptions,
-    /// Analysis bounds actually used.
+    /// Analysis bounds actually used (or requested, if analysis did not run).
     pub bounds: crate::sem::outcome::AnalysisBounds,
+    /// False when the analysis never started (rejected config/invalid input),
+    /// so the assumptions/bounds above are the *requested* values only.
+    pub analysis_started: bool,
 }
 
 impl VerificationReport {
@@ -80,7 +83,9 @@ impl VerificationReport {
 
 struct Graph<S> {
     states: Vec<S>,
-    index: HashMap<S, usize>,
+    /// Dedup key: the engine's fully identity-normalized canonical state, so
+    /// states differing only by fresh thread/frame/handle numbering are one.
+    index: HashMap<String, usize>,
     edges: Vec<Vec<(usize, StepLabel)>>,
     pred: Vec<Option<(usize, StepLabel)>>,
     had_boundary: Vec<bool>,
@@ -131,7 +136,7 @@ pub fn explore<S: TransitionSystem>(system: &S, bounds: &crate::sem::outcome::An
         };
     };
     let mut queue = VecDeque::new();
-    graph.index.insert(init.clone(), 0);
+    graph.index.insert(system.canonical(&init), 0);
     graph.states.push(init.clone());
     graph.edges.push(Vec::new());
     graph.pred.push(None);
@@ -173,11 +178,12 @@ pub fn explore<S: TransitionSystem>(system: &S, bounds: &crate::sem::outcome::An
                     }
                 }
                 for Step { label, state: succ } in enabled.steps {
-                    if let Some(&target) = graph.index.get(&succ) {
+                    let key = system.canonical(&succ);
+                    if let Some(&target) = graph.index.get(&key) {
                         graph.edges[idx].push((target, label));
                     } else {
                         let target = graph.states.len();
-                        graph.index.insert(succ.clone(), target);
+                        graph.index.insert(key, target);
                         graph.states.push(succ);
                         graph.edges.push(Vec::new());
                         graph.edges[idx].push((target, label.clone()));
@@ -259,7 +265,7 @@ pub fn verify<S: TransitionSystem>(
         }
     };
 
-    graph.index.insert(init.clone(), 0);
+    graph.index.insert(system.canonical(&init), 0);
     graph.states.push(init);
     graph.edges.push(Vec::new());
     graph.pred.push(None);
@@ -300,11 +306,12 @@ pub fn verify<S: TransitionSystem>(
                 }
                 for Step { label, state: succ } in enabled.steps {
                     transitions_explored += 1;
-                    if let Some(&target) = graph.index.get(&succ) {
+                    let key = system.canonical(&succ);
+                    if let Some(&target) = graph.index.get(&key) {
                         graph.edges[idx].push((target, label));
                     } else {
                         let target = graph.states.len();
-                        graph.index.insert(succ.clone(), target);
+                        graph.index.insert(key, target);
                         graph.states.push(succ);
                         graph.edges.push(Vec::new());
                         graph.edges[idx].push((target, label.clone()));
@@ -453,6 +460,7 @@ pub fn verify<S: TransitionSystem>(
         contract_fingerprint: contract_fingerprint(contract),
         assumptions: contract.assumptions.clone(),
         bounds: contract.bounds.clone(),
+        analysis_started: true,
     }
 }
 
@@ -476,6 +484,7 @@ fn report_early(
         contract_fingerprint: String::new(),
         assumptions: Default::default(),
         bounds: crate::sem::outcome::AnalysisBounds::default(),
+        analysis_started: false,
     }
 }
 
@@ -874,6 +883,7 @@ impl VerificationReport {
             contract_fingerprint: String::new(),
             assumptions: Default::default(),
             bounds: crate::sem::outcome::AnalysisBounds::default(),
+            analysis_started: false,
         }
     }
 }
@@ -892,6 +902,10 @@ pub fn verify_program(
     let finish_meta = |mut report: VerificationReport| {
         report.model_fingerprint = program_fp.clone();
         report.contract_fingerprint = contract_fp.clone();
+        // For early exits the analysis never ran; record the *requested*
+        // configuration rather than a default that was never used.
+        report.assumptions = spec.assumptions.clone();
+        report.bounds = (&spec.bounds).into();
         report
     };
 

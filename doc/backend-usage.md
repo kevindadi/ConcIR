@@ -154,13 +154,40 @@ they do not change the JSON syntax.
   normalized change content; conflicting changes on one statement are rejected.
 - **Exit codes.** `0` PASS/repaired · `1` FAIL · `2` usage · `3` UNKNOWN ·
   `4` INVALID · `5` UNSUPPORTED.
-- **Reports** carry model and contract fingerprints, the assumptions used, and
-  the analysis bounds.
+- **Reports** carry model and contract fingerprints, the assumptions used, the
+  analysis bounds, and `analysis_started` (an early `Invalid`/`Unsupported`
+  exit records the *requested* configuration, not a default never used).
+
+## Round-3 corrections
+
+- **Condvar waiters carry their own locks.** The wait set stores `(thread,
+  lock)`; `notify`/`notify_all` queue each waiter to re-acquire its own lock.
+  A condvar may therefore be waited on under different locks, and the
+  interpreter and net agree.
+- **Rendezvous enumerates every match.** With several waiting receivers (or
+  senders) a single arrival yields one successor per candidate, carrying frozen
+  message values; waiting threads are not served FIFO.
+- **Every value-entry path respects the declared domain.** Explicit stores,
+  `read_shared`/`atomic_load`/`atomic_cas` `dst`, `channel_recv` `dst`, `call`
+  arguments, `call` returns, and channel payloads. A domain violation disables
+  the whole step atomically (no partial consumption/unlock/unwind).
+- **`SemaphoreRelease` uses checked arithmetic.** Overflow is structured
+  `INVALID` (`E905`) with exit code 4, in both debug and release, not a panic.
+- **Contract names bind to the entry module.** Unqualified contract names
+  resolve in the entry module's namespace; fully-qualified names resolve
+  exactly. Module/function/resource reordering is stable.
+- **Patch scope is `module::function`.** `allowed_scope.functions=["main::t1"]`
+  allows only `main::t1` (file and automatic providers) and excludes
+  `other::t1`.
+- **Finite identity.** Successful joins/scopes reclaim finished objects, and
+  the explorer deduplicates by a fully identity-normalized canonical form, so
+  finite spawn/join and scope loops complete in a small budget.
 
 ## Reproducible checks
 
 ```bash
 cargo test --test round2_regressions
+cargo test --test round3_regressions
 cargo test --test differential
 cargo test --test semantics_regression
 cargo test --test validator_risks
@@ -168,8 +195,9 @@ cargo test --test interp_petri_diff
 cargo test --test repair_e2e
 ```
 
-`tests/repro_round2/` contains the round-2 review counterexamples (CIR,
-contracts, patches) as fixtures; see `CODE_REVIEW_ROUND2.md`.
+`tests/repro_round2/` and `tests/repro_round3/` contain the review
+counterexamples (CIR, contracts, patches) as fixtures; see
+`CODE_REVIEW_ROUND2.md` and `CODE_REVIEW_ROUND3.md`.
 
 Note: the pre-existing `tests/dot_export.rs` snapshot tests cannot pass on a
 fresh checkout because `**.snap` is git-ignored (no committed snapshots). This

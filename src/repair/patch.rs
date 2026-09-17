@@ -244,10 +244,10 @@ pub fn check_allowed(
             patch.module
         )));
     }
-    if !scope.allows_function(&patch.function) {
+    if !scope.allows_function(&patch.module, &patch.function) {
         return Err(PatchError::IllegalChange(format!(
-            "function '{}' is outside the allowed patch scope",
-            patch.function
+            "function '{}::{}' is outside the allowed patch scope",
+            patch.module, patch.function
         )));
     }
     for change in &patch.changes {

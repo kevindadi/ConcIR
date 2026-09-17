@@ -1,0 +1,13 @@
+[
+  {
+    "id": "delete-write",
+    "module": "main",
+    "function": "main",
+    "changes": [
+      {
+        "kind": "delete_statement",
+        "sid": "s1"
+      }
+    ]
+  }
+]

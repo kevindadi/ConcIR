@@ -551,6 +551,15 @@ pub fn build(program: &SemProgram) -> PetriNet {
     let resource_ids: Vec<ResourceId> = program.resources().iter().map(|r| r.id).collect();
     for rid in resource_ids {
         match program.resource(rid).kind {
+            // Every declared Var/Atomic gets a place, independently of whether
+            // any statement reads or writes it. A contract may observe it, and
+            // a `dst` write may target it, with no explicit use otherwise.
+            ResKind::Var => {
+                b.place(PlaceKey::Var(rid));
+            }
+            ResKind::Atomic => {
+                b.place(PlaceKey::Atomic(rid));
+            }
             ResKind::Mutex => {
                 let lw = b.place(PlaceKey::LockWait(rid));
                 let mtx = b.place(PlaceKey::Mutex(rid));
@@ -763,7 +772,7 @@ fn build_stmt(b: &mut Builder, f: &SemFunction, si: usize, stmt: &crate::sem::pr
                 );
                 b.add(
                     NetOp::SendPair { channel: *channel },
-                    Binding::ControlWait(input, recv),
+                    Binding::ControlChooseWait(input, recv),
                     Some(fall),
                     vec![fall, send],
                     origin,
@@ -807,7 +816,7 @@ fn build_stmt(b: &mut Builder, f: &SemFunction, si: usize, stmt: &crate::sem::pr
                 );
                 b.add(
                     NetOp::RecvPair { channel: *channel },
-                    Binding::ControlWait(input, send),
+                    Binding::ControlChooseWait(input, send),
                     Some(fall),
                     vec![fall, recv],
                     origin,

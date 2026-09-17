@@ -68,8 +68,11 @@ fn proj_it(sp: &SemProgram, s: &MachineState) -> String {
     let fnn = |f: FrameId| format!("F{}", fmap.get(&f).copied().unwrap_or(999));
 
     let mut out = String::new();
-    // Shared data, in a stable resource order.
-    for r in sp.resources() {
+    // Shared data, in a stable (name-sorted) resource order, independent of
+    // declaration order.
+    let mut resources: Vec<&concir::sem::program::SemResource> = sp.resources().iter().collect();
+    resources.sort_by_key(|r| res_key(sp, r.id));
+    for r in resources {
         match r.kind {
             ResKind::Var => {
                 if let Some(v) = s.store.vars.get(&r.id) {
@@ -135,16 +138,16 @@ fn proj_it(sp: &SemProgram, s: &MachineState) -> String {
             }
             ResKind::Condvar => {
                 let cv = s.store.condvars.get(&r.id).cloned().unwrap_or_default();
-                let lock = if cv.waiters.is_empty() {
-                    None
-                } else {
-                    cv.lock.map(|l| res_key(sp, l))
-                };
+                let mut waiters: Vec<String> = cv
+                    .waiters
+                    .iter()
+                    .map(|(t, l)| format!("{}:{}", tn(*t), res_key(sp, *l)))
+                    .collect();
+                waiters.sort();
                 out.push_str(&format!(
-                    "condvar {} waiters={:?} lock={:?}\n",
+                    "condvar {} waiters={:?}\n",
                     res_key(sp, r.id),
-                    cv.waiters.iter().map(|t| tn(*t)).collect::<Vec<_>>(),
-                    lock
+                    waiters
                 ));
             }
             ResKind::RwLock => {}
@@ -163,12 +166,18 @@ fn proj_it(sp: &SemProgram, s: &MachineState) -> String {
         let owner = thread_order
             .iter()
             .find(|t| s.threads[t].stack.contains(&fr.id));
-        let mut handles: Vec<usize> = Vec::new();
+        // Preserve the symbol-slot to child mapping, not just child ordinals.
+        let mut handles: Vec<(String, usize)> = Vec::new();
         if let Some(owner) = owner {
             handles = fr
                 .handles
-                .values()
-                .filter_map(|h| s.threads[owner].handle_children.get(h).map(|c| tmap[c]))
+                .iter()
+                .filter_map(|(name, h)| {
+                    s.threads[owner]
+                        .handle_children
+                        .get(h)
+                        .map(|c| (name.clone(), tmap[c]))
+                })
                 .collect();
             handles.sort();
         }
@@ -275,7 +284,9 @@ fn proj_pn(pn: &PetriEngine, sp: &SemProgram, s: &NetState) -> String {
     };
 
     let mut out = String::new();
-    for r in sp.resources() {
+    let mut resources: Vec<&concir::sem::program::SemResource> = sp.resources().iter().collect();
+    resources.sort_by_key(|r| res_key(sp, r.id));
+    for r in resources {
         match r.kind {
             ResKind::Var => {
                 if let Some(pid) = place(&PlaceKey::Var(r.id)) {
@@ -355,22 +366,20 @@ fn proj_pn(pn: &PetriEngine, sp: &SemProgram, s: &NetState) -> String {
                 out.push_str(&format!("recvq {}={:?}\n", res_key(sp, r.id), recvq));
             }
             ResKind::Condvar => {
-                let cv_tokens = toks(&PlaceKey::Condvar(r.id));
-                let waiters: Vec<String> = cv_tokens
+                let mut waiters: Vec<String> = toks(&PlaceKey::Condvar(r.id))
                     .iter()
-                    .filter_map(|t| t.thread().map(tn))
+                    .filter_map(|t| match t {
+                        concir::petri::net::NetToken::CondvarWait { thread, lock, .. } => {
+                            Some(format!("{}:{}", tn(*thread), res_key(sp, *lock)))
+                        }
+                        _ => None,
+                    })
                     .collect();
-                let lock = cv_tokens.iter().find_map(|t| match t {
-                    concir::petri::net::NetToken::CondvarWait { lock, .. } => {
-                        Some(res_key(sp, *lock))
-                    }
-                    _ => None,
-                });
+                waiters.sort();
                 out.push_str(&format!(
-                    "condvar {} waiters={:?} lock={:?}\n",
+                    "condvar {} waiters={:?}\n",
                     res_key(sp, r.id),
-                    waiters,
-                    lock
+                    waiters
                 ));
             }
             ResKind::RwLock => {}
@@ -387,12 +396,17 @@ fn proj_pn(pn: &PetriEngine, sp: &SemProgram, s: &NetState) -> String {
         let owner = thread_order
             .iter()
             .find(|t| s.store.threads[t].stack.contains(&fr.id));
-        let mut kids: Vec<usize> = Vec::new();
+        let mut kids: Vec<(String, usize)> = Vec::new();
         if let Some(owner) = owner {
             kids = fr
                 .handles
-                .values()
-                .filter_map(|h| s.store.threads[owner].handle_children.get(h).map(|c| tmap[c]))
+                .iter()
+                .filter_map(|(name, h)| {
+                    s.store.threads[owner]
+                        .handle_children
+                        .get(h)
+                        .map(|c| (name.clone(), tmap[c]))
+                })
                 .collect();
             kids.sort();
         }
@@ -802,4 +816,66 @@ fn differential_catches_shared_error_with_hand_written_expectation() {
     // R4: choosing the wrong waiter creates a deadlock.
     let src = include_str!("repro_round2/notify_choice_false_pass.json");
     assert_eq!(outcome_of(src), concir::sem::outcome::Outcome::Fail);
+}
+
+#[test]
+fn differential_is_invariant_under_resource_and_function_reorder() {
+    // The same program with independent declarations reordered must produce the
+    // same projection set (the projection keys functions/resources by name, not
+    // by declaration index), and both engines must agree on each ordering.
+    let a = r#"{
+      "program": "reorder2",
+      "modules": [{"name": "main",
+        "resources": [
+          {"name": "x", "kind": "var", "type": "Var", "base": "Int", "init": 0},
+          {"name": "m", "kind": "sync", "type": "Mutex", "mode": "Sync"}
+        ],
+        "functions": [
+          {"name": "main", "kind": "normal", "body": [{"sid":"s1","kind":"scope","funcs":["f","g"]},{"sid":"s2","kind":"return"}]},
+          {"name": "f", "kind": "normal", "form": "closure", "body": [
+            {"sid":"s1","kind":"mutex_lock","resource":"m"},
+            {"sid":"s2","kind":"write_shared","resource":"x","expr":"x + 1"},
+            {"sid":"s3","kind":"mutex_unlock","resource":"m"},
+            {"sid":"s4","kind":"return"}]},
+          {"name": "g", "kind": "normal", "form": "closure", "body": [
+            {"sid":"s1","kind":"mutex_lock","resource":"m"},
+            {"sid":"s2","kind":"write_shared","resource":"x","expr":"x + 1"},
+            {"sid":"s3","kind":"mutex_unlock","resource":"m"},
+            {"sid":"s4","kind":"return"}]}
+        ]}],
+      "entry": "main::main"
+    }"#;
+    let b = r#"{
+      "program": "reorder2",
+      "modules": [{"name": "main",
+        "resources": [
+          {"name": "m", "kind": "sync", "type": "Mutex", "mode": "Sync"},
+          {"name": "x", "kind": "var", "type": "Var", "base": "Int", "init": 0}
+        ],
+        "functions": [
+          {"name": "g", "kind": "normal", "form": "closure", "body": [
+            {"sid":"s1","kind":"mutex_lock","resource":"m"},
+            {"sid":"s2","kind": "write_shared","resource":"x","expr":"x + 1"},
+            {"sid":"s3","kind":"mutex_unlock","resource":"m"},
+            {"sid":"s4","kind":"return"}]},
+          {"name": "main", "kind": "normal", "body": [{"sid":"s1","kind":"scope","funcs":["f","g"]},{"sid":"s2","kind":"return"}]},
+          {"name": "f", "kind": "normal", "form": "closure", "body": [
+            {"sid":"s1","kind":"mutex_lock","resource":"m"},
+            {"sid":"s2","kind":"write_shared","resource":"x","expr":"x + 1"},
+            {"sid":"s3","kind":"mutex_unlock","resource":"m"},
+            {"sid":"s4","kind":"return"}]}
+        ]}],
+      "entry": "main::main"
+    }"#;
+    let ia = explore_it(&lower(a)).projections;
+    let ib = explore_it(&lower(b)).projections;
+    if ia != ib {
+        eprintln!("only a: {}", ia.difference(&ib).count());
+        for x in ia.difference(&ib).take(2) { eprintln!("A:\n{x}"); }
+        eprintln!("only b: {}", ib.difference(&ia).count());
+        for x in ib.difference(&ia).take(2) { eprintln!("B:\n{x}"); }
+    }
+    assert_eq!(ia, ib, "resource/function reordering changed the projection");
+    compare("reorder_a", a);
+    compare("reorder_b", b);
 }

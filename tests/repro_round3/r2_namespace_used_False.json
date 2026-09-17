@@ -1,0 +1,68 @@
+{
+  "program": "default_module_used",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [
+        {
+          "name": "x",
+          "kind": "var",
+          "type": "Var",
+          "base": "Int",
+          "init": 0
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "read_shared",
+              "resource": "x",
+              "dst": "_"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "other",
+      "resources": [
+        {
+          "name": "x",
+          "kind": "var",
+          "type": "Var",
+          "base": "Int",
+          "init": 1
+        }
+      ],
+      "functions": [
+        {
+          "name": "unused",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "read_shared",
+              "resource": "x",
+              "dst": "_"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

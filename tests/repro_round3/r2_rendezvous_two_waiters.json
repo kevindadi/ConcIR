@@ -1,0 +1,93 @@
+{
+  "program": "rendezvous_two_waiters",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [
+        {
+          "name": "c",
+          "kind": "sync",
+          "type": "Channel",
+          "mode": "Sync",
+          "base": "Int",
+          "capacity": 0
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "r1",
+                "r2",
+                "sender"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "r1",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "channel_recv",
+              "channel": "c",
+              "dst": "_"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ],
+          "form": "closure"
+        },
+        {
+          "name": "r2",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "channel_recv",
+              "channel": "c",
+              "dst": "_"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ],
+          "form": "closure"
+        },
+        {
+          "name": "sender",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "channel_send",
+              "channel": "c",
+              "value": "1"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ],
+          "form": "closure"
+        }
+      ]
+    }
+  ]
+}

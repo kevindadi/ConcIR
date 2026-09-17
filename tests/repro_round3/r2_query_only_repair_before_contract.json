@@ -1,0 +1,20 @@
+{
+  "name": "nonzero",
+  "properties": [
+    {
+      "kind": "safety",
+      "id": "nonzero",
+      "invariant": {
+        "kind": "not",
+        "predicate": {
+          "kind": "var_eq",
+          "resource": "main::x",
+          "value": 0
+        }
+      }
+    }
+  ],
+  "allowed_scope": {
+    "allow_statement_delete": true
+  }
+}

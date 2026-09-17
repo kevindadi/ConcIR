@@ -1,0 +1,27 @@
+{
+  "name": "out-of-domain",
+  "properties": [
+    {
+      "kind": "reachability",
+      "id": "forbidden",
+      "goal": {
+        "kind": "not",
+        "predicate": {
+          "kind": "or",
+          "predicates": [
+            {
+              "kind": "var_eq",
+              "resource": "main::x",
+              "value": 0
+            },
+            {
+              "kind": "var_eq",
+              "resource": "main::x",
+              "value": 1
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

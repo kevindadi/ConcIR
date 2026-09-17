@@ -260,6 +260,19 @@ impl<'a> PetriEngine<'a> {
                         }
                     }
                 }
+                // Reclaim scope members and the scope record.
+                let members: Vec<ThreadId> = state
+                    .store
+                    .threads
+                    .iter()
+                    .filter(|(_, t)| t.parent_scope == Some(scope))
+                    .map(|(id, _)| *id)
+                    .collect();
+                for m in members {
+                    state.store.threads.remove(&m);
+                    state.store.finished.remove(&m);
+                }
+                state.store.scopes.remove(&scope);
             }
         }
 
@@ -307,6 +320,23 @@ impl<'a> PetriEngine<'a> {
                     if let Some(t) = state.store.threads.get_mut(&jt) {
                         t.blocked_at = None;
                     }
+                    // Consume the handle binding and reclaim the finished child.
+                    let hid = state
+                        .store
+                        .frames
+                        .get(&jf)
+                        .and_then(|fr| fr.handles.get(handle))
+                        .copied();
+                    if let Some(hid) = hid {
+                        if let Some(t) = state.store.threads.get_mut(&jt) {
+                            t.handle_children.remove(&hid);
+                        }
+                        if let Some(fr) = state.store.frames.get_mut(&jf) {
+                            fr.handles.remove(handle);
+                        }
+                    }
+                    state.store.threads.remove(&thread);
+                    state.store.finished.remove(&thread);
                 }
             }
         }
@@ -393,7 +423,7 @@ impl<'a> PetriEngine<'a> {
                     BackendError::invalid("E900", format!("Var {resource} has no value"))
                 })?;
                 if let Some(dst) = dst {
-                    self.write_dst(&mut next, frame, *dst, v)?;
+                    if !self.write_dst(&mut next, frame, *dst, v)? { disabled!(); }
                 }
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, control.unwrap().0, control.unwrap().1);
@@ -416,7 +446,7 @@ impl<'a> PetriEngine<'a> {
                 let v = next.read_data(pid).cloned().ok_or_else(|| {
                     BackendError::invalid("E900", format!("Atomic {resource} has no value"))
                 })?;
-                self.write_dst(&mut next, frame, *dst, v)?;
+                if !self.write_dst(&mut next, frame, *dst, v)? { disabled!(); }
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, control.unwrap().0, control.unwrap().1);
             }
@@ -449,7 +479,7 @@ impl<'a> PetriEngine<'a> {
                 let old = next.read_data(pid).cloned().ok_or_else(|| {
                     BackendError::invalid("E900", format!("Atomic {resource} has no value"))
                 })?;
-                self.write_dst(&mut next, frame, *dst, old.clone())?;
+                if !self.write_dst(&mut next, frame, *dst, old.clone())? { disabled!(); }
                 if old == exp {
                     next.set_data(pid, des);
                 }
@@ -639,7 +669,14 @@ impl<'a> PetriEngine<'a> {
                 let (thread, frame) = control.unwrap();
                 let sem = self.place(&PlaceKey::Semaphore(*resource)).unwrap();
                 let available = next.read_data(sem).and_then(Value::as_int).unwrap_or(0);
-                next.set_data(sem, Value::Int(available + *count));
+                let updated = available.checked_add(*count).ok_or_else(|| {
+                    BackendError::invalid(
+                        "E905",
+                        format!("semaphore '{resource}' permit count overflows i64"),
+                    )
+                    .at(&at)
+                })?;
+                next.set_data(sem, Value::Int(updated));
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, thread, frame);
             }
@@ -702,9 +739,9 @@ impl<'a> PetriEngine<'a> {
             }
             NetOp::SendPair { channel } => {
                 let (thread, frame) = control.unwrap();
-                let wait = match bind {
-                    FireBind::ControlWait { wait, .. } => wait.clone(),
-                    _ => disabled!(),
+                let wait = match bound_wait(bind) {
+                    Some(w) => w.clone(),
+                    None => disabled!(),
                 };
                 let (rt, rf) = match &wait {
                     NetToken::RecvWait { thread, frame } => (*thread, *frame),
@@ -722,7 +759,7 @@ impl<'a> PetriEngine<'a> {
                 let v = self.eval(&next, frame, &value_expr, &at)?;
                 if let Some(dst) = recv_dst(self.program, &next, rf) {
                     if dst != SlotRef::Discard {
-                        self.write_dst(&mut next, rf, dst, v)?;
+                        if !self.write_dst(&mut next, rf, dst, v)? { disabled!(); }
                     }
                 }
                 self.wake_control_next(&mut next, &wait);
@@ -732,9 +769,9 @@ impl<'a> PetriEngine<'a> {
             }
             NetOp::RecvPair { channel } => {
                 let (thread, frame) = control.unwrap();
-                let wait = match bind {
-                    FireBind::ControlWait { wait, .. } => wait.clone(),
-                    _ => disabled!(),
+                let wait = match bound_wait(bind) {
+                    Some(w) => w.clone(),
+                    None => disabled!(),
                 };
                 let (st, sf, value) = match &wait {
                     NetToken::SendWait { thread, frame, value } => (*thread, *frame, value.clone()),
@@ -746,7 +783,7 @@ impl<'a> PetriEngine<'a> {
                 }
                 if let Some(dst) = recv_dst(self.program, &next, frame) {
                     if dst != SlotRef::Discard {
-                        self.write_dst(&mut next, frame, dst, value)?;
+                        if !self.write_dst(&mut next, frame, dst, value)? { disabled!(); }
                     }
                 }
                 self.wake_control_next(&mut next, &wait);
@@ -775,7 +812,7 @@ impl<'a> PetriEngine<'a> {
                 let dst = recv_dst(self.program, &next, rf);
                 if let Some(dst) = dst {
                     if dst != SlotRef::Discard {
-                        self.write_dst(&mut next, rf, dst, value)?;
+                        if !self.write_dst(&mut next, rf, dst, value)? { disabled!(); }
                     }
                 }
                 // Both sides resume after their wait statements.
@@ -839,7 +876,7 @@ impl<'a> PetriEngine<'a> {
                     _ => None,
                 };
                 let Some(v) = popped else { disabled!() };
-                self.write_dst(&mut next, frame, *dst, v)?;
+                if !self.write_dst(&mut next, frame, *dst, v)? { disabled!(); }
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, thread, frame);
             }
@@ -912,7 +949,7 @@ impl<'a> PetriEngine<'a> {
                 let dst = recv_dst(self.program, &next, frame);
                 if let Some(dst) = dst {
                     if dst != SlotRef::Discard {
-                        self.write_dst(&mut next, frame, dst, v)?;
+                        if !self.write_dst(&mut next, frame, dst, v)? { disabled!(); }
                     }
                 }
                 self.put_control_next(&mut next, &token)?;
@@ -988,6 +1025,13 @@ impl<'a> PetriEngine<'a> {
                 }
                 let callee = self.program.function(*func);
                 let modeled = super::net::modeled_params(callee);
+                // Validate every argument against its parameter's domain
+                // before the frame is created.
+                for (slot, val) in modeled.iter().zip(values.iter()) {
+                    if !within_type(val, &callee.slots[*slot].ty) {
+                        disabled!();
+                    }
+                }
                 let fid = FrameId(next.store.alloc.next_frame);
                 next.store.alloc.next_frame += 1;
                 let mut locals = default_locals(self.program, *func);
@@ -1101,10 +1145,20 @@ impl<'a> PetriEngine<'a> {
                             .at(&at)
                     })?;
                 let child = next.store.threads[&thread].handle_children.get(&hid).copied();
-                match child {
-                    Some(c) if next.store.finished.contains(&c) => {}
-                    _ => disabled!(),
+                let Some(c) = child else { disabled!() };
+                if !next.store.finished.contains(&c) {
+                    disabled!();
                 }
+                // Consume the handle binding and reclaim the finished child.
+                next.store.frame_mut(frame).handles.remove(handle);
+                next.store
+                    .threads
+                    .get_mut(&thread)
+                    .unwrap()
+                    .handle_children
+                    .remove(&hid);
+                next.store.threads.remove(&c);
+                next.store.finished.remove(&c);
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, thread, frame);
             }
@@ -1148,7 +1202,7 @@ impl<'a> PetriEngine<'a> {
                 let caller = *next.store.threads[&thread].stack.last().unwrap();
                 if let Some(ret) = &callee.ret {
                     if let Some(v) = val {
-                        self.write_dst(&mut next, caller, ret.dst, v)?;
+                        if !self.write_dst(&mut next, caller, ret.dst, v)? { disabled!(); }
                     }
                     let caller_pc = ret.pc_next;
                     let caller_fn = next.store.frame(caller).function;
@@ -1178,18 +1232,40 @@ impl<'a> PetriEngine<'a> {
         Ok(Some(next))
     }
 
+    fn dst_type_ok(&self, state: &NetState, frame: FrameId, dst: SlotRef, value: &Value) -> bool {
+        match dst {
+            SlotRef::Discard => true,
+            SlotRef::Local(slot) => match state.store.frames.get(&frame) {
+                Some(fr) => match self.program.function(fr.function).slots.get(slot) {
+                    Some(s) => within_type(value, &s.ty),
+                    None => true,
+                },
+                None => true,
+            },
+            SlotRef::Shared(r) => match self.program.resource(r).ty.as_ref() {
+                Some(ty) => within_type(value, ty),
+                None => true,
+            },
+        }
+    }
+
+    /// Returns `Ok(false)` if the value is outside the destination's domain,
+    /// in which case nothing is written and the step must be disabled.
     fn write_dst(
         &self,
         state: &mut NetState,
         frame: FrameId,
         dst: SlotRef,
         value: Value,
-    ) -> BackendResult<()> {
+    ) -> BackendResult<bool> {
+        if !self.dst_type_ok(state, frame, dst, &value) {
+            return Ok(false);
+        }
         match dst {
-            SlotRef::Discard => Ok(()),
+            SlotRef::Discard => Ok(true),
             SlotRef::Local(slot) => {
                 state.store.frame_mut(frame).locals.insert(slot, value);
-                Ok(())
+                Ok(true)
             }
             SlotRef::Shared(r) => {
                 if let Some(pid) = self.place(&PlaceKey::Var(r)) {
@@ -1202,7 +1278,7 @@ impl<'a> PetriEngine<'a> {
                         format!("no place for shared resource {r}"),
                     ));
                 }
-                Ok(())
+                Ok(true)
             }
         }
     }
@@ -1597,6 +1673,22 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
         let mut out = String::new();
         let thread_order: Vec<ThreadId> = state.store.threads.keys().copied().collect();
         let frame_order: Vec<FrameId> = state.store.frames.keys().copied().collect();
+        let scope_order: Vec<ScopeId> = state.store.scopes.keys().copied().collect();
+        let mut handle_ids: Vec<HandleId> = state
+            .store
+            .frames
+            .values()
+            .flat_map(|f| f.handles.values().copied())
+            .chain(
+                state
+                    .store
+                    .threads
+                    .values()
+                    .flat_map(|t| t.handle_children.keys().copied()),
+            )
+            .collect();
+        handle_ids.sort();
+        handle_ids.dedup();
         let tname = |t: ThreadId| {
             thread_order
                 .iter()
@@ -1611,40 +1703,86 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                 .map(|i| format!("F{i}"))
                 .unwrap_or_else(|| format!("F?{}", f.0))
         };
+        let sname = |s: ScopeId| {
+            scope_order
+                .iter()
+                .position(|x| *x == s)
+                .map(|i| format!("S{i}"))
+                .unwrap_or_else(|| format!("S?{}", s.0))
+        };
+        let hname = |h: HandleId| {
+            handle_ids
+                .iter()
+                .position(|x| *x == h)
+                .map(|i| format!("h{i}"))
+                .unwrap_or_else(|| format!("h?{}", h.0))
+        };
         for place in &self.net.places {
             let tokens = state.place_tokens(place.id);
             if tokens.is_empty() {
                 continue;
             }
-            let rendered: Vec<String> = tokens.iter().map(|t| render_token(t, &tname)).collect();
-            out.push_str(&format!(
-                "P{:?}=[{}]\n",
-                place.key,
-                rendered.join(",")
-            ));
+            let rendered: Vec<String> = tokens
+                .iter()
+                .map(|t| render_token(t, &tname, &fname))
+                .collect();
+            out.push_str(&format!("P{:?}=[{}]\n", place.key, rendered.join(",")));
         }
         for f in &frame_order {
             let fr = &state.store.frames[f];
-            let locals: Vec<String> = fr
+            let mut locals: Vec<String> = fr
                 .locals
                 .iter()
                 .map(|(k, v)| format!("{k}={}", v.canonical()))
                 .collect();
+            locals.sort();
+            let mut handles: Vec<String> = fr
+                .handles
+                .iter()
+                .map(|(k, h)| format!("{k}->{}", hname(*h)))
+                .collect();
+            handles.sort();
+            let ret = match &fr.ret {
+                Some(r) => format!("ret(pc={},dst={:?})", r.pc_next, r.dst),
+                None => "ret(none)".to_string(),
+            };
             out.push_str(&format!(
-                "frame {} fn={} pc={} locals={{{}}}\n",
+                "frame {} fn={} pc={} locals={{{}}} handles={{{}}} {}\n",
                 fname(*f),
                 fr.function.0,
                 fr.pc,
-                locals.join(",")
+                locals.join(","),
+                handles.join(","),
+                ret
             ));
         }
         for (tid, t) in &state.store.threads {
+            let mut kids: Vec<String> = t
+                .handle_children
+                .iter()
+                .map(|(h, c)| format!("{}->{}", hname(*h), tname(*c)))
+                .collect();
+            kids.sort();
             out.push_str(&format!(
-                "thread {} entry=f{} stack=[{}] finished={}\n",
+                "thread {} entry=f{} stack=[{}] finished={} children=[{}] scope={}\n",
                 tname(*tid),
                 t.entry_function.0,
                 t.stack.iter().map(|f| fname(*f)).collect::<Vec<_>>().join(","),
-                state.store.finished.contains(tid)
+                state.store.finished.contains(tid),
+                kids.join(","),
+                t.parent_scope.map(|s| sname(s)).unwrap_or_else(|| "-".into())
+            ));
+        }
+        for sc in state.store.scopes.values() {
+            let mut rem: Vec<String> = sc.remaining.iter().map(|t| tname(*t)).collect();
+            rem.sort();
+            out.push_str(&format!(
+                "scope {} owner={} frame={} sid={} remaining=[{}]\n",
+                sname(sc.id),
+                tname(sc.owner),
+                fname(sc.owner_frame),
+                sc.owner_sid,
+                rem.join(",")
             ));
         }
         out.push_str(&format!(
@@ -1657,23 +1795,43 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
     }
 }
 
+fn bound_wait(bind: &FireBind) -> Option<&NetToken> {
+    match bind {
+        FireBind::ControlWait { wait, .. } | FireBind::ControlChooseWait { wait, .. } => Some(wait),
+        _ => None,
+    }
+}
+
 fn binding_ids(bind: &FireBind) -> (ThreadId, FrameId) {
     match bind {
         FireBind::Control { thread, frame }
         | FireBind::ControlWait { thread, frame, .. }
         | FireBind::ControlChooseWait { thread, frame, .. } => (*thread, *frame),
-        FireBind::Wait(t) => (t.thread().unwrap_or(ThreadId(0)), t.frame().unwrap_or(FrameId(0))),
-        FireBind::Pair(a, _) => (a.thread().unwrap_or(ThreadId(0)), a.frame().unwrap_or(FrameId(0))),
+        FireBind::Wait(t) => (
+            t.thread().unwrap_or(ThreadId(0)),
+            t.frame().unwrap_or(FrameId(0)),
+        ),
+        FireBind::Pair(a, _) => (
+            a.thread().unwrap_or(ThreadId(0)),
+            a.frame().unwrap_or(FrameId(0)),
+        ),
     }
 }
 
-fn render_token(t: &NetToken, tname: &impl Fn(ThreadId) -> String) -> String {
+fn render_token(
+    t: &NetToken,
+    tname: &impl Fn(ThreadId) -> String,
+    fname: &impl Fn(FrameId) -> String,
+) -> String {
     match t {
-        NetToken::Control { thread, frame } => format!("C({},f{})", tname(*thread), frame.0),
+        NetToken::Control { thread, frame } => format!("C({},{})", tname(*thread), fname(*frame)),
         NetToken::Data(v) => format!("D({})", v.canonical()),
-        NetToken::Mutex(m) => format!("M({m:?})"),
+        NetToken::Mutex(MutexToken::Free) => "M(free)".into(),
+        NetToken::Mutex(MutexToken::Held(t)) => format!("M(held:{})", tname(*t)),
         NetToken::LockWait { thread, .. } => format!("L({})", tname(*thread)),
-        NetToken::CondvarWait { thread, .. } => format!("CV({})", tname(*thread)),
+        NetToken::CondvarWait { thread, lock, .. } => {
+            format!("CV({},r{})", tname(*thread), lock.0)
+        }
         NetToken::SendWait { thread, value, .. } => {
             format!("S({},{})", tname(*thread), value.canonical())
         }

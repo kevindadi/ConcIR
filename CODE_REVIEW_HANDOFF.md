@@ -15,6 +15,15 @@ code to review most carefully.
 > waiters as choices, handle names belong to frames, the contract is re-bound
 > per candidate, and there is one checked verification entry with documented
 > exit codes.
+>
+> **Round 3 (review of commit `f3463d6`).** A third review found more wrong
+> `PASS`/repairs and engine disagreement. See
+> [`CODE_REVIEW_ROUND3.md`](CODE_REVIEW_ROUND3.md): declared resources always
+> get net places, condvar waiters carry their own locks, rendezvous enumerates
+> every match, contract names bind to the entry module, patch scope is
+> `module::function`, every value-entry path respects bounded domains, semaphore
+> release is checked, and finite concurrent loops complete via identity
+> canonicalization.
 
 ---
 

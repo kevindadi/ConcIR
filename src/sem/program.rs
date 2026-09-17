@@ -240,6 +240,12 @@ impl SemProgram {
         self.entry
     }
 
+    /// The module that contains the entry function. Unqualified contract names
+    /// are resolved in this namespace, so declaration reordering is stable.
+    pub fn entry_module(&self) -> ModuleId {
+        self.functions[self.entry.index()].module
+    }
+
     pub fn protection_lock(&self, var: ResourceId) -> Option<ResourceId> {
         self.protection.get(&var).copied()
     }

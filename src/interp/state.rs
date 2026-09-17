@@ -36,10 +36,11 @@ pub struct ChannelState {
     pub pending_recv: VecDeque<ThreadId>,
 }
 
+/// A condvar wait set. Each waiter carries the mutex it must re-acquire, so
+/// different waiters may be associated with different locks.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct CondvarState {
-    pub waiters: VecDeque<ThreadId>,
-    pub lock: Option<ResourceId>,
+    pub waiters: VecDeque<(ThreadId, ResourceId)>,
 }
 
 /// A dynamic activation. Handle name → child bindings belong to the frame, so

@@ -1,0 +1,14 @@
+{
+  "name": "query-only",
+  "properties": [
+    {
+      "kind": "safety",
+      "id": "value",
+      "invariant": {
+        "kind": "var_eq",
+        "resource": "main::x",
+        "value": 0
+      }
+    }
+  ]
+}

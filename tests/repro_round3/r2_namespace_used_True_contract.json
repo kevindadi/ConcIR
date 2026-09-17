@@ -1,0 +1,14 @@
+{
+  "name": "entry-x",
+  "properties": [
+    {
+      "kind": "safety",
+      "id": "x-zero",
+      "invariant": {
+        "kind": "var_eq",
+        "resource": "x",
+        "value": 0
+      }
+    }
+  ]
+}

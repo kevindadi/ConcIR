@@ -203,28 +203,32 @@ waiting threads are served is not specified.
     are never re-evaluated while blocked. The buffer is a FIFO queue, so
     messages are received in send order.
 - `capacity == 0`: rendezvous. A send registers in `SendWait` with its captured
-  value; a recv registers in `RecvWait`. The arriving side pairs with the
-  front waiter of the other side (FIFO message order); both sides resume. The
-  two blocked sides can never coexist, because the second arrival pairs.
+  value; a recv registers in `RecvWait`. The arriving side is matched with
+  **every** front waiter of the other side as a separate choice, so several
+  waiting receivers (or senders) yield several matches; the two blocked sides
+  can never coexist because the second arrival pairs. Frozen message values are
+  carried by the sender tokens, so a match never re-evaluates a send. Waiting
+  threads are not served FIFO.
 - A missing `capacity` (validator E001) is `Invalid` for the backend.
 
 ### 3.7 Condvar
 
-A condvar has a wait set of `(ThreadId, FrameId, pc)` and is always paired with
-a mutex at `wait`.
+A condvar has a wait set of `(ThreadId, lock)` and each `wait` is paired with
+the mutex the waiter held.
 
 - `wait cv, m`: it is a **semantic error** if the current thread does not hold
-  `m`. Otherwise, atomically: release `m`, add the caller to `cv`'s wait set,
-  and block with `CondvarWait { cv, m }`.
+  `m`. Otherwise, atomically: release `m`, add `(caller, m)` to `cv`'s wait set,
+  and block with `CondvarWait { cv, m }`. Different waiters may be associated
+  with **different** locks.
 - `notify cv`: if the wait set is non-empty, remove **any** current waiter
   (every waiter is a legal choice; the enumeration order is deterministic but
-  the choice is not fixed) and place it on `m`'s re-acquire queue. If empty,
-  nothing is remembered — there is **no stored permit**.
-- `notify_all cv`: remove **all** current waiters and place them on `m`'s
-  re-acquire queue. Waiters that arrive later are unaffected. It also advances
+  the choice is not fixed) and queue it to re-acquire **its own** lock. If
+  empty, nothing is remembered — there is **no stored permit**.
+- `notify_all cv`: remove **all** current waiters and queue each to re-acquire
+  its own lock. Waiters that arrive later are unaffected. It also advances
   normally when there is no wait site and no waiter at all.
-- A notified waiter becomes runnable only after it re-acquires the same `m`.
-  Only then does its `wait` complete. The model has **no spurious wakeups**;
+- A notified waiter becomes runnable only after it re-acquires its lock. Only
+  then does its `wait` complete. The model has **no spurious wakeups**;
   progress never depends on one.
 - `wait` does not exist for `Async` mode here (that is `Unsupported`).
 
@@ -234,26 +238,44 @@ a mutex at `wait`.
 resource `count`). `acquire n` (default 1): if `available >= n`, subtract and
 fall through; else block in `SemWait`. `release n`: add `n`; every waiter whose
 request can now be satisfied is an independent choice (no FIFO wake order).
-`n <= 0` is `Invalid`.
+`n <= 0` is `Invalid`. The addition is **checked**: a release that would
+overflow `i64` is a structured `Invalid` (`E905`), never a panic or wrap.
 
 ### 3.9 Atomics and shared Vars
 
-All are immediate (never queue). Bounded-Int writes whose result leaves the
-declared range **disable** the step (no transition), matching the documented
-CVN rule; this keeps counter loops finite. Unbounded `Int` is allowed but the
-explorer may truncate and report `Unknown`.
+All are immediate (never queue). **Every** value-entry path respects the
+destination's declared domain: explicit `assign_local` / `write_shared` /
+`atomic_store`, `read_shared` / `atomic_load` / `atomic_cas` `dst`,
+`channel_recv` `dst`, `call` arguments, and `call` returns. A write whose value
+leaves a bounded `Int` range **disables the whole step** (no transition), and
+the check happens before any message is consumed, lock released, or frame
+unwound, so no half effect is emitted. The channel payload type is checked the
+same way on `channel_send`. Unbounded `Int` is allowed but the explorer may
+truncate and report `Unknown`. Semantic domain bounds, host integer overflow,
+and the analysis budget are distinct outcomes and never substituted for one
+another.
 
-### 3.10 Per-frame handles and finite monitors
+### 3.10 Per-frame handles, finite monitors, and identity canonicalization
 
 Spawn/join handle **names** are bound to the current activation (frame), not to
 the thread, so a callee cannot clobber its caller's bindings. Concrete child
-identity is keyed by a unique handle id in the thread's child table.
+identity is keyed by a unique handle id in the thread's child table. A
+successful `join` consumes the handle binding and reclaims the finished child;
+a scope reclaims its members when it completes; a second `join` on the same
+handle is a defined semantic error (`Invalid`). No stale identity remains.
 
 Historical completion facts are monitored per the contract: a plain
 `FunctionCompleted` needs a boolean, `FunctionCompletedAtLeast(n)` saturates at
-`n`, and functions no predicate observes are not counted. This keeps a finite
-control loop (repeated calls with no growing data) a finite state graph and
-never masks a genuine growth in data, recursion depth, or the search budget.
+`n`, and functions no predicate observes are not counted. In addition, the
+explorer deduplicates states by a **fully identity-normalized canonical form**
+(threads, frames, scopes, handles, and their child bindings are renamed to a
+dense order), so a finite concurrent loop (`scope(worker); goto`, or
+`spawn; join; goto`) yields a finite graph and a complete result without
+raising `max_depth`/`max_states`. This normalization only factors internal
+identity numbering; every fact that affects future behavior or an observed
+predicate stays in the state. Genuine data growth, recursion depth, or the
+search budget still produce `Unknown`.
+
 
 
 ---
@@ -395,10 +417,15 @@ CLI and the repair loop use. It performs, in order:
 4. Contract validation, then resolution against the current program
    (properties, preserved behaviour, assumptions, bounds, predicate kinds).
    Unsupported assumptions ⇒ `Unsupported`; malformed input ⇒ `Invalid`.
+   Unqualified names in the contract bind to the **entry module's** namespace
+   (never `ModuleId(0)`), so declaration/module reordering does not change the
+   verified object; fully-qualified names resolve exactly.
 5. Contract-driven monitors, exploration, and property checking.
 
 The report records the model and contract fingerprints, the semantic
-assumptions actually used, and the analysis bounds.
+assumptions, the analysis bounds, and whether the analysis actually started
+(an early `Invalid`/`Unsupported` exit reports the *requested* configuration,
+not a default that was never used).
 
 ### 6.4 Result types and exit codes
 
@@ -454,10 +481,11 @@ CirPatch
 Patch application fails loudly on: unknown target, hash mismatch, a statement
 touched by more than one change, or an illegal change. The contract and the
 patcher are separate types; a patch cannot touch the contract. A
-provider-independent `check_allowed(scope, patch)` enforces the full
-`module::function` scope and the per-change `allow_lock_reorder` /
-`allow_statement_delete` permissions for **every** provider, including file
-candidates.
+provider-independent `check_allowed(scope, patch)` enforces the scope and the
+per-change `allow_lock_reorder` / `allow_statement_delete` permissions for
+**every** provider, including file candidates. Scope function entries are
+matched as `module::function` identities (a bare entry is a legacy short name),
+so `["main::t1"]` allows only `main::t1` and excludes `other::t1`.
 
 ### 7.2 CandidateProvider
 

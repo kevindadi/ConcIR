@@ -79,6 +79,42 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Whether writing `value` to `dst` respects the destination's declared
+    /// domain (bounded `Int`). This is checked for *every* value-entry path,
+    /// not only explicit assignments.
+    fn dst_type_ok(&self, state: &MachineState, frame: FrameId, dst: SlotRef, value: &Value) -> bool {
+        match dst {
+            SlotRef::Discard => true,
+            SlotRef::Local(slot) => {
+                let f = self.program.function(state.frame(frame).function);
+                match f.slots.get(slot) {
+                    Some(s) => within_type(value, &s.ty),
+                    None => true,
+                }
+            }
+            SlotRef::Shared(r) => match self.program.resource(r).ty.as_ref() {
+                Some(ty) => within_type(value, ty),
+                None => true,
+            },
+        }
+    }
+
+    /// Checked write: returns `false` (and writes nothing) if the value is
+    /// outside the destination's domain, so the enclosing step is disabled.
+    fn try_write_dst(
+        &self,
+        state: &mut MachineState,
+        frame: FrameId,
+        dst: SlotRef,
+        value: Value,
+    ) -> BackendResult<bool> {
+        if !self.dst_type_ok(state, frame, dst, &value) {
+            return Ok(false);
+        }
+        state.write_dst(frame, dst, value)?;
+        Ok(true)
+    }
+
     fn complete(&self, state: &mut MachineState, tid: ThreadId) {
         state.set_runnable(tid);
         state.advance(tid);
@@ -94,12 +130,21 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn deliver_to_recv(&self, state: &mut MachineState, recv: ThreadId, value: Value) {
+    /// Deliver a value to a blocked receiver's `dst`. Returns `Ok(false)` if
+    /// the destination's domain rejects the value, so the whole step is
+    /// disabled (no message is consumed).
+    fn deliver_to_recv(
+        &self,
+        state: &mut MachineState,
+        recv: ThreadId,
+        value: Value,
+    ) -> BackendResult<bool> {
         if let Some(dst) = self.recv_dst_of(state, recv) {
             if let Some(fid) = state.current_frame_id(recv) {
-                let _ = state.write_dst(fid, dst, value);
+                return self.try_write_dst(state, fid, dst, value);
             }
         }
+        Ok(true)
     }
 
     fn finish_thread(&self, state: &mut MachineState, tid: ThreadId, function: FunctionId) {
@@ -128,6 +173,19 @@ impl<'a> Interpreter<'a> {
                 state.completed_scopes.insert((ofn, sid));
                 state.set_runnable(owner);
                 state.advance(owner);
+                // Reclaim scope members and the scope record: once the scope
+                // completed they cannot be joined or observed again.
+                let members: Vec<ThreadId> = state
+                    .threads
+                    .iter()
+                    .filter(|(_, t)| t.parent_scope == Some(scope))
+                    .map(|(id, _)| *id)
+                    .collect();
+                for m in members {
+                    state.threads.remove(&m);
+                    state.finished.remove(&m);
+                }
+                state.scopes.remove(&scope);
             }
         }
 
@@ -142,8 +200,28 @@ impl<'a> Interpreter<'a> {
             })
             .map(|(id, _)| *id)
             .collect();
+        let had_joiner = !joiners.is_empty();
         for j in joiners {
+            // Consume the joiner's handle binding and child mapping.
+            if let Some(t) = state.threads.get_mut(&j) {
+                t.handle_children.retain(|_, c| *c != tid);
+            }
+            if let Some(jf) = state.current_frame_id(j) {
+                let stmt = state.frame(jf).pc;
+                let func = state.frame(jf).function;
+                if let Some(SemOp::Join { handle }) =
+                    self.program.function(func).body.get(stmt).map(|s| &s.op)
+                {
+                    let handle = handle.clone();
+                    state.frame_mut(jf).handles.remove(&handle);
+                }
+            }
             self.complete(state, j);
+        }
+        if had_joiner {
+            // The joiner consumed the child; reclaim its identity.
+            state.threads.remove(&tid);
+            state.finished.remove(&tid);
         }
     }
 
@@ -277,7 +355,9 @@ impl<'a> Interpreter<'a> {
                     BackendError::invalid("E900", format!("Var {resource} has no value"))
                 })?;
                 if let Some(dst) = dst {
-                    next.write_dst(fid, dst, v)?;
+                    if !self.try_write_dst(&mut next, fid, dst, v)? {
+                        return Ok(Vec::new());
+                    }
                 }
                 next.advance(tid);
             }
@@ -294,7 +374,9 @@ impl<'a> Interpreter<'a> {
                 let v = next.store.atomics.get(&resource).cloned().ok_or_else(|| {
                     BackendError::invalid("E900", format!("Atomic {resource} has no value"))
                 })?;
-                next.write_dst(fid, dst, v)?;
+                if !self.try_write_dst(&mut next, fid, dst, v)? {
+                    return Ok(Vec::new());
+                }
                 next.advance(tid);
             }
             SemOp::AtomicStore { resource, value } => {
@@ -321,7 +403,9 @@ impl<'a> Interpreter<'a> {
                 let old = next.store.atomics.get(&resource).cloned().ok_or_else(|| {
                     BackendError::invalid("E900", format!("Atomic {resource} has no value"))
                 })?;
-                next.write_dst(fid, dst, old.clone())?;
+                if !self.try_write_dst(&mut next, fid, dst, old.clone())? {
+                    return Ok(Vec::new());
+                }
                 if old == exp {
                     next.store.atomics.insert(resource, des);
                 }
@@ -358,19 +442,23 @@ impl<'a> Interpreter<'a> {
             }
             SemOp::ChannelSend { channel, value } => {
                 let v = self.eval(&next, fid, &value, &at)?;
+                let base_ty = self.program.resource(channel).ty.clone();
+                if let Some(ty) = &base_ty {
+                    if !within_type(&v, ty) {
+                        return Ok(Vec::new());
+                    }
+                }
                 let cap = self.program.resource(channel).capacity;
                 if cap == 0 {
-                    // Rendezvous: pair with the oldest waiting receiver, if any.
-                    let recv = next
+                    // Rendezvous: every waiting receiver is a legal match
+                    // (message order does not impose waiting-thread FIFO).
+                    let receivers: Vec<ThreadId> = next
                         .store
                         .channels
-                        .get_mut(&channel)
-                        .and_then(|c| c.pending_recv.pop_front());
-                    if let Some(r) = recv {
-                        self.deliver_to_recv(&mut next, r, v);
-                        self.complete(&mut next, r);
-                        next.advance(tid);
-                    } else {
+                        .get(&channel)
+                        .map(|c| c.pending_recv.iter().copied().collect())
+                        .unwrap_or_default();
+                    if receivers.is_empty() {
                         next.store
                             .channels
                             .get_mut(&channel)
@@ -378,6 +466,27 @@ impl<'a> Interpreter<'a> {
                             .pending_send
                             .push_back(PendingSend { thread: tid, value: v });
                         next.block(tid, BlockReason::ChannelSend(channel));
+                    } else {
+                        let mut out = Vec::new();
+                        for r in receivers {
+                            let mut s = next.clone();
+                            if !self.deliver_to_recv(&mut s, r, v.clone())? {
+                                continue;
+                            }
+                            s.store
+                                .channels
+                                .get_mut(&channel)
+                                .unwrap()
+                                .pending_recv
+                                .retain(|t| *t != r);
+                            self.complete(&mut s, r);
+                            s.advance(tid);
+                            out.push(Step {
+                                label: label.clone(),
+                                state: s,
+                            });
+                        }
+                        return Ok(out);
                     }
                 } else {
                     let has_space = next
@@ -408,16 +517,19 @@ impl<'a> Interpreter<'a> {
             SemOp::ChannelRecv { channel, .. } => {
                 let cap = self.program.resource(channel).capacity;
                 if cap == 0 {
-                    let send = next
+                    // Rendezvous: every waiting sender is a legal match.
+                    let senders: Vec<(ThreadId, Value)> = next
                         .store
                         .channels
-                        .get_mut(&channel)
-                        .and_then(|c| c.pending_send.pop_front());
-                    if let Some(s) = send {
-                        self.deliver_to_recv(&mut next, tid, s.value);
-                        self.complete(&mut next, s.thread);
-                        next.advance(tid);
-                    } else {
+                        .get(&channel)
+                        .map(|c| {
+                            c.pending_send
+                                .iter()
+                                .map(|p| (p.thread, p.value.clone()))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    if senders.is_empty() {
                         next.store
                             .channels
                             .get_mut(&channel)
@@ -425,17 +537,47 @@ impl<'a> Interpreter<'a> {
                             .pending_recv
                             .push_back(tid);
                         next.block(tid, BlockReason::ChannelRecv(channel));
+                    } else {
+                        let dst = self.recv_dst_of(&next, tid).unwrap_or(SlotRef::Discard);
+                        let mut out = Vec::new();
+                        for (s_tid, s_val) in senders {
+                            let mut s = next.clone();
+                            if !self.try_write_dst(&mut s, fid, dst, s_val)? {
+                                continue;
+                            }
+                            s.store
+                                .channels
+                                .get_mut(&channel)
+                                .unwrap()
+                                .pending_send
+                                .retain(|p| p.thread != s_tid);
+                            self.complete(&mut s, s_tid);
+                            s.advance(tid);
+                            out.push(Step {
+                                label: label.clone(),
+                                state: s,
+                            });
+                        }
+                        return Ok(out);
                     }
                 } else {
-                    let value = next
+                    let head = next
                         .store
                         .channels
-                        .get_mut(&channel)
-                        .and_then(|c| c.buffer.pop_front());
-                    match value {
+                        .get(&channel)
+                        .and_then(|c| c.buffer.front().cloned());
+                    match head {
                         Some(v) => {
                             let dst = self.recv_dst_of(&next, tid).unwrap_or(SlotRef::Discard);
-                            next.write_dst(fid, dst, v)?;
+                            if !self.try_write_dst(&mut next, fid, dst, v)? {
+                                return Ok(Vec::new());
+                            }
+                            next.store
+                                .channels
+                                .get_mut(&channel)
+                                .unwrap()
+                                .buffer
+                                .pop_front();
                             next.advance(tid);
                         }
                         None => {
@@ -464,22 +606,19 @@ impl<'a> Interpreter<'a> {
                 next.store.mutexes.insert(lock, MutexState::Free);
                 {
                     let cv = next.store.condvars.get_mut(&condvar).unwrap();
-                    cv.waiters.push_back(tid);
-                    cv.lock = Some(lock);
+                    cv.waiters.push_back((tid, lock));
                 }
                 next.block(tid, BlockReason::Condvar(condvar, lock));
             }
             SemOp::CondvarNotify { .. } => unreachable!("handled above"),
             SemOp::CondvarNotifyAll { condvar } => {
-                let lock = next.store.condvars.get(&condvar).and_then(|c| c.lock);
-                let waiters: Vec<ThreadId> = {
+                // Each waiter re-acquires *its own* lock.
+                let waiters: Vec<(ThreadId, ResourceId)> = {
                     let cv = next.store.condvars.get_mut(&condvar).unwrap();
                     cv.waiters.drain(..).collect()
                 };
-                if let Some(lock) = lock {
-                    for w in waiters {
-                        next.block(w, BlockReason::Lock(lock));
-                    }
+                for (w, lock) in waiters {
+                    next.block(w, BlockReason::Lock(lock));
                 }
                 next.advance(tid);
             }
@@ -504,7 +643,14 @@ impl<'a> Interpreter<'a> {
                     return Err(BackendError::invalid("E904", "semaphore count must be positive").at(&at));
                 }
                 let available = *next.store.semaphores.get(&resource).unwrap_or(&0);
-                next.store.semaphores.insert(resource, available + count);
+                let updated = available.checked_add(count).ok_or_else(|| {
+                    BackendError::invalid(
+                        "E905",
+                        format!("semaphore '{resource}' permit count overflows i64"),
+                    )
+                    .at(&at)
+                })?;
+                next.store.semaphores.insert(resource, updated);
                 next.advance(tid);
             }
             SemOp::Call { func, args, dst } => {
@@ -531,6 +677,13 @@ impl<'a> Interpreter<'a> {
                         .filter(|(_, s)| s.class == crate::sem::program::SlotClass::Param && s.modeled)
                         .map(|(i, _)| i)
                         .collect();
+                    // Every argument binding must respect the parameter's
+                    // declared domain before the frame is created.
+                    for (slot, val) in modeled.iter().zip(values.iter()) {
+                        if !within_type(val, &callee.slots[*slot].ty) {
+                            return Ok(Vec::new());
+                        }
+                    }
                     let mut frame = next.alloc_frame(self.program, func)?;
                     for (slot, val) in modeled.iter().zip(values) {
                         frame.locals.insert(*slot, val);
@@ -605,7 +758,19 @@ impl<'a> Interpreter<'a> {
                 })?;
                 let child = next.threads[&tid].handle_children.get(&hid).copied();
                 match child {
-                    Some(c) if next.finished.contains(&c) => next.advance(tid),
+                    Some(c) if next.finished.contains(&c) => {
+                        // Consume the handle binding and reclaim the child, so
+                        // no stale identity remains in the state.
+                        next.frame_mut(fid).handles.remove(&handle);
+                        next.threads
+                            .get_mut(&tid)
+                            .unwrap()
+                            .handle_children
+                            .remove(&hid);
+                        next.threads.remove(&c);
+                        next.finished.remove(&c);
+                        next.advance(tid);
+                    }
                     Some(_) => next.block(tid, BlockReason::Join(hid)),
                     None => {
                         return Err(BackendError::invalid(
@@ -664,10 +829,18 @@ impl<'a> Interpreter<'a> {
                     None => None,
                 };
                 if next.threads[&tid].stack.len() > 1 {
+                    let stack_len = next.threads[&tid].stack.len();
+                    let caller = next.threads[&tid].stack[stack_len - 2];
                     let callee_frame = next.frame(fid).clone();
+                    // Validate the caller destination *before* unwinding, so a
+                    // domain violation disables the whole step.
+                    if let (Some(ret), Some(v)) = (&callee_frame.ret, &val) {
+                        if !self.dst_type_ok(&next, caller, ret.dst, v) {
+                            return Ok(Vec::new());
+                        }
+                    }
                     next.threads.get_mut(&tid).unwrap().stack.pop();
                     next.store.frames.remove(&fid);
-                    let caller = *next.threads[&tid].stack.last().unwrap();
                     if let Some(ret) = &callee_frame.ret {
                         if let Some(v) = val {
                             next.write_dst(caller, ret.dst, v)?;
@@ -706,13 +879,12 @@ impl<'a> Interpreter<'a> {
     ) -> BackendResult<Vec<Step<MachineState>>> {
         let fid = state.current_frame_id(tid).unwrap();
         let label = self.step_label(function_id, pc, tid, fid);
-        let waiters: Vec<ThreadId> = state
+        let waiters: Vec<(ThreadId, ResourceId)> = state
             .store
             .condvars
             .get(&condvar)
-            .map(|c| c.waiters.iter().copied().collect())
+            .map(|c| c.waiters.iter().cloned().collect())
             .unwrap_or_default();
-        let lock = state.store.condvars.get(&condvar).and_then(|c| c.lock);
 
         if waiters.is_empty() {
             let mut next = state.clone();
@@ -721,15 +893,13 @@ impl<'a> Interpreter<'a> {
             return Ok(vec![Step { label, state: next }]);
         }
         let mut out = Vec::new();
-        for w in waiters {
+        for (w, lock) in waiters {
             let mut next = state.clone();
             next.reached.insert((function_id, pc));
             if let Some(cv) = next.store.condvars.get_mut(&condvar) {
-                cv.waiters.retain(|x| *x != w);
+                cv.waiters.retain(|x| *x != (w, lock));
             }
-            if let Some(lock) = lock {
-                next.block(w, BlockReason::Lock(lock));
-            }
+            next.block(w, BlockReason::Lock(lock));
             next.advance(tid);
             out.push(Step {
                 label: label.clone(),
@@ -783,35 +953,45 @@ impl<'a> Interpreter<'a> {
             BlockReason::ChannelSend(c) => {
                 let cap = self.program.resource(*c).capacity;
                 if cap == 0 {
-                    // Should not normally occur (the second arrival pairs),
-                    // but handle it: pair with the oldest receiver if any.
+                    // Cap-0 never has both sides waiting; pair defensively.
                     let recv = next
                         .store
                         .channels
-                        .get_mut(c)
-                        .and_then(|ch| ch.pending_recv.pop_front());
+                        .get(c)
+                        .and_then(|ch| ch.pending_recv.front().copied());
                     let Some(recv) = recv else { return Ok(Vec::new()) };
-                    let value = match next
+                    let pos = next
                         .store
                         .channels
+                        .get(c)
+                        .and_then(|ch| ch.pending_send.iter().position(|p| p.thread == tid));
+                    let Some(pos) = pos else { return Ok(Vec::new()) };
+                    let value = next
+                        .store
+                        .channels
+                        .get(c)
+                        .unwrap()
+                        .pending_send
+                        .get(pos)
+                        .unwrap()
+                        .value
+                        .clone();
+                    if !self.deliver_to_recv(&mut next, recv, value)? {
+                        return Ok(Vec::new());
+                    }
+                    next.store
+                        .channels
                         .get_mut(c)
-                        .and_then(|ch| ch.pending_send.iter().position(|p| p.thread == tid))
-                    {
-                        Some(pos) => next
-                            .store
-                            .channels
-                            .get_mut(c)
-                            .unwrap()
-                            .pending_send
-                            .remove(pos)
-                            .map(|p| p.value)
-                            .unwrap(),
-                        None => return Ok(Vec::new()),
-                    };
-                    self.deliver_to_recv(&mut next, recv, value);
+                        .unwrap()
+                        .pending_send
+                        .remove(pos);
+                    next.store
+                        .channels
+                        .get_mut(c)
+                        .unwrap()
+                        .pending_recv
+                        .retain(|t| *t != recv);
                     self.complete(&mut next, recv);
-                    next.set_runnable(tid);
-                next.advance(tid);
                 } else {
                     let has_space = next
                         .store
@@ -842,9 +1022,9 @@ impl<'a> Interpreter<'a> {
                         .unwrap()
                         .buffer
                         .push_back(send.value);
-                    next.set_runnable(tid);
-                next.advance(tid);
                 }
+                next.set_runnable(tid);
+                next.advance(tid);
             }
             BlockReason::ChannelRecv(c) => {
                 let cap = self.program.resource(*c).capacity;
@@ -852,28 +1032,43 @@ impl<'a> Interpreter<'a> {
                     let send = next
                         .store
                         .channels
-                        .get_mut(c)
-                        .and_then(|ch| ch.pending_send.pop_front());
+                        .get(c)
+                        .and_then(|ch| ch.pending_send.front().cloned());
                     let Some(send) = send else { return Ok(Vec::new()) };
-                    self.deliver_to_recv(&mut next, tid, send.value);
-                    self.complete(&mut next, send.thread);
-                    next.set_runnable(tid);
-                next.advance(tid);
-                } else {
-                    let value = next
-                        .store
+                    let dst = self.recv_dst_of(&next, tid).unwrap_or(SlotRef::Discard);
+                    if !self.try_write_dst(&mut next, fid, dst, send.value.clone())? {
+                        return Ok(Vec::new());
+                    }
+                    next.store
                         .channels
                         .get_mut(c)
-                        .and_then(|ch| ch.buffer.pop_front());
-                    let Some(v) = value else { return Ok(Vec::new()) };
+                        .unwrap()
+                        .pending_send
+                        .retain(|p| p.thread != send.thread);
+                    self.complete(&mut next, send.thread);
+                } else {
+                    let head = next
+                        .store
+                        .channels
+                        .get(c)
+                        .and_then(|ch| ch.buffer.front().cloned());
+                    let Some(v) = head else { return Ok(Vec::new()) };
                     let dst = self.recv_dst_of(&next, tid).unwrap_or(SlotRef::Discard);
-                    next.write_dst(fid, dst, v)?;
+                    if !self.try_write_dst(&mut next, fid, dst, v)? {
+                        return Ok(Vec::new());
+                    }
+                    next.store
+                        .channels
+                        .get_mut(c)
+                        .unwrap()
+                        .buffer
+                        .pop_front();
                     if let Some(ch) = next.store.channels.get_mut(c) {
                         ch.pending_recv.retain(|t| *t != tid);
                     }
-                    next.set_runnable(tid);
-                next.advance(tid);
                 }
+                next.set_runnable(tid);
+                next.advance(tid);
             }
             // Condvar waiters are resumed by `notify`; join/scope by completion.
             BlockReason::Condvar(_, _) | BlockReason::Join(_) | BlockReason::Scope(_) => {
@@ -1103,8 +1298,20 @@ impl<'a> TransitionSystem for Interpreter<'a> {
 // ───────────────────────── Canonical rendering ─────────────────────────
 
 fn render_state(program: &SemProgram, state: &MachineState) -> String {
+    let _ = program;
     let thread_order: Vec<ThreadId> = state.threads.keys().copied().collect();
     let frame_order: Vec<FrameId> = state.store.frames.keys().copied().collect();
+    let scope_order: Vec<ScopeId> = state.scopes.keys().copied().collect();
+    let mut handle_ids: Vec<HandleId> = state
+        .store
+        .frames
+        .values()
+        .flat_map(|f| f.handles.values().copied())
+        .chain(state.threads.values().flat_map(|t| t.handle_children.keys().copied()))
+        .collect();
+    handle_ids.sort();
+    handle_ids.dedup();
+
     let tname = |t: ThreadId| -> String {
         thread_order
             .iter()
@@ -1119,9 +1326,24 @@ fn render_state(program: &SemProgram, state: &MachineState) -> String {
             .map(|i| format!("F{i}"))
             .unwrap_or_else(|| format!("F?{}", f.0))
     };
+    let sname = |s: ScopeId| -> String {
+        scope_order
+            .iter()
+            .position(|x| *x == s)
+            .map(|i| format!("S{i}"))
+            .unwrap_or_else(|| format!("S?{}", s.0))
+    };
+    let hname = |h: HandleId| -> String {
+        handle_ids
+            .iter()
+            .position(|x| *x == h)
+            .map(|i| format!("h{i}"))
+            .unwrap_or_else(|| format!("h?{}", h.0))
+    };
 
     let mut out = String::new();
-    out.push_str("STORE\n");
+    out.push_str("STORE
+");
     for (r, v) in &state.store.vars {
         out.push_str(&format!("  var r{}={}\n", r.0, v.canonical()));
     }
@@ -1153,31 +1375,41 @@ fn render_state(program: &SemProgram, state: &MachineState) -> String {
     }
     for (r, c) in &state.store.condvars {
         out.push_str(&format!(
-            "  condvar r{} waiters=[{}] lock={:?}\n",
+            "  condvar r{} waiters=[{}]\n",
             r.0,
-            c.waiters.iter().map(|t| tname(*t)).collect::<Vec<_>>().join(","),
-            c.lock.map(|l| l.0)
+            c.waiters
+                .iter()
+                .map(|(t, l)| format!("{}:{}", tname(*t), l.0))
+                .collect::<Vec<_>>()
+                .join(",")
         ));
     }
     for f in &frame_order {
         let frame = &state.store.frames[f];
-        let locals: Vec<String> = frame
+        let mut locals: Vec<String> = frame
             .locals
             .iter()
             .map(|(k, v)| format!("{k}={}", v.canonical()))
             .collect();
-        let handles: Vec<String> = frame
+        locals.sort();
+        let mut handles: Vec<String> = frame
             .handles
             .iter()
-            .map(|(k, h)| format!("{k}->h{}", h.0))
+            .map(|(k, h)| format!("{k}->{}", hname(*h)))
             .collect();
+        handles.sort();
+        let ret = match &frame.ret {
+            Some(r) => format!("ret(pc={},dst={:?})", r.pc_next, r.dst),
+            None => "ret(none)".to_string(),
+        };
         out.push_str(&format!(
-            "  frame {} func=f{} pc={} locals={{{}}} handles={{{}}}\n",
+            "  frame {} func=f{} pc={} locals={{{}}} handles={{{}}} {}\n",
             fname(*f),
             frame.function.0,
             frame.pc,
             locals.join(","),
-            handles.join(",")
+            handles.join(","),
+            ret
         ));
     }
     out.push_str("THREADS\n");
@@ -1187,14 +1419,21 @@ fn render_state(program: &SemProgram, state: &MachineState) -> String {
         let status = match &th.status {
             ThreadStatus::Runnable => "run".to_string(),
             ThreadStatus::Finished => "done".to_string(),
-            ThreadStatus::Blocked(b) => format!("{b:?}"),
+            ThreadStatus::Blocked(b) => format!("blocked:{}", block_reason_text(b, &tname, &hname, &sname)),
         };
+        let mut kids: Vec<String> = th
+            .handle_children
+            .iter()
+            .map(|(h, c)| format!("{}->{}", hname(*h), tname(*c)))
+            .collect();
+        kids.sort();
         out.push_str(&format!(
-            "  {} status={} stack=[{}] scope={:?}\n",
+            "  {} status={} stack=[{}] children=[{}] scope={}\n",
             tname(*t),
             status,
             stack.join(","),
-            th.parent_scope.map(|s| s.0)
+            kids.join(","),
+            th.parent_scope.map(|s| sname(s)).unwrap_or_else(|| "-".into())
         ));
     }
     for (r, q) in &state.sem_waiters {
@@ -1205,11 +1444,14 @@ fn render_state(program: &SemProgram, state: &MachineState) -> String {
         ));
     }
     for s in state.scopes.values() {
+        let mut rem: Vec<String> = s.remaining.iter().map(|t| tname(*t)).collect();
+        rem.sort();
         out.push_str(&format!(
-            "  scope {} owner={} remaining=[{}]\n",
-            s.id.0,
+            "  scope {} owner={} frame={} remaining=[{}]\n",
+            sname(s.id),
             tname(s.owner),
-            s.remaining.iter().map(|t| tname(*t)).collect::<Vec<_>>().join(",")
+            fname(s.owner_frame),
+            rem.join(",")
         ));
     }
     out.push_str(&format!(
@@ -1217,6 +1459,22 @@ fn render_state(program: &SemProgram, state: &MachineState) -> String {
         state.completed_functions, state.completed_scopes
     ));
     out.push_str(&format!("REACHED {:?}\n", state.reached));
-    let _ = program;
     out
+}
+
+fn block_reason_text(
+    b: &BlockReason,
+    _tname: &impl Fn(ThreadId) -> String,
+    hname: &impl Fn(HandleId) -> String,
+    sname: &impl Fn(ScopeId) -> String,
+) -> String {
+    match b {
+        BlockReason::Lock(r) => format!("lock:{}", r.0),
+        BlockReason::ChannelSend(r) => format!("send:{}", r.0),
+        BlockReason::ChannelRecv(r) => format!("recv:{}", r.0),
+        BlockReason::Condvar(cv, lk) => format!("condvar:{}:{}", cv.0, lk.0),
+        BlockReason::Semaphore(r) => format!("sem:{}", r.0),
+        BlockReason::Join(h) => format!("join:{}", hname(*h)),
+        BlockReason::Scope(s) => format!("scope:{}", sname(*s)),
+    }
 }

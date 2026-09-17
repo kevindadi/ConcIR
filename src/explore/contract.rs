@@ -55,8 +55,17 @@ impl PatchScope {
         self.modules.is_empty() || self.modules.iter().any(|m| m == name)
     }
 
-    pub fn allows_function(&self, name: &str) -> bool {
-        self.functions.is_empty() || self.functions.iter().any(|f| f == name)
+    /// Match a patch target against the allowed function set. An entry with
+    /// `module::function` requires exact identity; a bare entry is a legacy
+    /// short name and matches the function name in any module.
+    pub fn allows_function(&self, module: &str, function: &str) -> bool {
+        if self.functions.is_empty() {
+            return true;
+        }
+        self.functions.iter().any(|entry| match entry.split_once("::") {
+            Some((m, f)) => m == module && f == function,
+            None => entry == function,
+        })
     }
 
     pub fn unrestricted() -> Self {
@@ -299,7 +308,10 @@ impl ContractSpec {
                 )));
             }
         }
-        let default_module = crate::sem::ids::ModuleId(0);
+        // Unqualified contract names resolve in the entry module's namespace,
+        // which is stable under declaration/module reordering (never
+        // `ModuleId(0)`).
+        let default_module = program.entry_module();
         let mut properties = Vec::new();
         for p in &self.properties {
             let resolve = |e: &PredicateSpec| {

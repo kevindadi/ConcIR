@@ -1,0 +1,50 @@
+{
+  "program": "r2_bounded_dst",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [
+        {
+          "name": "a",
+          "kind": "var",
+          "type": "Atomic",
+          "base": "Int",
+          "init": 2
+        },
+        {
+          "name": "x",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Int": [
+              0,
+              1
+            ]
+          },
+          "init": 0
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "atomic_load",
+              "resource": "a",
+              "dst": "x"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

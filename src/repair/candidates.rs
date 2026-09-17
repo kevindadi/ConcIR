@@ -38,7 +38,7 @@ impl LockOrderEnumerator {
         let mut targets = Vec::new();
         for m in &program.modules {
             for f in &m.functions {
-                if !scope.allows_function(&f.name) {
+                if !scope.allows_function(&m.name, &f.name) {
                     continue;
                 }
                 for i in 0..f.body.len().saturating_sub(1) {

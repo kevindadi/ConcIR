@@ -10,6 +10,15 @@ The reviewed evidence directory is untouched. The review's own probes were run
 against a copy in `/tmp` so the recorded `.stdout`/`.stderr` are not
 overwritten. The counterexamples are migrated into `tests/repro_round2/`.
 
+> **Round-3 corrections.** Two claims below were stronger than the code at the
+> time and are corrected in `CODE_REVIEW_ROUND3.md`:
+> - R3's "full `module::function` scope" only compared the function *short
+>   name*. Round 3 implements exact `module::function` matching (B7).
+> - R4's "removed forced FIFO over waiting threads" did **not** cover
+>   zero-capacity rendezvous, which still paired with the queue head. Round 3
+>   enumerates every rendezvous match (B3).
+
+
 ## Gate
 
 ```
