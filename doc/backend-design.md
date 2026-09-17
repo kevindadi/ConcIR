@@ -606,6 +606,80 @@ natural-language requirements. A fully LLM-free end-to-end demo (buggy CIR →
 rejected candidates → accepted patch) ships in `tests/repair_e2e.rs`; the
 round-2 review regressions ship in `tests/round2_regressions.rs`.
 
+### 7.4 Diagnostic-driven composite search
+
+`src/repair/search.rs` adds a budgeted search over programs. Three strategies
+share the same edit space, permissions, verification semantics, and budgets,
+so "composite capability" and "diagnostic guidance" can be measured
+separately:
+
+- `Single` (A): expand only the root, one edit deep — the legacy baseline.
+- `Composite` (B): bounded BFS over nodes, no diagnostic guidance.
+- `Diagnostic` (C): the same BFS, with candidates filtered by the node's
+  structured blocking facts.
+
+**Data flow.** The search first verifies the original program. A complete
+`PASS` returns `AlreadySatisfied` (no patch is produced); `Invalid`,
+`Unsupported`, and `Unknown` roots are reported as such. Each search node
+stores its parent, depth, total edits, program, stable program fingerprint,
+the verification report, and the patch that produced it, so any node is
+reconstructible and independently re-verifiable.
+
+**Provider context.** `RepairContext` carries the node's program, the frozen
+`ContractSpec`, the round/depth, the structured `VerificationReport`, and the
+ancestor `NodeHistory`. Providers read `blocked[*].resource_name` (a
+`module::entity` fact produced by the engine, never parsed text) to decide
+relevance. The diagnostic strategy treats resource relevance as a *fact* and
+the swap as a *heuristic*; the two are recorded separately (the report keeps the
+facts, the candidate provenance records the heuristic).
+
+**Verification bounds.** The frozen `ContractSpec.bounds` is the single source
+of truth for every verification call (root and children). `SearchConfig` does
+not carry bounds; the effective bounds are recorded in the artifact. A caller
+who wants a smaller analysis sets the contract bounds. A run can never exceed
+them or silently widen them.
+
+**Deduplication before verification.** After a candidate is applied and
+statically validated, its whole-program fingerprint is checked against the
+cache. An already-verified program is *reused* (the attempt records
+`reused_node`), consumes no verification budget, and is not re-enqueued. The
+counts distinguish proposals, unique candidate programs, verification calls,
+and cache hits. Strategy A (single) never expands children.
+
+**Node and attempt identity.** Every unique verified program is a *node* with a
+stable id (its index in `nodes`); `parent` is a node id or `None` for the root.
+Every candidate proposal is an *attempt* referencing the node it came from.
+Denied, apply-error, and static-invalid attempts produce no node; a reused
+attempt references the existing node. The incoming patch of a node records its
+`original_function_hash`, `parent_fingerprint`, and `program_fingerprint`.
+
+**Budgets and stop reasons.** The root verification counts toward
+`verification_budget`; a zero budget is rejected before any verification with
+`InvalidConfig`. Candidate and verification budgets, `max_depth`, and
+`max_total_edits` are all enforced; depth/edit truncation, a candidate-budget
+exhaustion, and a verification-budget exhaustion are reported with distinct
+stop reasons. Strategy A exhausting its single-step enumeration is
+`NoAcceptableCandidate`, not a budget truncation. `UNKNOWN` encountered while
+searching is reported (`saw_unknown`) and never accepted; a `UNKNOWN` root is
+`AnalysisUnknown`.
+
+**Acceptance and artifact.** Intermediate `FAIL` nodes are kept and expanded
+(except in strategy A); `UNKNOWN`, `INVALID`, and `UNSUPPORTED` nodes are never
+accepted or expanded. Only an overall complete `PASS` is a final repair. Every
+run produces a self-contained `SearchArtifact` (schema
+`concir-repair-artifact-v1`) with the input program, frozen contract, effective
+config and bounds, source identity (crate version and a binary fingerprint),
+all nodes/attempts and their relationships, full verification reports, the
+patch chain, the accepted program, counts, stop reason, and a reproduce
+command. `replay_artifact` reads the artifact, re-applies every incoming patch
+to its parent, validates fingerprints, and re-verifies the accepted program;
+broken parent references, patch bases, or input fingerprints are explicit
+errors. Exhausting a strategy or budget only means "not found under this
+strategy/budget"; no repair-nonexistence or global-optimality claim is made.
+The development benchmark lives in `src/repair/benchmark.rs` and is exposed by
+the `bench` CLI subcommand; it is a development regression set, not an
+independent evaluation corpus.
+
 ---
 
 ## 8. Module layout and staged plan

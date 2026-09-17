@@ -5,14 +5,20 @@
 //!   explore <program.json> [contract.json] [interp|petri]   checked verification
 //!   run     <program.json>                         list enabled steps from the initial state
 //!   repair  <program.json> <contract.json> [patches.json] [budget]
+//!   repair  <program.json> <contract.json> --strategy a|b|c [--candidate-budget N]
+//!                                                   [--verification-budget N]
+//!                                                   [--max-depth N] [--max-total-edits N]
+//!                                                   [--artifact out.json]
+//!   replay  <artifact.json>                        rebuild nodes and re-verify the export
+//!   bench   [--artifact out.json]                  development benchmark records
 //!   support <program.json>                         print the supportability report
 //!
 //! Exit codes (documented, stable):
-//!   0 PASS / repaired
-//!   1 FAIL
+//!   0 PASS / repaired / already satisfied
+//!   1 FAIL / no acceptable candidate / budget exhausted
 //!   2 usage / input error
 //!   3 UNKNOWN
-//!   4 INVALID (static or semantic)
+//!   4 INVALID (static, semantic, or configuration)
 //!   5 UNSUPPORTED
 
 use std::env;
@@ -23,7 +29,9 @@ use concir::ast::Program;
 use concir::explore::contract::ContractSpec;
 use concir::explore::{verify_program, EngineKind};
 use concir::interp::Interpreter;
-use concir::repair::candidates::{CandidateProvider, FileCandidateProvider, LockOrderEnumerator};
+use concir::repair::benchmark::{check_benchmark, run_benchmark};
+use concir::repair::candidates::FileCandidateProvider;
+use concir::repair::search::{replay_artifact, run_search, RepairStrategy, SearchConfig};
 use concir::repair::{run_repair, RepairOutcome};
 use concir::sem::outcome::{AnalysisBounds, Outcome};
 use concir::sem::program;
@@ -43,7 +51,12 @@ fn usage() -> ! {
          concir-backend explore <program.json> [contract.json] [interp|petri]\n  \
          concir-backend run     <program.json>\n  \
          concir-backend repair  <program.json> <contract.json> [patches.json] [budget]\n  \
+         concir-backend repair  <program.json> <contract.json> --strategy a|b|c [flags]\n  \
+         concir-backend replay  <artifact.json>\n  \
+         concir-backend bench   [--artifact out.json]\n  \
          concir-backend support <program.json>\n\n\
+         flags for --strategy: --candidate-budget N --verification-budget N\n  \
+         --max-depth N --max-total-edits N --artifact out.json\n\n\
          exit codes: 0 pass/repaired, 1 fail, 2 usage, 3 unknown, 4 invalid, 5 unsupported"
     );
     process::exit(EXIT_USAGE);
@@ -96,10 +109,39 @@ fn outcome_exit(outcome: Outcome) -> i32 {
     }
 }
 
+fn repair_exit(outcome: RepairOutcome) -> i32 {
+    match outcome {
+        RepairOutcome::Repaired | RepairOutcome::AlreadySatisfied => 0,
+        RepairOutcome::NoAcceptableCandidate | RepairOutcome::BudgetExhausted => EXIT_FAIL,
+        RepairOutcome::AnalysisUnknown => EXIT_UNKNOWN,
+        RepairOutcome::Invalid | RepairOutcome::InvalidConfig => EXIT_INVALID,
+        RepairOutcome::Unsupported => EXIT_UNSUPPORTED,
+    }
+}
+
 fn engine_kind(s: Option<&String>) -> EngineKind {
     match s.map(String::as_str) {
         Some("interp") => EngineKind::Interpreter,
         _ => EngineKind::Petri,
+    }
+}
+
+fn strategy_of(s: &str) -> RepairStrategy {
+    match s {
+        "a" => RepairStrategy::Single,
+        "b" => RepairStrategy::Composite,
+        "c" => RepairStrategy::Diagnostic,
+        _ => usage(),
+    }
+}
+
+fn parse_usize_arg(s: Option<&String>, flag: &str) -> usize {
+    match s.and_then(|v| v.parse::<usize>().ok()) {
+        Some(n) => n,
+        None => {
+            eprintln!("{flag} requires a non-negative integer");
+            process::exit(EXIT_USAGE);
+        }
     }
 }
 
@@ -194,31 +236,140 @@ fn main() {
             let contract_path = args.get(3).unwrap_or_else(|| usage());
             let program = parse_program(path);
             let spec = parse_contract(Some(contract_path));
-            let provider: Box<dyn CandidateProvider> = if let Some(p) = args.get(4) {
-                match FileCandidateProvider::from_file(p) {
-                    Ok(fp) => Box::new(fp),
-                    Err(e) => {
-                        eprintln!("{e}");
-                        process::exit(EXIT_USAGE);
+
+            // Legacy positional form: repair model contract patches.json [budget].
+            if let Some(a4) = args.get(4) {
+                if !a4.starts_with('-') {
+                    let mut provider = match FileCandidateProvider::from_file(a4) {
+                        Ok(fp) => fp,
+                        Err(e) => {
+                            eprintln!("{e}");
+                            process::exit(EXIT_USAGE);
+                        }
+                    };
+                    if args.len() > 6 {
+                        usage();
                     }
+                    let budget: usize = match args.get(5) {
+                        Some(s) => s.parse().unwrap_or_else(|_| {
+                            eprintln!("budget must be a non-negative integer");
+                            process::exit(EXIT_USAGE);
+                        }),
+                        None => 16,
+                    };
+                    let report = run_repair(&program, &spec, &mut provider, budget);
+                    let json = serde_json::json!({
+                        "outcome": report.outcome,
+                        "candidates_tried": report.candidates_tried,
+                        "rounds": report.rounds,
+                        "accepted_patch": report.accepted,
+                    });
+                    println!("{}", serde_json::to_string_pretty(&json).expect("serialize"));
+                    process::exit(repair_exit(report.outcome));
                 }
-            } else {
-                Box::new(LockOrderEnumerator::new(&program, &spec.allowed_scope))
-            };
-            let budget: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(16);
-            let mut provider = provider;
-            let report = run_repair(&program, &spec, provider.as_mut(), budget);
-            let json = serde_json::json!({
-                "outcome": report.outcome,
-                "candidates_tried": report.candidates_tried,
-                "rounds": report.rounds,
-                "accepted_patch": report.accepted,
-            });
-            println!("{}", serde_json::to_string_pretty(&json).expect("serialize"));
-            match report.outcome {
-                RepairOutcome::Repaired => {}
-                RepairOutcome::AnalysisUnknown => process::exit(EXIT_UNKNOWN),
-                _ => process::exit(EXIT_FAIL),
+            }
+
+            // Flag form.
+            let mut strategy = RepairStrategy::Diagnostic;
+            let mut config = SearchConfig::default();
+            let mut artifact_path: Option<String> = None;
+            let mut i = 4usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--strategy" => {
+                        i += 1;
+                        strategy = strategy_of(args.get(i).map(String::as_str).unwrap_or(""));
+                    }
+                    "--candidate-budget" => {
+                        i += 1;
+                        config.candidate_budget = parse_usize_arg(args.get(i), "--candidate-budget");
+                    }
+                    "--verification-budget" => {
+                        i += 1;
+                        config.verification_budget =
+                            parse_usize_arg(args.get(i), "--verification-budget");
+                    }
+                    "--max-depth" => {
+                        i += 1;
+                        config.max_depth = parse_usize_arg(args.get(i), "--max-depth");
+                    }
+                    "--max-total-edits" => {
+                        i += 1;
+                        config.max_total_edits =
+                            parse_usize_arg(args.get(i), "--max-total-edits");
+                    }
+                    "--artifact" => {
+                        i += 1;
+                        artifact_path = Some(
+                            args.get(i)
+                                .cloned()
+                                .unwrap_or_else(|| usage()),
+                        );
+                    }
+                    _ => usage(),
+                }
+                i += 1;
+            }
+            config.strategy = strategy;
+
+            let report = run_search(&program, &spec, &config);
+            let artifact = report.artifact_with_config(&program, &spec, &config);
+            let json = serde_json::to_string_pretty(&artifact).expect("serialize");
+            if let Some(path) = &artifact_path {
+                if let Err(e) = fs::write(path, &json) {
+                    eprintln!("error writing artifact '{path}': {e}");
+                    process::exit(EXIT_USAGE);
+                }
+            }
+            println!("{json}");
+            process::exit(repair_exit(report.outcome));
+        }
+        "replay" => {
+            let path = args.get(2).unwrap_or_else(|| usage());
+            let text = read(path);
+            match replay_artifact(&text) {
+                Ok(result) => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&result).expect("serialize")
+                    );
+                }
+                Err(e) => {
+                    eprintln!("artifact replay failed: {e}");
+                    process::exit(EXIT_INVALID);
+                }
+            }
+        }
+        "bench" => {
+            let mut artifact_path: Option<String> = None;
+            let mut i = 2usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--artifact" => {
+                        i += 1;
+                        artifact_path =
+                            Some(args.get(i).cloned().unwrap_or_else(|| usage()));
+                    }
+                    _ => usage(),
+                }
+                i += 1;
+            }
+            let records = run_benchmark(&[
+                RepairStrategy::Single,
+                RepairStrategy::Composite,
+                RepairStrategy::Diagnostic,
+            ]);
+            let json = serde_json::to_string_pretty(&records).expect("serialize");
+            if let Some(path) = &artifact_path {
+                if let Err(e) = fs::write(path, &json) {
+                    eprintln!("error writing benchmark records '{path}': {e}");
+                    process::exit(EXIT_USAGE);
+                }
+            }
+            println!("{json}");
+            if let Err(e) = check_benchmark() {
+                eprintln!("benchmark expectation failed: {e}");
+                process::exit(EXIT_FAIL);
             }
         }
         _ => usage(),

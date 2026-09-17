@@ -9,12 +9,14 @@
 //!
 //! Old-counterexample replay is intentionally *not* an acceptance criterion.
 
+pub mod benchmark;
 pub mod candidates;
 pub mod patch;
+pub mod search;
 
 use std::collections::HashSet;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::ast::Program;
 use crate::explore::contract::{ContractError, ContractSpec};
@@ -25,13 +27,19 @@ use crate::validate;
 use candidates::{CandidateProvider, RepairContext};
 use patch::CirPatch;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RepairOutcome {
     Repaired,
+    AlreadySatisfied,
     NoAcceptableCandidate,
     BudgetExhausted,
     AnalysisUnknown,
+    Invalid,
+    Unsupported,
+    /// The requested configuration is invalid (e.g. a zero verification
+    /// budget). No analysis was run.
+    InvalidConfig,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -80,6 +88,9 @@ pub fn run_repair(
             program: &current,
             spec,
             round,
+            depth: 0,
+            report: None,
+            history: &[],
         };
         let Some(candidate) = provider.next_candidate(&ctx) else {
             return RepairReport {

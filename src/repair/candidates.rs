@@ -1,20 +1,53 @@
 //! Candidate providers. No LLM implementation exists here.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::path::PathBuf;
 
 use serde::Deserialize;
 
 use crate::ast::{Op, Program};
 use crate::explore::contract::{ContractSpec, PatchScope};
+use crate::explore::VerificationReport;
+use crate::sem::outcome::Outcome;
 
 use super::patch::{function_hash, is_control_target, CirPatch, PatchChange, SourceRelation};
 
-/// Context handed to a provider each round.
+/// Summary of an ancestor search node, passed to providers as feedback.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NodeHistory {
+    pub depth: usize,
+    pub edits: Vec<String>,
+    pub outcome: Outcome,
+}
+
+/// Context handed to a provider for one search node. `report` is the structured
+/// verification report of the node's program (never parsed text), and `history`
+/// is the ancestor chain.
 pub struct RepairContext<'a> {
     pub program: &'a Program,
     pub spec: &'a ContractSpec,
     pub round: usize,
+    pub depth: usize,
+    pub report: Option<&'a VerificationReport>,
+    pub history: &'a [NodeHistory],
+}
+
+impl RepairContext<'_> {
+    /// Resource names (`module::entity`) appearing in blocking relations of the
+    /// node's diagnostics. These are established facts, not heuristics.
+    pub fn relevant_resources(&self) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
+        if let Some(report) = self.report {
+            for d in &report.diagnostics {
+                for b in &d.blocked {
+                    if let Some(name) = &b.resource_name {
+                        out.insert(name.clone());
+                    }
+                }
+            }
+        }
+        out
+    }
 }
 
 pub trait CandidateProvider {
@@ -104,6 +137,127 @@ impl CandidateProvider for LockOrderEnumerator {
         }
         None
     }
+}
+
+// ───────────────── diagnostic-aware composite enumerator ────────────
+
+/// Enumerates the same safe adjacent-lock swaps as [`LockOrderEnumerator`], but
+/// can filter them by the resource names that appear in the node's structured
+/// diagnostics. `use_diagnostics = false` is the no-diagnostic baseline (B);
+/// `true` is the diagnostic-guided strategy (C). The edit space (adjacent
+/// mutex-lock swaps with no control targets) is identical in both.
+pub struct LockOrderCompositeEnumerator {
+    targets: Vec<(String, String, String, String)>,
+    cursor: usize,
+    use_diagnostics: bool,
+}
+
+impl LockOrderCompositeEnumerator {
+    pub fn new(program: &Program, scope: &PatchScope, use_diagnostics: bool) -> Self {
+        let mut targets = Vec::new();
+        for m in &program.modules {
+            for f in &m.functions {
+                if !scope.allows_function(&m.name, &f.name) {
+                    continue;
+                }
+                for i in 0..f.body.len().saturating_sub(1) {
+                    let a = &f.body[i];
+                    let b = &f.body[i + 1];
+                    let (ra, rb) = match (&a.op, &b.op) {
+                        (Op::MutexLock { resource: ra }, Op::MutexLock { resource: rb }) => {
+                            (ra, rb)
+                        }
+                        _ => continue,
+                    };
+                    if ra == rb || is_control_target(f, &a.sid) || is_control_target(f, &b.sid) {
+                        continue;
+                    }
+                    targets.push((
+                        m.name.clone(),
+                        f.name.clone(),
+                        a.sid.clone(),
+                        b.sid.clone(),
+                    ));
+                }
+            }
+        }
+        LockOrderCompositeEnumerator {
+            targets,
+            cursor: 0,
+            use_diagnostics,
+        }
+    }
+}
+
+impl CandidateProvider for LockOrderCompositeEnumerator {
+    fn name(&self) -> &str {
+        if self.use_diagnostics {
+            "lock-order-composite-diagnostic"
+        } else {
+            "lock-order-composite"
+        }
+    }
+
+    fn next_candidate(&mut self, ctx: &RepairContext) -> Option<CirPatch> {
+        if !ctx.spec.allowed_scope.allow_lock_reorder {
+            return None;
+        }
+        let relevant = if self.use_diagnostics {
+            ctx.relevant_resources()
+        } else {
+            BTreeSet::new()
+        };
+        while self.cursor < self.targets.len() {
+            let (module, function, a, b) = self.targets[self.cursor].clone();
+            self.cursor += 1;
+            if !relevant.is_empty() {
+                // Relevance is derived from the blocking facts in the report.
+                match lock_pair_fqns(ctx.program, &module, &function, &a, &b) {
+                    Some((ra, rb)) if !relevant.contains(&ra) && !relevant.contains(&rb) => {
+                        continue
+                    }
+                    _ => {}
+                }
+            }
+            let hash = function_hash(ctx.program, &module, &function).ok()?;
+            let description = if self.use_diagnostics {
+                "heuristic: swap an adjacent mutex acquisition involving a blocked resource"
+            } else {
+                "heuristic: swap an adjacent pair of mutex acquisitions"
+            };
+            return Some(CirPatch {
+                id: format!("lockorder:{module}:{function}:{a}-{b}"),
+                module,
+                function,
+                original_hash: hash,
+                changes: vec![PatchChange::SwapStatements { a, b }],
+                provenance: vec![SourceRelation {
+                    description: description.into(),
+                }],
+            });
+        }
+        None
+    }
+}
+
+/// Fully-qualified names of the two mutex resources of a swap target.
+fn lock_pair_fqns(
+    program: &Program,
+    module: &str,
+    function: &str,
+    a: &str,
+    b: &str,
+) -> Option<(String, String)> {
+    let f = program.lookup_function(module, function)?.1;
+    let lock_at = |sid: &str| -> Option<String> {
+        f.body.iter().find(|s| s.sid == sid).and_then(|s| match &s.op {
+            Op::MutexLock { resource } => program
+                .lookup_resource(module, resource)
+                .map(|(o, r)| crate::fqn::fqn(&o.name, &r.name)),
+            _ => None,
+        })
+    };
+    Some((lock_at(a)?, lock_at(b)?))
 }
 
 // ───────────────────────────── file provider ─────────────────────────

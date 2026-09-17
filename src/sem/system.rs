@@ -84,7 +84,7 @@ impl Predicate {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockKind {
     Lock,
@@ -96,18 +96,20 @@ pub enum BlockKind {
     Scope,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BlockedRecord {
     pub thread: ThreadId,
     pub kind: BlockKind,
     pub resource: Option<ResourceId>,
+    /// Stable `module::entity` name of the blocking resource (for providers).
+    pub resource_name: Option<String>,
     pub holder: Option<ThreadId>,
     pub waiting: usize,
     pub detail: String,
 }
 
 /// Current position of one execution instance.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InstanceState {
     pub thread: ThreadId,
     pub frame: Option<crate::sem::ids::FrameId>,

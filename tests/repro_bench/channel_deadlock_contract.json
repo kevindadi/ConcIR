@@ -1,0 +1,23 @@
+{
+  "name": "channel-deadlock",
+  "properties": [
+    {
+      "kind": "deadlock_free",
+      "id": "no-deadlock"
+    }
+  ],
+  "assumptions": {
+    "sequential_consistency": true,
+    "no_spurious_wakeups": true
+  },
+  "bounds": {
+    "max_threads": 8,
+    "max_frames_per_thread": 8,
+    "max_states": 20000,
+    "max_depth": 64,
+    "max_boundary_events": 256
+  },
+  "allowed_scope": {
+    "allow_lock_reorder": true
+  }
+}

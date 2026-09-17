@@ -1,6 +1,5 @@
 ---
 source: tests/dot_export.rs
-assertion_line: 371
 expression: dot
 ---
 digraph "producer_consumer" {

@@ -32,10 +32,18 @@ Backend (`concir-backend` binary):
 # Deterministic, LLM-free repair. Optional candidate file and budget.
 ./target/release/concir-backend repair examples/lockorder_bug.json examples/lockorder_contract.json
 ./target/release/concir-backend repair <program.json> <contract.json> <patches.json> 16
+./target/release/concir-backend repair <program.json> <contract.json> --strategy c --artifact out.json
+./target/release/concir-backend replay out.json
+./target/release/concir-backend bench [--artifact bench.json]
 
 # List enabled steps from the initial state (reference interpreter).
 ./target/release/concir-backend run examples/producer_consumer.json
 ```
+
+Exit codes: `0` PASS / repaired / already satisfied, `1` FAIL / no acceptable
+candidate / budget exhausted, `2` usage or input error, `3` UNKNOWN, `4`
+INVALID (static, semantic, or configuration), `5` UNSUPPORTED. `repair` uses
+the same categories as `explore`.
 
 Verification output is a JSON `VerificationReport` with an `outcome` of
 `PASS` / `FAIL` / `UNKNOWN` / `INVALID` / `UNSUPPORTED`, per-property results,
@@ -109,6 +117,52 @@ The repair loop is deterministic: legality → CIR static validation →
 supportability → re-translation → **full** verification of every property and
 preserved behaviour → accept/reject. Old-counterexample replay is not used as
 an acceptance criterion.
+
+### Diagnostic-driven composite search
+
+```bash
+# Strategy A (single legacy), B (composite), C (diagnostic, default).
+concir-backend repair <program.json> <contract.json> --strategy a
+concir-backend repair <program.json> <contract.json> --strategy c \
+    --candidate-budget 64 --verification-budget 64 \
+    --max-depth 4 --max-total-edits 4 --artifact out.json
+
+# File-supplied candidates still use the single-edit legacy loop:
+concir-backend repair <program.json> <contract.json> patches.json [budget]
+
+# Replay a saved artifact: rebuild every node and re-verify the export.
+concir-backend replay out.json
+
+# Development benchmark (complete records for A/B/C):
+concir-backend bench [--artifact bench.json]
+```
+
+The verification bounds come from the frozen contract (`contract.bounds`); the
+`repair` flags control only the search budgets. `--verification-budget 0` is
+rejected before any verification. Candidates are deduplicated by program
+fingerprint *before* verification, so a repeated program never consumes
+verification budget; the artifact reports proposals, unique programs,
+verification calls, and cache hits separately.
+
+`repair --strategy` prints the complete artifact to stdout (and writes
+`--artifact` if given). The artifact (schema `concir-repair-artifact-v1`)
+contains the input program, frozen contract, effective config and bounds, the
+source identity (crate version plus a binary fingerprint), every node and
+attempt with parent/patch relationships and full verification reports, the
+patch chain, the accepted program and report, counts, the stop reason, and a
+reproduce command. `replay` re-applies each patch to its parent, validates
+fingerprints and the input, and re-verifies the accepted program; a broken
+parent, patch base, or input fingerprint fails explicitly.
+
+The search first verifies the original program: a complete `PASS` returns
+`already_satisfied` and produces no patch; `invalid`/`unsupported`/`unknown`
+roots are reported as such. Each node records its parent, incoming patch,
+program fingerprint, and full verification report. Providers receive the node's
+structured report; the diagnostic strategy uses blocked-resource facts (not
+parsed text) to rank candidates. Intermediate `FAIL` nodes are search nodes, not
+accepted repairs; only an overall complete `PASS` is accepted. Exhausting
+candidates or budget means "not found under this strategy/budget", not "no
+repair exists".
 
 ## Static-validator changes (migration)
 
@@ -225,13 +279,18 @@ cargo test --test semantics_regression
 cargo test --test validator_risks
 cargo test --test interp_petri_diff
 cargo test --test repair_e2e
+cargo test --test repair_search
+cargo test --test benchmark
+cargo test --test dot_export
 ```
 
 `tests/repro_round2/` … `tests/repro_round5/` contain the review
-counterexamples (CIR, contracts, patches) as fixtures; see
-`CODE_REVIEW_ROUND2.md` … `CODE_REVIEW_ROUND5.md`.
+counterexamples (CIR, contracts, patches) as fixtures; `tests/repro_bench/`
+contains the development-benchmark cases. See `CODE_REVIEW_ROUND2.md` …
+`CODE_REVIEW_ROUND5.md` and `REPAIR_LOOP_HANDOFF.md`.
 
-Note: the pre-existing `tests/dot_export.rs` snapshot tests cannot pass on a
-fresh checkout because `**.snap` is git-ignored (no committed snapshots). This
-is unrelated to the backend and left untouched.
+Toolchain used for the recorded results: `rustc 1.100.0-nightly`, on macOS.
+The four historical DOT snapshot failures are fixed by committing the four
+`tests/snapshots/*.snap` goldens and adjusting `.gitignore` to ignore only
+pending snapshots (`*.snap.new`, `*.pending-snap`).
 

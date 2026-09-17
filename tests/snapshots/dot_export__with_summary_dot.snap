@@ -1,6 +1,5 @@
 ---
 source: tests/dot_export.rs
-assertion_line: 385
 expression: dot
 ---
 digraph "with_summary" {

@@ -1,6 +1,5 @@
 ---
 source: tests/dot_export.rs
-assertion_line: 393
 expression: dot
 ---
 digraph "producer" {

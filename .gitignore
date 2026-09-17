@@ -10,4 +10,7 @@ Cargo.lock
 /.github/skills/
 
 .DS_Store
-**.snap
+# Insta pending snapshots are transient; committed goldens in
+# tests/snapshots/*.snap are tracked.
+*.snap.new
+*.pending-snap

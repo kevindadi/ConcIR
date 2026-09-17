@@ -1,10 +1,10 @@
 //! Outcomes, analysis bounds, boundary events, and structured origins.
 
 use crate::sem::ids::{FrameId, FunctionId, ModuleId, ThreadId};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Result of a verification run over a fixed contract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Outcome {
     Pass,
@@ -27,7 +27,7 @@ impl Outcome {
 }
 
 /// A construct outside the supported subset (§1.2 of the design).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Unsupported {
     pub construct: String,
     pub location: Option<String>,
@@ -50,7 +50,7 @@ impl Unsupported {
 }
 
 /// A semantic error of the program under the fixed semantics.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Invalid {
     pub code: String,
     pub message: String,
@@ -130,7 +130,7 @@ pub type BackendResult<T> = Result<T, BackendError>;
 
 /// Analyzer limits. These are *not* part of the program semantics: reaching
 /// one is recorded as a boundary and makes a search incomplete.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnalysisBounds {
     pub max_threads: usize,
     pub max_frames_per_thread: usize,
@@ -151,7 +151,7 @@ impl Default for AnalysisBounds {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BoundaryKind {
     ThreadLimit,
@@ -162,7 +162,7 @@ pub enum BoundaryKind {
     UnboundedData,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BoundaryEvent {
     pub kind: BoundaryKind,
     pub thread: Option<ThreadId>,
@@ -194,7 +194,7 @@ impl BoundaryEvent {
 }
 
 /// Structured origin of a transition or step.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct TransitionOrigin {
     pub module: ModuleId,
     pub function: FunctionId,
@@ -202,7 +202,7 @@ pub struct TransitionOrigin {
     pub phase: Phase,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Phase {
     /// A single CIR statement's direct effect.
@@ -220,7 +220,7 @@ pub enum Phase {
 }
 
 /// An observable execution step: its origin plus the concrete binding.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StepLabel {
     pub origin: TransitionOrigin,
     pub thread: Option<ThreadId>,

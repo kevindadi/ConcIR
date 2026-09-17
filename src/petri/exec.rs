@@ -1265,6 +1265,12 @@ impl<'a> PetriEngine<'a> {
         Ok(Some(next))
     }
 
+    /// Stable `module::entity` name of a resource.
+    fn rname(&self, r: ResourceId) -> String {
+        let res = self.program.resource(r);
+        crate::fqn::fqn(self.program.module_name(res.module), &res.name)
+    }
+
     /// Check a channel payload against the channel's own declared base type.
     fn payload_ok(&self, channel: ResourceId, value: &Value) -> bool {
         match self.program.resource(channel).ty.as_ref() {
@@ -1628,6 +1634,7 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                 thread: *tid,
                 kind,
                 resource,
+                resource_name: resource.map(|r| self.rname(r)),
                 holder,
                 waiting,
                 detail,

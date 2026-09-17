@@ -82,6 +82,12 @@ impl<'a> Interpreter<'a> {
     /// Whether writing `value` to `dst` respects the destination's declared
     /// domain (bounded `Int`). This is checked for *every* value-entry path,
     /// not only explicit assignments.
+    /// Stable `module::entity` name of a resource.
+    fn rname(&self, r: ResourceId) -> String {
+        let res = self.program.resource(r);
+        crate::fqn::fqn(self.program.module_name(res.module), &res.name)
+    }
+
     fn dst_type_ok(&self, state: &MachineState, frame: FrameId, dst: SlotRef, value: &Value) -> bool {
         match dst {
             SlotRef::Discard => true,
@@ -1149,6 +1155,7 @@ impl<'a> TransitionSystem for Interpreter<'a> {
                         thread: t.id,
                         kind: BlockKind::Lock,
                         resource: Some(*r),
+                        resource_name: Some(self.rname(*r)),
                         holder: match state.store.mutexes.get(r) {
                             Some(MutexState::Held(h)) => Some(*h),
                             _ => None,
@@ -1160,6 +1167,7 @@ impl<'a> TransitionSystem for Interpreter<'a> {
                         thread: t.id,
                         kind: BlockKind::ChannelSend,
                         resource: Some(*c),
+                        resource_name: Some(self.rname(*c)),
                         holder: None,
                         waiting: state
                             .store
@@ -1173,6 +1181,7 @@ impl<'a> TransitionSystem for Interpreter<'a> {
                         thread: t.id,
                         kind: BlockKind::ChannelRecv,
                         resource: Some(*c),
+                        resource_name: Some(self.rname(*c)),
                         holder: None,
                         waiting: state
                             .store
@@ -1186,6 +1195,7 @@ impl<'a> TransitionSystem for Interpreter<'a> {
                         thread: t.id,
                         kind: BlockKind::Condvar,
                         resource: Some(*cv),
+                        resource_name: Some(self.rname(*cv)),
                         holder: match state.store.mutexes.get(lk) {
                             Some(MutexState::Held(h)) => Some(*h),
                             _ => None,
@@ -1202,6 +1212,7 @@ impl<'a> TransitionSystem for Interpreter<'a> {
                         thread: t.id,
                         kind: BlockKind::Semaphore,
                         resource: Some(*r),
+                        resource_name: Some(self.rname(*r)),
                         holder: None,
                         waiting: state.sem_waiters.get(r).map(|q| q.len()).unwrap_or(0),
                         detail: "waiting for semaphore permits".into(),
@@ -1210,6 +1221,7 @@ impl<'a> TransitionSystem for Interpreter<'a> {
                         thread: t.id,
                         kind: BlockKind::Join,
                         resource: None,
+                        resource_name: None,
                         holder: None,
                         waiting: 0,
                         detail: "waiting to join a child thread".into(),
@@ -1218,6 +1230,7 @@ impl<'a> TransitionSystem for Interpreter<'a> {
                         thread: t.id,
                         kind: BlockKind::Scope,
                         resource: None,
+                        resource_name: None,
                         holder: None,
                         waiting: 0,
                         detail: "waiting for scope members".into(),

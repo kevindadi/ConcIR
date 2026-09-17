@@ -9,7 +9,7 @@ pub mod contract;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::sem::ids::FunctionId;
 use crate::sem::outcome::{
@@ -20,14 +20,14 @@ use crate::sem::system::{BlockedRecord, InstanceState, Step, TransitionSystem};
 
 use contract::{ContractError, ContractSpec, Preserved, Property, VerificationContract};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CirStatementRef {
     pub module: String,
     pub function: String,
     pub sid: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiagnosticRecord {
     pub property: String,
     pub outcome: Outcome,
@@ -43,14 +43,14 @@ pub struct DiagnosticRecord {
     pub repair_hints: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PropertyResult {
     pub id: String,
     pub outcome: Outcome,
     pub detail: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationReport {
     pub outcome: Outcome,
     pub complete: bool,

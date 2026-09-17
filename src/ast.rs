@@ -226,12 +226,17 @@ pub enum ComplexBaseType {
 
 impl Serialize for ComplexBaseType {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(1))?;
         match self {
-            ComplexBaseType::Enum(variants) => ("Enum", variants).serialize(serializer),
-            ComplexBaseType::Struct(fields) => ("Struct", fields).serialize(serializer),
-            ComplexBaseType::Array(def) => ("Array", def).serialize(serializer),
-            ComplexBaseType::BoundedInt { lo, hi } => ("Int", (lo, hi)).serialize(serializer),
+            ComplexBaseType::Enum(variants) => map.serialize_entry("Enum", variants)?,
+            ComplexBaseType::Struct(fields) => map.serialize_entry("Struct", fields)?,
+            ComplexBaseType::Array(def) => map.serialize_entry("Array", def)?,
+            ComplexBaseType::BoundedInt { lo, hi } => {
+                map.serialize_entry("Int", &(*lo, *hi))?
+            }
         }
+        map.end()
     }
 }
 
