@@ -1,0 +1,13 @@
+{
+  "name": "r3_channel_domain_1",
+  "properties": [
+    {
+      "kind": "deadlock_free",
+      "id": "deadlock"
+    }
+  ],
+  "bounds": {
+    "max_depth": 40,
+    "max_states": 10000
+  }
+}

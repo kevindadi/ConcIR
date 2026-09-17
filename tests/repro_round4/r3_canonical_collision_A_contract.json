@@ -1,0 +1,27 @@
+{
+  "name": "two-final-values",
+  "properties": [
+    {
+      "kind": "reachability",
+      "id": "final-A",
+      "goal": {
+        "kind": "and",
+        "predicates": [
+          {
+            "kind": "scope_completed",
+            "function": "main::main",
+            "sid": "s1"
+          },
+          {
+            "kind": "var_eq",
+            "resource": "main::x",
+            "value": {
+              "a": "X\",b:\"Y",
+              "b": "Z"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

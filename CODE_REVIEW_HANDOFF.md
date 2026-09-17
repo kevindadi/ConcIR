@@ -24,6 +24,14 @@ code to review most carefully.
 > `module::function`, every value-entry path respects bounded domains, semaphore
 > release is checked, and finite concurrent loops complete via identity
 > canonicalization.
+>
+> **Round 4 (review of the round-3 working tree).** A follow-up review found
+> that the display string was used as the state dedup key (string escaping
+> collisions), that the Petri engine skipped channel payload domain checks, and
+> that `within_type` did not recurse into composites. See
+> [`CODE_REVIEW_ROUND4.md`](CODE_REVIEW_ROUND4.md): a separate type-tagged
+> length-prefixed `state_key`, recursive domain checks, and Petri channel
+> payload checks.
 
 ---
 

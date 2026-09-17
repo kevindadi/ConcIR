@@ -108,7 +108,7 @@ fn b3_rendezvous_enumerates_every_receiver() {
     let mut seen = std::collections::HashSet::new();
     let mut interp_found = false;
     while let Some(s) = q.pop_front() {
-        if !seen.insert(it.canonical(&s)) {
+        if !seen.insert(it.state_key(&s)) {
             continue;
         }
         let en = it.successors(&s).unwrap();
@@ -147,7 +147,7 @@ fn b3_rendezvous_enumerates_every_receiver() {
     let mut seen = std::collections::HashSet::new();
     let mut petri_found = false;
     while let Some(s) = q.pop_front() {
-        if !seen.insert(pn.canonical(&s)) {
+        if !seen.insert(pn.state_key(&s)) {
             continue;
         }
         let en = pn.successors(&s).unwrap();

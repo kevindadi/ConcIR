@@ -159,8 +159,13 @@ pub trait TransitionSystem {
     /// Evaluate a predicate against a state.
     fn satisfied(&self, state: &Self::State, predicate: &Predicate) -> bool;
 
-    /// Canonical text of the complete state (for differential comparison).
+    /// Human-readable rendering of the complete state (diagnostics only).
     fn canonical(&self, state: &Self::State) -> String;
+
+    /// Unambiguous, identity-normalized semantic key used for state
+    /// deduplication. Equal keys must imply equal predicate truth and equal
+    /// successor quotient behavior. Never used as display text.
+    fn state_key(&self, state: &Self::State) -> String;
 }
 
 /// Compare two values with a comparison operator. `None` for incomparable

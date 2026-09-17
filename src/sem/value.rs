@@ -113,9 +113,8 @@ fn write_canonical(v: &Value, out: &mut String) {
             out.push_str(&f.to_bits().to_string());
         }
         Value::Str(s) => {
-            out.push('"');
-            out.push_str(s);
-            out.push('"');
+            // JSON-escape so the display text is unambiguous.
+            out.push_str(&serde_json::to_string(s).unwrap_or_else(|_| format!("\"{s}\"")));
         }
         Value::Enum(e) => {
             out.push('#');
@@ -129,7 +128,7 @@ fn write_canonical(v: &Value, out: &mut String) {
                     out.push(',');
                 }
                 first = false;
-                out.push_str(k);
+                out.push_str(&serde_json::to_string(k).unwrap_or_else(|_| format!("\"{k}\"")));
                 out.push(':');
                 write_canonical(val, out);
             }
@@ -148,16 +147,114 @@ fn write_canonical(v: &Value, out: &mut String) {
     }
 }
 
-/// True if `v` is inside the declared domain of `ty` (bounded `Int` is the
-/// only constrained case). Used to disable a transition whose update would
+impl Value {
+    /// An unambiguous, type-tagged, length-prefixed encoding used as the
+    /// *semantic* state key. Unlike [`Value::canonical`] it never relies on
+    /// delimiters inside payloads: every string and field name is prefixed by
+    /// its byte length, and every value is tagged by its variant. Equal keys
+    /// therefore imply equal values and equal predicate truth.
+    pub fn key(&self) -> String {
+        let mut out = String::new();
+        self.encode_key(&mut out);
+        out
+    }
+
+    fn encode_key(&self, out: &mut String) {
+        match self {
+            Value::Bool(b) => {
+                out.push_str("B");
+                out.push(if *b { '1' } else { '0' });
+            }
+            Value::Int(i) => {
+                out.push('I');
+                out.push_str(&i.to_string());
+                out.push(';');
+            }
+            Value::Float(f) => {
+                out.push('F');
+                out.push_str(&f.to_bits().to_string());
+                out.push(';');
+            }
+            Value::Str(s) => {
+                out.push('T');
+                out.push_str(&s.len().to_string());
+                out.push(':');
+                out.push_str(s);
+            }
+            Value::Enum(e) => {
+                out.push('E');
+                out.push_str(&e.len().to_string());
+                out.push(':');
+                out.push_str(e);
+            }
+            Value::Struct(fields) => {
+                out.push('S');
+                out.push_str(&fields.len().to_string());
+                out.push('[');
+                for (k, v) in fields {
+                    out.push_str(&k.len().to_string());
+                    out.push(':');
+                    out.push_str(k);
+                    out.push('=');
+                    v.encode_key(out);
+                    out.push(';');
+                }
+                out.push(']');
+            }
+            Value::Array(items) => {
+                out.push('A');
+                out.push_str(&items.len().to_string());
+                out.push('[');
+                for v in items {
+                    v.encode_key(out);
+                    out.push(';');
+                }
+                out.push(']');
+            }
+        }
+    }
+}
+
+/// True if `v` is inside the declared domain of `ty`. Recurses through
+/// `Struct` fields, `Array` length and elements, and `Enum` membership, and
+/// checks primitives exactly, so a composite value cannot smuggle a bounded
+/// member outside its domain. Used to disable a transition whose update would
 /// leave the finite domain.
 pub fn within_type(v: &Value, ty: &BaseType) -> bool {
     match ty {
-        BaseType::Complex(ComplexBaseType::BoundedInt { lo, hi }) => match v {
-            Value::Int(i) => i >= lo && i <= hi,
+        BaseType::Primitive(p) => match p.as_str() {
+            "Bool" => matches!(v, Value::Bool(_)),
+            "Int" => matches!(v, Value::Int(_)),
+            "Float" => matches!(v, Value::Float(_)),
+            "String" => matches!(v, Value::Str(_)),
+            // A resolved named type is never a bare primitive; an unknown
+            // primitive falls through to "no constraint".
             _ => true,
         },
-        _ => true,
+        BaseType::Complex(c) => match c {
+            ComplexBaseType::BoundedInt { lo, hi } => {
+                matches!(v, Value::Int(i) if i >= lo && i <= hi)
+            }
+            ComplexBaseType::Enum(variants) => {
+                matches!(v, Value::Enum(e) if variants.iter().any(|x| x == e))
+            }
+            ComplexBaseType::Struct(fields) => match v {
+                Value::Struct(m) => {
+                    m.len() == fields.len()
+                        && fields
+                            .iter()
+                            .all(|(k, t)| m.get(k).map(|x| within_type(x, t)).unwrap_or(false))
+                }
+                _ => false,
+            },
+            ComplexBaseType::Array(def) => match v {
+                Value::Array(items) => {
+                    items.len() == def.len.max(0) as usize
+                        && items.iter().all(|x| within_type(x, &def.elem))
+                }
+                _ => false,
+            },
+        },
     }
 }
 

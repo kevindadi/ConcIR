@@ -1,0 +1,87 @@
+{
+  "program": "channel_domain",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [
+        {
+          "name": "a",
+          "kind": "var",
+          "type": "Var",
+          "base": "Int",
+          "init": 2
+        },
+        {
+          "name": "c",
+          "kind": "sync",
+          "type": "Channel",
+          "mode": "Sync",
+          "base": {
+            "Int": [
+              0,
+              1
+            ]
+          },
+          "capacity": 1
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "sender",
+                "receiver"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "sender",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "channel_send",
+              "channel": "c",
+              "value": "a"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ],
+          "form": "closure"
+        },
+        {
+          "name": "receiver",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "channel_recv",
+              "channel": "c",
+              "dst": "_"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ],
+          "form": "closure"
+        }
+      ]
+    }
+  ]
+}

@@ -183,11 +183,29 @@ they do not change the JSON syntax.
   the explorer deduplicates by a fully identity-normalized canonical form, so
   finite spawn/join and scope loops complete in a small budget.
 
+## Round-4 corrections
+
+- **Semantic state key separated from display.** Deduplication uses
+  `TransitionSystem::state_key`, a type-tagged, length-prefixed, identity-
+  normalized encoding (`Value::key`). Distinct struct/string values can no
+  longer collide (the old display string was unescaped). `canonical` is
+  diagnostics-only and JSON-escaped.
+- **Recursive composite domains.** `within_type` checks struct fields, array
+  length and elements, enum membership and primitives, so a bounded member of a
+  `Struct`/`Array` can no longer enter out of range.
+- **Channel payload domains in both engines.** The Petri send paths
+  (`SendRegister`, `SendPair`, `SendBuf`, `SendBufBlock`, `BufferDeliver`,
+  `Rendezvous`) check the channel's own base before committing, independently
+  of the receiver's `dst` (including `dst = "_"`).
+- **Atomicity.** A disabled update leaves no token, message, lock, control
+  advance, or frame pop behind; frozen sender values are never re-evaluated.
+
 ## Reproducible checks
 
 ```bash
 cargo test --test round2_regressions
 cargo test --test round3_regressions
+cargo test --test round4_regressions
 cargo test --test differential
 cargo test --test semantics_regression
 cargo test --test validator_risks
@@ -195,9 +213,10 @@ cargo test --test interp_petri_diff
 cargo test --test repair_e2e
 ```
 
-`tests/repro_round2/` and `tests/repro_round3/` contain the review
-counterexamples (CIR, contracts, patches) as fixtures; see
-`CODE_REVIEW_ROUND2.md` and `CODE_REVIEW_ROUND3.md`.
+`tests/repro_round2/`, `tests/repro_round3/` and `tests/repro_round4/` contain
+the review counterexamples (CIR, contracts, patches) as fixtures; see
+`CODE_REVIEW_ROUND2.md`, `CODE_REVIEW_ROUND3.md`, and
+`CODE_REVIEW_ROUND4.md`.
 
 Note: the pre-existing `tests/dot_export.rs` snapshot tests cannot pass on a
 fresh checkout because `**.snap` is git-ignored (no committed snapshots). This

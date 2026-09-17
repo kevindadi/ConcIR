@@ -297,6 +297,63 @@ overlapping calls likewise.
 Resources are keyed by `ResourceId`; therefore `a::mtx` and `b::mtx` can never
 collide.
 
+### 4.1 Semantic state key (deduplication)
+
+`explore`/`verify` deduplicate by `TransitionSystem::state_key`, **not** by the
+human-readable `canonical` text. The key is the full semantic state with
+dynamic identities normalized:
+
+- shared data: `Var`/`Atomic` values; `Mutex` `Free`/`Held(thread)`;
+  semaphore permit counts; channel buffer contents, pending senders
+  `(thread, value)`, and pending receivers;
+- condvars: `(thread, lock)` wait pairs;
+- frames: function, `pc`, all locals (by slot), handle bindings
+  `name -> handle`, return continuation `(pc_next, dst)`;
+- threads: entry function, status (`run` / blocked-with-normalized-reason /
+  finished), control stack, child map `handle -> thread`, parent scope;
+- scopes: id, owner, owner frame, owner sid, remaining members;
+- durable monitors: completion counts, completed scopes, reached facts.
+
+Identity normalization renames threads, frames, scopes, and handles to a dense
+order derived from the state itself, so two states that differ only by fresh
+identity numbering are one quotient state. This is alpha-equivalence of
+internal identities; every fact that affects future behavior or an observed
+predicate remains in the key.
+
+`Value` has two encodings:
+
+- `Value::canonical()` — readable display text (JSON-escaped, diagnostics
+  only); and
+- `Value::key()` — the *semantic* encoding: type-tagged and length-prefixed
+  (`T<len>:<bytes>` for strings/field names, `S<n>[...]`, `A<n>[...]`,
+  `I<i>;`, `B0/1`, `E<len>:<tag>`, `F<bits>;`). Length prefixes make the
+  encoding injective, so distinct values can never share a key. Changing the
+  hash function does not substitute for this.
+
+A state key is only accepted as a dedup key if equal keys imply equal
+predicate truth and equal successor quotient behavior; `tests/round4_regressions.rs`
+checks this with an independent raw-`State`-`Eq`/`Hash` oracle that never calls
+the production key or renderer.
+
+### 4.2 Resource domain checks and step atomicity
+
+`within_type(value, type)` is recursive: it checks struct fields, array length
+and elements, enum membership, exact primitives, and bounded-`Int` ranges.
+Every value-entry path uses it — initialization, direct assignment/stores,
+`read_shared`/`atomic_load`/`atomic_cas` `dst`, `channel_recv` `dst`, `call`
+arguments, `call` returns, and channel payloads (checked against the channel's
+own base, independently of the receiver's `dst`, including `dst = "_"`).
+
+A value that leaves a declared domain **disables the whole step**; the check
+runs before any token is consumed, message enqueued/dequeued, lock released,
+control advanced, or frame unwound, so no half effect is ever emitted. Frozen
+values (a blocked sender's payload, a `SendWait` token) are never re-evaluated
+on resume. Semantic domain bounds, host integer overflow (`E905`), and the
+analysis budget are distinct outcomes and are never substituted for one
+another.
+
+
+
 ---
 
 ## 5. Petri net

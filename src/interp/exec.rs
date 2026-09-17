@@ -1291,13 +1291,17 @@ impl<'a> TransitionSystem for Interpreter<'a> {
     }
 
     fn canonical(&self, state: &MachineState) -> String {
-        render_state(self.program, state)
+        render_state(self.program, state, &|v| v.canonical())
+    }
+
+    fn state_key(&self, state: &MachineState) -> String {
+        render_state(self.program, state, &|v| v.key())
     }
 }
 
 // ───────────────────────── Canonical rendering ─────────────────────────
 
-fn render_state(program: &SemProgram, state: &MachineState) -> String {
+fn render_state(program: &SemProgram, state: &MachineState, enc: &dyn Fn(&Value) -> String) -> String {
     let _ = program;
     let thread_order: Vec<ThreadId> = state.threads.keys().copied().collect();
     let frame_order: Vec<FrameId> = state.store.frames.keys().copied().collect();
@@ -1345,10 +1349,10 @@ fn render_state(program: &SemProgram, state: &MachineState) -> String {
     out.push_str("STORE
 ");
     for (r, v) in &state.store.vars {
-        out.push_str(&format!("  var r{}={}\n", r.0, v.canonical()));
+        out.push_str(&format!("  var r{}={}\n", r.0, enc(v)));
     }
     for (r, v) in &state.store.atomics {
-        out.push_str(&format!("  atomic r{}={}\n", r.0, v.canonical()));
+        out.push_str(&format!("  atomic r{}={}\n", r.0, enc(v)));
     }
     for (r, m) in &state.store.mutexes {
         let s = match m {
@@ -1367,7 +1371,7 @@ fn render_state(program: &SemProgram, state: &MachineState) -> String {
             c.buffer.iter().map(Value::canonical).collect::<Vec<_>>().join(","),
             c.pending_send
                 .iter()
-                .map(|p| format!("{}:{}", tname(p.thread), p.value.canonical()))
+                .map(|p| format!("{}:{}", tname(p.thread), enc(&p.value)))
                 .collect::<Vec<_>>()
                 .join(","),
             c.pending_recv.iter().map(|t| tname(*t)).collect::<Vec<_>>().join(","),
@@ -1389,7 +1393,7 @@ fn render_state(program: &SemProgram, state: &MachineState) -> String {
         let mut locals: Vec<String> = frame
             .locals
             .iter()
-            .map(|(k, v)| format!("{k}={}", v.canonical()))
+            .map(|(k, v)| format!("{k}={}", enc(v)))
             .collect();
         locals.sort();
         let mut handles: Vec<String> = frame

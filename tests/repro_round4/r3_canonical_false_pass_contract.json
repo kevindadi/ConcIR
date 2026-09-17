@@ -1,0 +1,30 @@
+{
+  "name": "two-final-values",
+  "properties": [
+    {
+      "kind": "safety",
+      "id": "forbid-reachable-A",
+      "invariant": {
+        "kind": "not",
+        "predicate": {
+          "kind": "and",
+          "predicates": [
+            {
+              "kind": "scope_completed",
+              "function": "main::main",
+              "sid": "s1"
+            },
+            {
+              "kind": "var_eq",
+              "resource": "main::x",
+              "value": {
+                "a": "X\",b:\"Y",
+                "b": "Z"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

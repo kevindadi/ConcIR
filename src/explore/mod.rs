@@ -136,7 +136,7 @@ pub fn explore<S: TransitionSystem>(system: &S, bounds: &crate::sem::outcome::An
         };
     };
     let mut queue = VecDeque::new();
-    graph.index.insert(system.canonical(&init), 0);
+    graph.index.insert(system.state_key(&init), 0);
     graph.states.push(init.clone());
     graph.edges.push(Vec::new());
     graph.pred.push(None);
@@ -178,7 +178,7 @@ pub fn explore<S: TransitionSystem>(system: &S, bounds: &crate::sem::outcome::An
                     }
                 }
                 for Step { label, state: succ } in enabled.steps {
-                    let key = system.canonical(&succ);
+                    let key = system.state_key(&succ);
                     if let Some(&target) = graph.index.get(&key) {
                         graph.edges[idx].push((target, label));
                     } else {
@@ -265,7 +265,7 @@ pub fn verify<S: TransitionSystem>(
         }
     };
 
-    graph.index.insert(system.canonical(&init), 0);
+    graph.index.insert(system.state_key(&init), 0);
     graph.states.push(init);
     graph.edges.push(Vec::new());
     graph.pred.push(None);
@@ -306,7 +306,7 @@ pub fn verify<S: TransitionSystem>(
                 }
                 for Step { label, state: succ } in enabled.steps {
                     transitions_explored += 1;
-                    let key = system.canonical(&succ);
+                    let key = system.state_key(&succ);
                     if let Some(&target) = graph.index.get(&key) {
                         graph.edges[idx].push((target, label));
                     } else {

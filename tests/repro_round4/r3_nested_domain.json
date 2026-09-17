@@ -1,0 +1,62 @@
+{
+  "program": "nested_bounded",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [
+        {
+          "name": "src",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Struct": {
+              "n": "Int"
+            }
+          },
+          "init": {
+            "n": 2
+          }
+        },
+        {
+          "name": "x",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Struct": {
+              "n": {
+                "Int": [
+                  0,
+                  1
+                ]
+              }
+            }
+          },
+          "init": {
+            "n": 0
+          }
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "read_shared",
+              "resource": "src",
+              "dst": "x"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

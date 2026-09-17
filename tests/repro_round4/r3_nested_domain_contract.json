@@ -1,0 +1,31 @@
+{
+  "name": "nested",
+  "properties": [
+    {
+      "kind": "reachability",
+      "id": "outside",
+      "goal": {
+        "kind": "not",
+        "predicate": {
+          "kind": "or",
+          "predicates": [
+            {
+              "kind": "var_eq",
+              "resource": "x",
+              "value": {
+                "n": 0
+              }
+            },
+            {
+              "kind": "var_eq",
+              "resource": "x",
+              "value": {
+                "n": 1
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

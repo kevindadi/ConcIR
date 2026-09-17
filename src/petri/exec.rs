@@ -716,6 +716,9 @@ impl<'a> PetriEngine<'a> {
                     }
                 };
                 let v = self.eval(&next, frame, &value_expr, &at)?;
+                if !self.payload_ok(*channel, &v) {
+                    disabled!();
+                }
                 let out = t.next.unwrap();
                 next.put(
                     out,
@@ -747,16 +750,19 @@ impl<'a> PetriEngine<'a> {
                     NetToken::RecvWait { thread, frame } => (*thread, *frame),
                     _ => disabled!(),
                 };
-                let recv_place = self.place(&PlaceKey::ChannelRecv(*channel)).unwrap();
-                if !next.take_token(recv_place, &wait) {
-                    disabled!();
-                }
                 let stmt = current_stmt(self.program, &next, frame);
                 let value_expr = match &stmt {
                     SemOp::ChannelSend { value, .. } => value.clone(),
                     _ => return Err(BackendError::invalid("E999", "SendPair on non-send")),
                 };
                 let v = self.eval(&next, frame, &value_expr, &at)?;
+                if !self.payload_ok(*channel, &v) {
+                    disabled!();
+                }
+                let recv_place = self.place(&PlaceKey::ChannelRecv(*channel)).unwrap();
+                if !next.take_token(recv_place, &wait) {
+                    disabled!();
+                }
                 if let Some(dst) = recv_dst(self.program, &next, rf) {
                     if dst != SlotRef::Discard {
                         if !self.write_dst(&mut next, rf, dst, v)? { disabled!(); }
@@ -777,6 +783,9 @@ impl<'a> PetriEngine<'a> {
                     NetToken::SendWait { thread, frame, value } => (*thread, *frame, value.clone()),
                     _ => disabled!(),
                 };
+                if !self.payload_ok(*channel, &value) {
+                    disabled!();
+                }
                 let send_place = self.place(&PlaceKey::ChannelSend(*channel)).unwrap();
                 if !next.take_token(send_place, &wait) {
                     disabled!();
@@ -804,6 +813,9 @@ impl<'a> PetriEngine<'a> {
                     NetToken::RecvWait { thread, frame } => (*thread, *frame),
                     _ => disabled!(),
                 };
+                if !self.payload_ok(*channel, &value) {
+                    disabled!();
+                }
                 let send_place = self.place(&PlaceKey::ChannelSend(*channel)).unwrap();
                 let recv_place = self.place(&PlaceKey::ChannelRecv(*channel)).unwrap();
                 if !next.take_token(send_place, &send_token) || !next.take_token(recv_place, &recv_token) {
@@ -833,6 +845,9 @@ impl<'a> PetriEngine<'a> {
                     disabled!();
                 }
                 let v = self.eval(&next, frame, expr, &at)?;
+                if !self.payload_ok(*channel, &v) {
+                    disabled!();
+                }
                 if let Some(Value::Array(a)) = next.read_data(ch).cloned() {
                     let mut a = a;
                     a.push(v);
@@ -853,6 +868,9 @@ impl<'a> PetriEngine<'a> {
                     disabled!();
                 }
                 let v = self.eval(&next, frame, expr, &at)?;
+                if !self.payload_ok(*channel, &v) {
+                    disabled!();
+                }
                 let out = t.next.unwrap();
                 next.put(
                     out,
@@ -910,6 +928,9 @@ impl<'a> PetriEngine<'a> {
                     .and_then(|v| if let Value::Array(a) = v { Some(a.len()) } else { None })
                     .unwrap_or(0);
                 if available >= cap {
+                    disabled!();
+                }
+                if !self.payload_ok(*channel, &value) {
                     disabled!();
                 }
                 let send_place = self.place(&PlaceKey::ChannelSend(*channel)).unwrap();
@@ -1230,6 +1251,14 @@ impl<'a> PetriEngine<'a> {
         }
 
         Ok(Some(next))
+    }
+
+    /// Check a channel payload against the channel's own declared base type.
+    fn payload_ok(&self, channel: ResourceId, value: &Value) -> bool {
+        match self.program.resource(channel).ty.as_ref() {
+            Some(ty) => within_type(value, ty),
+            None => true,
+        }
     }
 
     fn dst_type_ok(&self, state: &NetState, frame: FrameId, dst: SlotRef, value: &Value) -> bool {
@@ -1670,129 +1699,136 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
     }
 
     fn canonical(&self, state: &NetState) -> String {
-        let mut out = String::new();
-        let thread_order: Vec<ThreadId> = state.store.threads.keys().copied().collect();
-        let frame_order: Vec<FrameId> = state.store.frames.keys().copied().collect();
-        let scope_order: Vec<ScopeId> = state.store.scopes.keys().copied().collect();
-        let mut handle_ids: Vec<HandleId> = state
-            .store
-            .frames
-            .values()
-            .flat_map(|f| f.handles.values().copied())
-            .chain(
-                state
-                    .store
-                    .threads
-                    .values()
-                    .flat_map(|t| t.handle_children.keys().copied()),
-            )
-            .collect();
-        handle_ids.sort();
-        handle_ids.dedup();
-        let tname = |t: ThreadId| {
-            thread_order
-                .iter()
-                .position(|x| *x == t)
-                .map(|i| format!("T{i}"))
-                .unwrap_or_else(|| format!("T?{}", t.0))
-        };
-        let fname = |f: FrameId| {
-            frame_order
-                .iter()
-                .position(|x| *x == f)
-                .map(|i| format!("F{i}"))
-                .unwrap_or_else(|| format!("F?{}", f.0))
-        };
-        let sname = |s: ScopeId| {
-            scope_order
-                .iter()
-                .position(|x| *x == s)
-                .map(|i| format!("S{i}"))
-                .unwrap_or_else(|| format!("S?{}", s.0))
-        };
-        let hname = |h: HandleId| {
-            handle_ids
-                .iter()
-                .position(|x| *x == h)
-                .map(|i| format!("h{i}"))
-                .unwrap_or_else(|| format!("h?{}", h.0))
-        };
-        for place in &self.net.places {
-            let tokens = state.place_tokens(place.id);
-            if tokens.is_empty() {
-                continue;
-            }
-            let rendered: Vec<String> = tokens
-                .iter()
-                .map(|t| render_token(t, &tname, &fname))
-                .collect();
-            out.push_str(&format!("P{:?}=[{}]\n", place.key, rendered.join(",")));
-        }
-        for f in &frame_order {
-            let fr = &state.store.frames[f];
-            let mut locals: Vec<String> = fr
-                .locals
-                .iter()
-                .map(|(k, v)| format!("{k}={}", v.canonical()))
-                .collect();
-            locals.sort();
-            let mut handles: Vec<String> = fr
-                .handles
-                .iter()
-                .map(|(k, h)| format!("{k}->{}", hname(*h)))
-                .collect();
-            handles.sort();
-            let ret = match &fr.ret {
-                Some(r) => format!("ret(pc={},dst={:?})", r.pc_next, r.dst),
-                None => "ret(none)".to_string(),
-            };
-            out.push_str(&format!(
-                "frame {} fn={} pc={} locals={{{}}} handles={{{}}} {}\n",
-                fname(*f),
-                fr.function.0,
-                fr.pc,
-                locals.join(","),
-                handles.join(","),
-                ret
-            ));
-        }
-        for (tid, t) in &state.store.threads {
-            let mut kids: Vec<String> = t
-                .handle_children
-                .iter()
-                .map(|(h, c)| format!("{}->{}", hname(*h), tname(*c)))
-                .collect();
-            kids.sort();
-            out.push_str(&format!(
-                "thread {} entry=f{} stack=[{}] finished={} children=[{}] scope={}\n",
-                tname(*tid),
-                t.entry_function.0,
-                t.stack.iter().map(|f| fname(*f)).collect::<Vec<_>>().join(","),
-                state.store.finished.contains(tid),
-                kids.join(","),
-                t.parent_scope.map(|s| sname(s)).unwrap_or_else(|| "-".into())
-            ));
-        }
-        for sc in state.store.scopes.values() {
-            let mut rem: Vec<String> = sc.remaining.iter().map(|t| tname(*t)).collect();
-            rem.sort();
-            out.push_str(&format!(
-                "scope {} owner={} frame={} sid={} remaining=[{}]\n",
-                sname(sc.id),
-                tname(sc.owner),
-                fname(sc.owner_frame),
-                sc.owner_sid,
-                rem.join(",")
-            ));
-        }
-        out.push_str(&format!(
-            "completed fn={:?} scopes={:?} reached={:?}\n",
-            state.store.completed_functions,
-            state.store.completed_scopes,
-            state.store.reached
-        ));
-        out
+        render_net(&self.net, state, &|v| v.canonical())
     }
+
+    fn state_key(&self, state: &NetState) -> String {
+        render_net(&self.net, state, &|v| v.key())
+    }}
+
+fn render_net(net: &PetriNet, state: &NetState, enc: &dyn Fn(&Value) -> String) -> String {
+    let mut out = String::new();
+    let thread_order: Vec<ThreadId> = state.store.threads.keys().copied().collect();
+    let frame_order: Vec<FrameId> = state.store.frames.keys().copied().collect();
+    let scope_order: Vec<ScopeId> = state.store.scopes.keys().copied().collect();
+    let mut handle_ids: Vec<HandleId> = state
+        .store
+        .frames
+        .values()
+        .flat_map(|f| f.handles.values().copied())
+        .chain(
+            state
+                .store
+                .threads
+                .values()
+                .flat_map(|t| t.handle_children.keys().copied()),
+        )
+        .collect();
+    handle_ids.sort();
+    handle_ids.dedup();
+    let tname = |t: ThreadId| {
+        thread_order
+            .iter()
+            .position(|x| *x == t)
+            .map(|i| format!("T{i}"))
+            .unwrap_or_else(|| format!("T?{}", t.0))
+    };
+    let fname = |f: FrameId| {
+        frame_order
+            .iter()
+            .position(|x| *x == f)
+            .map(|i| format!("F{i}"))
+            .unwrap_or_else(|| format!("F?{}", f.0))
+    };
+    let sname = |s: ScopeId| {
+        scope_order
+            .iter()
+            .position(|x| *x == s)
+            .map(|i| format!("S{i}"))
+            .unwrap_or_else(|| format!("S?{}", s.0))
+    };
+    let hname = |h: HandleId| {
+        handle_ids
+            .iter()
+            .position(|x| *x == h)
+            .map(|i| format!("h{i}"))
+            .unwrap_or_else(|| format!("h?{}", h.0))
+    };
+    for place in &net.places {
+        let tokens = state.place_tokens(place.id);
+        if tokens.is_empty() {
+            continue;
+        }
+        let rendered: Vec<String> = tokens
+            .iter()
+            .map(|t| render_token(t, &tname, &fname, enc))
+            .collect();
+        out.push_str(&format!("P{:?}=[{}]\n", place.key, rendered.join(",")));
+    }
+    for f in &frame_order {
+        let fr = &state.store.frames[f];
+        let mut locals: Vec<String> = fr
+            .locals
+            .iter()
+            .map(|(k, v)| format!("{k}={}", enc(v)))
+            .collect();
+        locals.sort();
+        let mut handles: Vec<String> = fr
+            .handles
+            .iter()
+            .map(|(k, h)| format!("{k}->{}", hname(*h)))
+            .collect();
+        handles.sort();
+        let ret = match &fr.ret {
+            Some(r) => format!("ret(pc={},dst={:?})", r.pc_next, r.dst),
+            None => "ret(none)".to_string(),
+        };
+        out.push_str(&format!(
+            "frame {} fn={} pc={} locals={{{}}} handles={{{}}} {}\n",
+            fname(*f),
+            fr.function.0,
+            fr.pc,
+            locals.join(","),
+            handles.join(","),
+            ret
+        ));
+    }
+    for (tid, t) in &state.store.threads {
+        let mut kids: Vec<String> = t
+            .handle_children
+            .iter()
+            .map(|(h, c)| format!("{}->{}", hname(*h), tname(*c)))
+            .collect();
+        kids.sort();
+        out.push_str(&format!(
+            "thread {} entry=f{} stack=[{}] finished={} children=[{}] scope={}\n",
+            tname(*tid),
+            t.entry_function.0,
+            t.stack.iter().map(|f| fname(*f)).collect::<Vec<_>>().join(","),
+            state.store.finished.contains(tid),
+            kids.join(","),
+            t.parent_scope.map(|s| sname(s)).unwrap_or_else(|| "-".into())
+        ));
+    }
+    for sc in state.store.scopes.values() {
+        let mut rem: Vec<String> = sc.remaining.iter().map(|t| tname(*t)).collect();
+        rem.sort();
+        out.push_str(&format!(
+            "scope {} owner={} frame={} sid={} remaining=[{}]\n",
+            sname(sc.id),
+            tname(sc.owner),
+            fname(sc.owner_frame),
+            sc.owner_sid,
+            rem.join(",")
+        ));
+    }
+    out.push_str(&format!(
+        "completed fn={:?} scopes={:?} reached={:?}\n",
+        state.store.completed_functions,
+        state.store.completed_scopes,
+        state.store.reached
+    ));
+    out
 }
 
 fn bound_wait(bind: &FireBind) -> Option<&NetToken> {
@@ -1822,10 +1858,11 @@ fn render_token(
     t: &NetToken,
     tname: &impl Fn(ThreadId) -> String,
     fname: &impl Fn(FrameId) -> String,
+    enc: &dyn Fn(&Value) -> String,
 ) -> String {
     match t {
         NetToken::Control { thread, frame } => format!("C({},{})", tname(*thread), fname(*frame)),
-        NetToken::Data(v) => format!("D({})", v.canonical()),
+        NetToken::Data(v) => format!("D({})", enc(v)),
         NetToken::Mutex(MutexToken::Free) => "M(free)".into(),
         NetToken::Mutex(MutexToken::Held(t)) => format!("M(held:{})", tname(*t)),
         NetToken::LockWait { thread, .. } => format!("L({})", tname(*thread)),
@@ -1833,7 +1870,7 @@ fn render_token(
             format!("CV({},r{})", tname(*thread), lock.0)
         }
         NetToken::SendWait { thread, value, .. } => {
-            format!("S({},{})", tname(*thread), value.canonical())
+            format!("S({},{})", tname(*thread), enc(value))
         }
         NetToken::RecvWait { thread, .. } => format!("R({})", tname(*thread)),
         NetToken::SemWait { thread, count, .. } => format!("Q({},{count})", tname(*thread)),

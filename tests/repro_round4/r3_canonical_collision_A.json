@@ -1,0 +1,112 @@
+{
+  "program": "canonical_collision",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [
+        {
+          "name": "x",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Struct": {
+              "a": "String",
+              "b": "String"
+            }
+          },
+          "init": {
+            "a": "init",
+            "b": "init"
+          }
+        },
+        {
+          "name": "va",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Struct": {
+              "a": "String",
+              "b": "String"
+            }
+          },
+          "init": {
+            "a": "X\",b:\"Y",
+            "b": "Z"
+          }
+        },
+        {
+          "name": "vb",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Struct": {
+              "a": "String",
+              "b": "String"
+            }
+          },
+          "init": {
+            "a": "X",
+            "b": "Y\",b:\"Z"
+          }
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "w1",
+                "w2"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "w1",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "read_shared",
+              "resource": "va",
+              "dst": "x"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ],
+          "form": "closure"
+        },
+        {
+          "name": "w2",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "read_shared",
+              "resource": "vb",
+              "dst": "x"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ],
+          "form": "closure"
+        }
+      ]
+    }
+  ]
+}
