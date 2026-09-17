@@ -7,14 +7,22 @@ use crate::expr;
 use crate::fqn;
 use crate::validate::types::{build_resource_type_map, ResType};
 
-/// E5xx (+ E309): Lock safety analysis via CFG path traversal.
+/// E5xx (+ E309, E512): Lock safety analysis via CFG path traversal.
+///
+/// Resource identity is resolved to fully-qualified names (`module::entity`)
+/// so that same-named resources in different modules never collide. The
+/// `requires_held` contract of a function is used as the **entry condition**
+/// of the analysis: a callee that relies on its caller holding a lock is not
+/// flagged. `condvar_wait` must hold its paired lock. Destination writes
+/// (`atomic_load` / `atomic_cas` / `channel_recv` / `read_shared` / `call`)
+/// into a protected `Var` are checked for lock ownership.
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let rt_map = build_resource_type_map(program);
 
-    let lock_resources: HashSet<&str> = rt_map
+    let lock_resources: HashSet<String> = rt_map
         .iter()
         .filter(|(_, v)| matches!(v, ResType::Mutex | ResType::RwLock))
-        .map(|(k, _)| k.as_str())
+        .filter_map(|(k, _)| canonical_resource(program, k))
         .collect();
 
     let sync_lock_resources: HashSet<String> = program
@@ -28,13 +36,22 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
         })
         .map(|r| r.name.clone())
         .collect();
-    let sync_lock_refs: HashSet<&str> = sync_lock_resources.iter().map(String::as_str).collect();
 
+    // Protection keyed by the protected Var's FQN → lock FQN.
     let protection_map: HashMap<String, String> = program
         .modules
         .iter()
-        .flat_map(|m| m.protection.iter())
-        .map(|p| (p.var.clone(), p.lock.clone()))
+        .flat_map(|m| {
+            m.protection.iter().filter_map(move |p| {
+                let var = program
+                    .lookup_resource(&m.name, &p.var)
+                    .map(|(owner, r)| fqn::fqn(&owner.name, &r.name))?;
+                let lock = program
+                    .lookup_resource(&m.name, &p.lock)
+                    .map(|(owner, r)| fqn::fqn(&owner.name, &r.name))?;
+                Some((var, lock))
+            })
+        })
         .collect();
 
     for (mi, m) in program.modules.iter().enumerate() {
@@ -45,14 +62,73 @@ pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
 
             let cfg = build_cfg(f);
             let fn_path = Program::fn_path(mi, fi);
+            let entry_held: BTreeSet<String> = f
+                .locks
+                .requires_held
+                .iter()
+                .map(|name| {
+                    canonical_resource(program, &fqn::qualify(&m.name, name))
+                        .unwrap_or_else(|| name.clone())
+                })
+                .collect();
 
-            check_lock_drop_pairing(m, f, &cfg, &lock_resources, &fn_path, diags);
-            check_sync_lock_across_await(m, f, &cfg, &sync_lock_refs, &fn_path, diags);
-            check_lock_ordering(m, f, &cfg, &lock_resources, &fn_path, diags);
-            check_var_access_without_lock(program, m, f, &cfg, &protection_map, &fn_path, diags);
-            check_requires_held(program, m, f, &cfg, &fn_path, diags);
+            check_lock_drop_pairing(
+                program,
+                m,
+                f,
+                &cfg,
+                &lock_resources,
+                &entry_held,
+                &fn_path,
+                diags,
+            );
+            check_sync_lock_across_await(
+                program,
+                m,
+                f,
+                &cfg,
+                &sync_lock_resources,
+                &entry_held,
+                &fn_path,
+                diags,
+            );
+            check_lock_ordering(
+                program,
+                m,
+                f,
+                &cfg,
+                &lock_resources,
+                &entry_held,
+                &fn_path,
+                diags,
+            );
+            check_var_access_without_lock(
+                program,
+                m,
+                f,
+                &cfg,
+                &protection_map,
+                &entry_held,
+                &fn_path,
+                diags,
+            );
+            check_requires_held(program, m, f, &cfg, &entry_held, &fn_path, diags);
+            check_condvar_ownership(program, m, f, &cfg, &entry_held, &fn_path, diags);
         }
     }
+}
+
+/// Resolve a resource name (short or FQN) to its canonical FQN.
+fn canonical_resource(program: &Program, name: &str) -> Option<String> {
+    let (owner, r) = program.lookup_resource("", name)?;
+    Some(fqn::fqn(&owner.name, &r.name))
+}
+
+fn canonical_from(program: &Program, module: &str, name: &str) -> String {
+    program
+        .lookup_resource(module, name)
+        .map(|(owner, r)| fqn::fqn(&owner.name, &r.name))
+        .unwrap_or_else(|| name.to_string())
 }
 
 struct Cfg {
@@ -83,10 +159,12 @@ fn build_cfg(f: &Function) -> Cfg {
 
 /// E501, E502, E503: lock/drop pairing via worklist algorithm.
 fn check_lock_drop_pairing(
+    program: &Program,
     module: &Module,
     f: &Function,
     cfg: &Cfg,
-    lock_resources: &HashSet<&str>,
+    lock_resources: &HashSet<String>,
+    entry_held: &BTreeSet<String>,
     fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -96,7 +174,7 @@ fn check_lock_drop_pairing(
     }
 
     let mut visited: Vec<HashSet<BTreeSet<String>>> = vec![HashSet::new(); n];
-    let mut worklist: Vec<(usize, BTreeSet<String>)> = vec![(0, BTreeSet::new())];
+    let mut worklist: Vec<(usize, BTreeSet<String>)> = vec![(0, entry_held.clone())];
 
     while let Some((idx, mut held)) = worklist.pop() {
         if visited[idx].contains(&held) {
@@ -107,8 +185,9 @@ fn check_lock_drop_pairing(
         let stmt = &f.body[idx];
         let s = &stmt.op;
         if let Some(resource) = s.is_lock_acquire() {
-            if lock_resources.contains(resource) {
-                if held.contains(resource) {
+            let canon = canonical_from(program, &module.name, resource);
+            if lock_resources.contains(&canon) {
+                if held.contains(&canon) {
                     diags.push(
                         Diagnostic::error(
                             "E503",
@@ -122,11 +201,12 @@ fn check_lock_drop_pairing(
                         .with_fix("unlock before re-locking"),
                     );
                 }
-                held.insert(resource.to_string());
+                held.insert(canon);
             }
         } else if let Some(resource) = s.is_lock_release() {
-            if lock_resources.contains(resource) {
-                if !held.contains(resource) {
+            let canon = canonical_from(program, &module.name, resource);
+            if lock_resources.contains(&canon) {
+                if !held.contains(&canon) {
                     diags.push(
                         Diagnostic::error(
                             "E502",
@@ -140,12 +220,14 @@ fn check_lock_drop_pairing(
                         .with_fix("lock before unlock, or remove the unlock"),
                     );
                 }
-                held.remove(resource);
+                held.remove(&canon);
             }
         }
 
         if stmt.is_return() {
-            for lock in &held {
+            // Only locks acquired inside the body are required to be released;
+            // `requires_held` locks may be intentionally transferred.
+            for lock in held.difference(entry_held) {
                 diags.push(
                     Diagnostic::error(
                         "E501",
@@ -156,7 +238,7 @@ fn check_lock_drop_pairing(
                     )
                     .with_path(format!("{fn_path}.body[{idx}]"))
                     .with_location(Program::stmt_location(module, f, stmt))
-                    .with_fix("add mutex_unlock/rwlock_unlock before return"),
+                    .with_fix("add mutex_unlock/rwlock_unlock before return, or release the lock"),
                 );
             }
         }
@@ -169,10 +251,12 @@ fn check_lock_drop_pairing(
 
 /// E504: Sync-mode lock held across await point in async function.
 fn check_sync_lock_across_await(
+    program: &Program,
     module: &Module,
     f: &Function,
     cfg: &Cfg,
-    sync_locks: &HashSet<&str>,
+    sync_locks: &HashSet<String>,
+    entry_held: &BTreeSet<String>,
     fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -186,7 +270,7 @@ fn check_sync_lock_across_await(
     }
 
     let mut visited: Vec<HashSet<BTreeSet<String>>> = vec![HashSet::new(); n];
-    let mut worklist: Vec<(usize, BTreeSet<String>)> = vec![(0, BTreeSet::new())];
+    let mut worklist: Vec<(usize, BTreeSet<String>)> = vec![(0, entry_held.clone())];
 
     while let Some((idx, mut held)) = worklist.pop() {
         if visited[idx].contains(&held) {
@@ -198,12 +282,14 @@ fn check_sync_lock_across_await(
 
         let s = &stmt.op;
         if let Some(resource) = s.is_lock_acquire() {
-            if sync_locks.contains(resource) {
-                held.insert(resource.to_string());
+            let canon = canonical_from(program, &module.name, resource);
+            if sync_locks.contains(&canon) {
+                held.insert(canon);
             }
         } else if let Some(resource) = s.is_lock_release() {
-            if sync_locks.contains(resource) {
-                held.remove(resource);
+            let canon = canonical_from(program, &module.name, resource);
+            if sync_locks.contains(&canon) {
+                held.remove(&canon);
             }
         }
 
@@ -232,10 +318,12 @@ fn check_sync_lock_across_await(
 
 /// E505: Lock ordering violation.
 fn check_lock_ordering(
+    program: &Program,
     module: &Module,
     f: &Function,
     cfg: &Cfg,
-    lock_resources: &HashSet<&str>,
+    lock_resources: &HashSet<String>,
+    entry_held: &BTreeSet<String>,
     fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -245,9 +333,10 @@ fn check_lock_ordering(
     }
 
     let mut all_orders: Vec<Vec<String>> = Vec::new();
-    let mut visited: HashSet<(usize, Vec<String>)> = HashSet::new();
+    let mut visited: HashSet<(usize, Vec<String>, BTreeSet<String>)> = HashSet::new();
+    let initial_order: Vec<String> = entry_held.iter().cloned().collect();
     let mut stack: Vec<(usize, Vec<String>, BTreeSet<String>)> =
-        vec![(0, Vec::new(), BTreeSet::new())];
+        vec![(0, initial_order, entry_held.clone())];
 
     let max_iterations = n * 100;
     let mut iterations = 0;
@@ -258,7 +347,7 @@ fn check_lock_ordering(
             break;
         }
 
-        let key = (idx, order.clone());
+        let key = (idx, order.clone(), held.clone());
         if visited.contains(&key) {
             continue;
         }
@@ -267,13 +356,15 @@ fn check_lock_ordering(
         let stmt = &f.body[idx];
         let s = &stmt.op;
         if let Some(resource) = s.is_lock_acquire() {
-            if lock_resources.contains(resource) && !held.contains(resource) {
-                order.push(resource.to_string());
-                held.insert(resource.to_string());
+            let canon = canonical_from(program, &module.name, resource);
+            if lock_resources.contains(&canon) && !held.contains(&canon) {
+                order.push(canon.clone());
+                held.insert(canon);
             }
         } else if let Some(resource) = s.is_lock_release() {
-            if lock_resources.contains(resource) {
-                held.remove(resource);
+            let canon = canonical_from(program, &module.name, resource);
+            if lock_resources.contains(&canon) {
+                held.remove(&canon);
             }
         }
 
@@ -324,15 +415,16 @@ fn check_lock_ordering(
 
 /// E309: Var read/write without holding the required protection lock.
 ///
-/// Covers `read_shared` / `write_shared` of the Var itself, plus every
-/// parsed r-value (guards, write exprs, call/spawn args, …) and
-/// `switch.var` when the scrutinee is that Var.
+/// Covers `read_shared` / `write_shared` of the Var itself, parsed r-values
+/// (guards, write exprs, call/spawn args, …), `switch.var`, and every
+/// destination write into a protected Var.
 fn check_var_access_without_lock(
     program: &Program,
     module: &Module,
     f: &Function,
     cfg: &Cfg,
     protection_map: &HashMap<String, String>,
+    entry_held: &BTreeSet<String>,
     fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -343,7 +435,7 @@ fn check_var_access_without_lock(
 
     let env = NameEnv::build(program, module, f);
     let mut visited: Vec<HashSet<BTreeSet<String>>> = vec![HashSet::new(); n];
-    let mut worklist: Vec<(usize, BTreeSet<String>)> = vec![(0, BTreeSet::new())];
+    let mut worklist: Vec<(usize, BTreeSet<String>)> = vec![(0, entry_held.clone())];
     let mut reported: HashSet<(usize, String)> = HashSet::new();
 
     while let Some((idx, mut held)) = worklist.pop() {
@@ -355,13 +447,14 @@ fn check_var_access_without_lock(
         let stmt = &f.body[idx];
 
         for resource in protected_var_accesses(&stmt.op, &env) {
-            let Some(required_lock) = required_lock(protection_map, &resource) else {
+            let var_fqn = canonical_from(program, &module.name, &resource);
+            let Some(required_lock) = protection_map.get(&var_fqn) else {
                 continue;
             };
             if held.contains(required_lock) {
                 continue;
             }
-            let key = (idx, short_name(&resource).to_string());
+            let key = (idx, var_fqn.clone());
             if !reported.insert(key) {
                 continue;
             }
@@ -381,9 +474,9 @@ fn check_var_access_without_lock(
 
         let s = &stmt.op;
         if let Some(resource) = s.is_lock_acquire() {
-            held.insert(resource.to_string());
+            held.insert(canonical_from(program, &module.name, resource));
         } else if let Some(resource) = s.is_lock_release() {
-            held.remove(resource);
+            held.remove(&canonical_from(program, &module.name, resource));
         }
 
         for &succ in &cfg.successors[idx] {
@@ -398,6 +491,7 @@ fn check_requires_held(
     module: &Module,
     f: &Function,
     cfg: &Cfg,
+    entry_held: &BTreeSet<String>,
     fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -407,7 +501,7 @@ fn check_requires_held(
     }
 
     let mut visited: Vec<HashSet<BTreeSet<String>>> = vec![HashSet::new(); n];
-    let mut worklist: Vec<(usize, BTreeSet<String>)> = vec![(0, BTreeSet::new())];
+    let mut worklist: Vec<(usize, BTreeSet<String>)> = vec![(0, entry_held.clone())];
     let mut reported: HashSet<(usize, String)> = HashSet::new();
 
     while let Some((idx, mut held)) = worklist.pop() {
@@ -420,8 +514,8 @@ fn check_requires_held(
         if let Op::Func { func, .. } = &stmt.op {
             if let Some((owner, callee)) = program.lookup_function(&module.name, func) {
                 for required in &callee.locks.requires_held {
-                    let held_here = lock_held(&held, required, &owner.name, &module.name);
-                    if held_here {
+                    let req_fqn = fqn::fqn(&owner.name, required);
+                    if held.contains(&req_fqn) {
                         continue;
                     }
                     let key = (idx, required.clone());
@@ -446,9 +540,9 @@ fn check_requires_held(
         }
 
         if let Some(resource) = stmt.op.is_lock_acquire() {
-            held.insert(resource.to_string());
+            held.insert(canonical_from(program, &module.name, resource));
         } else if let Some(resource) = stmt.op.is_lock_release() {
-            held.remove(resource);
+            held.remove(&canonical_from(program, &module.name, resource));
         }
 
         for &succ in &cfg.successors[idx] {
@@ -457,37 +551,67 @@ fn check_requires_held(
     }
 }
 
-fn lock_held(
-    held: &BTreeSet<String>,
-    required: &str,
-    callee_module: &str,
-    caller_module: &str,
-) -> bool {
-    let req_q = fqn::qualify(callee_module, required);
-    held.iter().any(|h| {
-        if h == required || h == &req_q {
-            return true;
-        }
-        let h_q = if fqn::is_fqn(h) {
-            h.clone()
-        } else {
-            fqn::qualify(caller_module, h)
-        };
-        h_q == req_q
-    })
-}
-
-fn short_name(name: &str) -> &str {
-    fqn::split_fqn(name).map(|(_, e)| e).unwrap_or(name)
-}
-
-fn required_lock<'a>(protection_map: &'a HashMap<String, String>, name: &str) -> Option<&'a str> {
-    if let Some(lock) = protection_map.get(name) {
-        return Some(lock.as_str());
+/// E512: `condvar_wait` requires the paired lock to be held.
+fn check_condvar_ownership(
+    program: &Program,
+    module: &Module,
+    f: &Function,
+    cfg: &Cfg,
+    entry_held: &BTreeSet<String>,
+    fn_path: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let n = f.body.len();
+    if n == 0 {
+        return;
     }
-    protection_map.get(short_name(name)).map(String::as_str)
+
+    let mut visited: Vec<HashSet<BTreeSet<String>>> = vec![HashSet::new(); n];
+    let mut worklist: Vec<(usize, BTreeSet<String>)> = vec![(0, entry_held.clone())];
+    let mut reported: HashSet<(usize, String)> = HashSet::new();
+
+    while let Some((idx, mut held)) = worklist.pop() {
+        if visited[idx].contains(&held) {
+            continue;
+        }
+        visited[idx].insert(held.clone());
+
+        let stmt = &f.body[idx];
+        if let Op::CondvarWait { lock, .. } = &stmt.op {
+            let canon = canonical_from(program, &module.name, lock);
+            if !held.contains(&canon) {
+                let key = (idx, lock.clone());
+                if reported.insert(key) {
+                    diags.push(
+                        Diagnostic::error(
+                            "E512",
+                            format!(
+                                "condvar_wait in function '{}' requires lock '{lock}' to be held",
+                                f.name
+                            ),
+                        )
+                        .with_path(format!("{fn_path}.body[{idx}]"))
+                        .with_location(Program::stmt_location(module, f, stmt))
+                        .with_fix("acquire the paired lock before waiting on the condvar"),
+                    );
+                }
+            }
+        }
+
+        if let Some(resource) = stmt.op.is_lock_acquire() {
+            held.insert(canonical_from(program, &module.name, resource));
+        } else if let Some(resource) = stmt.op.is_lock_release() {
+            held.remove(&canonical_from(program, &module.name, resource));
+        }
+
+        for &succ in &cfg.successors[idx] {
+            worklist.push((succ, held.clone()));
+        }
+    }
 }
 
+/// Names of `Var`/`Atomic` slots read by a statement, plus destination writes
+/// into protected Vars.
 fn protected_var_accesses(op: &Op, env: &NameEnv) -> Vec<String> {
     let mut names = Vec::new();
     if let Some((resource, _)) = op.shared_var_access() {
@@ -507,7 +631,36 @@ fn protected_var_accesses(op: &Op, env: &NameEnv) -> Vec<String> {
             names.extend(expr.value_resource_names(env));
         }
     }
+    names.extend(dst_writes(op));
     names
+}
+
+/// Explicit destination writes (`dst` / destination fields).
+fn dst_writes(op: &Op) -> Vec<String> {
+    match op {
+        Op::AtomicLoad { dst, .. } => wr(dst),
+        Op::AtomicCas { dst, .. } => wr(dst),
+        Op::ChannelRecv { dst, .. } => wr(dst),
+        Op::ReadShared { dst: Some(dst), .. } => wr(dst),
+        Op::Func { dst: Some(dst), .. } => wr(dst),
+        Op::Select { branches, .. } => branches
+            .iter()
+            .filter_map(|b| match &b.guard {
+                SelectGuard::ChannelRecv { dst, .. } => Some(dst.clone()),
+                _ => None,
+            })
+            .filter(|d| d != "_")
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn wr(dst: &str) -> Vec<String> {
+    if dst == "_" {
+        Vec::new()
+    } else {
+        vec![dst.to_string()]
+    }
 }
 
 fn has_order_conflict(a: &[String], b: &[String]) -> bool {

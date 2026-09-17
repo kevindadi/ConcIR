@@ -108,6 +108,7 @@ Pairing is by **handle**, not by function name.
 | E503 | DoubleLock          |  error   | same resource locked twice on one path without an intervening unlock |
 | E504 | SyncLockAcrossAwait |  error   | Sync lock held across an await point in an async function            |
 | E505 | LockOrderViolation  |  error   | inconsistent lock acquisition order across paths (ABBA deadlock)     |
+| E512 | CondvarWaitNoLock   |  error   | `condvar_wait` without holding the paired lock                       |
 
 ## E6xx — Control flow
 

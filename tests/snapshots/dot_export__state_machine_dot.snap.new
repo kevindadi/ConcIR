@@ -1,0 +1,96 @@
+---
+source: tests/dot_export.rs
+assertion_line: 378
+expression: dot
+---
+digraph "state_machine" {
+  rankdir=TB;
+  node [fontname="Courier", fontsize=10];
+  edge [fontname="Courier", fontsize=9];
+
+  subgraph cluster_resources {
+    label="Resources";
+    style=dashed;
+    color=gray;
+
+    res_mtx [label="mtx\n(Mutex)", shape=hexagon, style=filled, fillcolor="#ffe0e0"];
+    res_cv [label="cv\n(Condvar)", shape=triangle, style=filled, fillcolor="#f0e0ff"];
+    res_state [label="state\n(Var)", shape=rect, style=filled, fillcolor="#f0f0f0"];
+
+    res_state -> res_mtx [style=dotted, dir=both, color=gray50];
+  }
+
+  subgraph cluster_main {
+    label="main (normal)";
+    style=rounded;
+    color=black;
+
+    main_s1 [label="s1: scope(controller, worker)", shape=doubleoctagon, style="filled", fillcolor="#f0f0f0", color=black, penwidth=3];
+    main_s2 [label="s2: return", shape=ellipse, style="filled", fillcolor="#a0a0a0", color=black, penwidth=1];
+    main_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
+
+    main_s1 -> main_s2;
+    main_s2 -> main_ret;
+  }
+
+  subgraph cluster_controller {
+    label="controller (closure)";
+    style=rounded;
+    color=black;
+
+    controller_s1 [label="s1: mutex_lock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=red, penwidth=3];
+    controller_s2 [label="s2: write_shared(state, Running)", shape=rect, style="filled", fillcolor="#f0f0f0", color=orange, penwidth=2];
+    controller_s3 [label="s3: condvar_notify_all(cv)", shape=rect, style="filled", fillcolor="#f0f0f0", color=purple, penwidth=2];
+    controller_s4 [label="s4: mutex_unlock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    controller_s5 [label="s5: return", shape=ellipse, style="filled", fillcolor="#a0a0a0", color=black, penwidth=1];
+    controller_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
+
+    controller_s1 -> controller_s2;
+    controller_s2 -> controller_s3;
+    controller_s3 -> controller_s4;
+    controller_s4 -> controller_s5;
+    controller_s5 -> controller_ret;
+  }
+
+  subgraph cluster_worker {
+    label="worker (closure)";
+    style=rounded;
+    color=black;
+
+    worker_s1 [label="s1: mutex_lock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=red, penwidth=3];
+    worker_s2 [label="s2: read_shared(state)", shape=rect, style="filled", fillcolor="#f0f0f0", color=black, penwidth=1];
+    worker_s3 [label="s3: switch", shape=diamond, style="filled", fillcolor="#ffe8cc", color=black, penwidth=1];
+    worker_s4 [label="s4: condvar_wait(cv, mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=purple, penwidth=2];
+    worker_s5 [label="s5: goto", shape=rect, style="filled", fillcolor="#f0f0f0", color=black, penwidth=1];
+    worker_s6 [label="s6: mutex_unlock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    worker_s7 [label="s7: goto", shape=rect, style="filled", fillcolor="#f0f0f0", color=black, penwidth=1];
+    worker_s8 [label="s8: condvar_wait(cv, mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=purple, penwidth=2];
+    worker_s9 [label="s9: goto", shape=rect, style="filled", fillcolor="#f0f0f0", color=black, penwidth=1];
+    worker_s10 [label="s10: mutex_unlock(mtx)", shape=rect, style="filled", fillcolor="#f0f0f0", color=green, penwidth=2];
+    worker_s11 [label="s11: return", shape=ellipse, style="filled", fillcolor="#a0a0a0", color=black, penwidth=1];
+    worker_ret [label="[ret]", shape=ellipse, style=filled, fillcolor="#a0a0a0"];
+
+    worker_s1 -> worker_s2;
+    worker_s2 -> worker_s3;
+    worker_s3 -> worker_s4 [label="Init"];
+    worker_s3 -> worker_s8 [label="Paused"];
+    worker_s3 -> worker_s6 [label="Running"];
+    worker_s3 -> worker_s10 [label="Stopped"];
+    worker_s3 -> worker_s4 [label="default", style=dashed];
+    worker_s4 -> worker_s5;
+    worker_s5 -> worker_s2 [color=blue, penwidth=2];
+    worker_s6 -> worker_s7;
+    worker_s7 -> worker_s11;
+    worker_s8 -> worker_s9;
+    worker_s9 -> worker_s2 [color=blue, penwidth=2];
+    worker_s10 -> worker_s11;
+    worker_s11 -> worker_ret;
+  }
+
+  // Cross-function edges
+  main_s1 -> controller_s1 [style=dashed, color=blue, label="scope"];
+  controller_ret -> main_s1 [style=dashed, color=purple, label="join"];
+  main_s1 -> worker_s1 [style=dashed, color=blue, label="scope"];
+  worker_ret -> main_s1 [style=dashed, color=purple, label="join"];
+
+}

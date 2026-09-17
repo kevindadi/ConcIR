@@ -10,21 +10,64 @@ use crate::validate::types::{build_resource_type_map, ResType};
 /// E801–E805: lock-effect well-formedness, `may_block` vs body, import sig match.
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     let rt_map = build_resource_type_map(program);
-    check_declared_interfaces(program, &rt_map, diags);
-    check_import_sigs(program, diags);
+    let may_block = may_block_functions(program);
+    check_declared_interfaces(program, &rt_map, &may_block, diags);
+    check_import_sigs(program, &may_block, diags);
     check_bound_on_sequential_only(program, diags);
+}
+
+/// Transitive may-block set: a function may block if its body has a blocking
+/// op, or if it `call`s a function that may block. `spawn`/`scope` /
+/// `async_call` do not make the caller block (only `join`/`await` do, and
+/// those are blocking ops in the body).
+fn may_block_functions(program: &Program) -> HashSet<String> {
+    let mut set: HashSet<String> = HashSet::new();
+    for m in &program.modules {
+        for f in &m.functions {
+            if !f.body.is_empty() && f.body_may_block() {
+                set.insert(fqn::fqn(&m.name, &f.name));
+            }
+        }
+    }
+    loop {
+        let mut changed = false;
+        for m in &program.modules {
+            for f in &m.functions {
+                let fq = fqn::fqn(&m.name, &f.name);
+                if set.contains(&fq) || f.body.is_empty() {
+                    continue;
+                }
+                let calls_block = f.body.iter().any(|s| match &s.op {
+                    Op::Func { func, .. } => program
+                        .lookup_function(&m.name, func)
+                        .map(|(o, callee)| set.contains(&fqn::fqn(&o.name, &callee.name)))
+                        .unwrap_or(false),
+                    _ => false,
+                });
+                if calls_block {
+                    set.insert(fq);
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    set
 }
 
 fn check_declared_interfaces(
     program: &Program,
     rt_map: &std::collections::HashMap<String, ResType>,
+    may_block: &HashSet<String>,
     diags: &mut Vec<Diagnostic>,
 ) {
     for (mi, m) in program.modules.iter().enumerate() {
         for (fi, f) in m.functions.iter().enumerate() {
             let fn_path = Program::fn_path(mi, fi);
             check_lock_effect_names(program, m, f, &fn_path, rt_map, diags);
-            check_may_block_vs_body(m, f, &fn_path, diags);
+            check_may_block_vs_body(m, f, may_block, &fn_path, diags);
             check_bound(f, &fn_path, Program::fn_location(m, f), diags);
         }
     }
@@ -102,6 +145,7 @@ fn check_lock_effect_names(
 fn check_may_block_vs_body(
     module: &Module,
     f: &Function,
+    may_block: &HashSet<String>,
     fn_path: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -111,7 +155,7 @@ fn check_may_block_vs_body(
     if f.body.is_empty() {
         return;
     }
-    let inferred = f.body_may_block();
+    let inferred = may_block.contains(&fqn::fqn(&module.name, &f.name));
     if declared && !inferred {
         diags.push(
             Diagnostic::warning(
@@ -202,7 +246,7 @@ fn check_bound_on_sequential_only(program: &Program, diags: &mut Vec<Diagnostic>
     }
 }
 
-fn check_import_sigs(program: &Program, diags: &mut Vec<Diagnostic>) {
+fn check_import_sigs(program: &Program, may_block: &HashSet<String>, diags: &mut Vec<Diagnostic>) {
     for (mi, m) in program.modules.iter().enumerate() {
         for (i, req) in m.requires.functions.iter().enumerate() {
             let Some(sig) = req.sig() else {
@@ -242,7 +286,12 @@ fn check_import_sigs(program: &Program, diags: &mut Vec<Diagnostic>) {
                 }
             }
             if let Some(imported) = sig.may_block {
-                if let Some(defined) = defn.effective_may_block() {
+                let defined = if defn.body.is_empty() {
+                    defn.effective_may_block()
+                } else {
+                    Some(may_block.contains(&fqn::fqn(&m.name, &defn.name)))
+                };
+                if let Some(defined) = defined {
                     if imported != defined {
                         diags.push(
                             Diagnostic::error(

@@ -31,6 +31,25 @@ Output is a JSON `ValidationReport`:
 If there are errors, `valid` is `false`, `diagnostics` contains all diagnostic
 items, and the process exits with exit code 1.
 
+## Backend (no LLM)
+
+Alongside the static validator, the repository ships a non-LLM backend: a
+bounded reference interpreter, a colored Petri-net translation, finite-state
+exploration with safety / deadlock / EF / AG EF properties, structured
+diagnostics, and a deterministic patch-and-repair loop.
+
+```bash
+cargo build --release
+./target/release/concir-backend explore examples/producer_consumer.json
+./target/release/concir-backend explore examples/lockorder_bug.json examples/lockorder_contract.json
+./target/release/concir-backend repair  examples/lockorder_bug.json examples/lockorder_contract.json
+```
+
+| Document | Contents |
+| -------- | -------- |
+| [`doc/backend-design.md`](doc/backend-design.md) | Operational semantics, Petri nets, contracts, diagnostics, staged plan |
+| [`doc/backend-usage.md`](doc/backend-usage.md) | Commands, support matrix, model boundaries, migration |
+
 ## Documentation
 
 | Document                         | Contents                                                        |

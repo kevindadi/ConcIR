@@ -878,7 +878,11 @@ impl Op {
             Op::Await { .. }
                 | Op::Join { .. }
                 | Op::Scope { .. }
+                | Op::ChannelSend { .. }
                 | Op::ChannelRecv { .. }
+                | Op::MutexLock { .. }
+                | Op::RwLockRead { .. }
+                | Op::RwLockWrite { .. }
                 | Op::SemaphoreAcquire { .. }
                 | Op::CondvarWait { .. }
                 | Op::Select { .. }

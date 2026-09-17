@@ -1,8 +1,13 @@
 pub mod ast;
 pub mod diagnostic;
 pub mod env;
+pub mod explore;
 pub mod export;
 pub mod expr;
 pub mod fqn;
+pub mod interp;
+pub mod petri;
+pub mod repair;
+pub mod sem;
 pub mod typedef;
 pub mod validate;
