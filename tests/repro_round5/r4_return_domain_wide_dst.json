@@ -1,0 +1,67 @@
+{
+  "program": "declared_return",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [
+        {
+          "name": "src",
+          "kind": "var",
+          "type": "Var",
+          "base": "Int",
+          "init": 2
+        },
+        {
+          "name": "x",
+          "kind": "var",
+          "type": "Var",
+          "base": "Int",
+          "init": 0
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "call",
+              "func": "two",
+              "args": [],
+              "dst": "x"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "two",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "return",
+              "value": "src"
+            }
+          ],
+          "returns": {
+            "name": "r",
+            "type": {
+              "Int": [
+                0,
+                1
+              ]
+            },
+            "modeled": true
+          }
+        }
+      ]
+    }
+  ]
+}

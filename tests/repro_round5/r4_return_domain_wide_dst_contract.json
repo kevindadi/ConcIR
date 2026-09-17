@@ -1,0 +1,13 @@
+{
+  "name": "return-contract",
+  "properties": [
+    {
+      "kind": "reachability",
+      "id": "completed",
+      "goal": {
+        "kind": "function_completed",
+        "function": "main::two"
+      }
+    }
+  ]
+}

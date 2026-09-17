@@ -828,6 +828,14 @@ impl<'a> Interpreter<'a> {
                     Some(e) => Some(self.eval(&next, fid, e, &at)?),
                     None => None,
                 };
+                // First check the callee's own declared return type, then the
+                // caller's destination; both must hold before any unwinding,
+                // write, completion, or wake-up.
+                if let (Some(ret), Some(v)) = (&function.returns, &val) {
+                    if !within_type(v, &ret.ty) {
+                        return Ok(Vec::new());
+                    }
+                }
                 if next.threads[&tid].stack.len() > 1 {
                     let stack_len = next.threads[&tid].stack.len();
                     let caller = next.threads[&tid].stack[stack_len - 2];

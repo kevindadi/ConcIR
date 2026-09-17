@@ -135,6 +135,9 @@ value still flows ⇒ `PASS`).
   legal payload; the round-3 rendezvous test covers two waiting receivers.
 - **Composite types and all write paths.** Nested bounded fields, arrays, mixed
   struct/array; negative and positive.
+  (Round 5 corrected the claim that *every* return path checked the domain:
+  only the caller `dst` was checked. The callee's declared `returns` type was
+  added in `CODE_REVIEW_ROUND5.md` — D1.)
 - **Not only engine agreement.** Each case asserts an independent expected
   outcome, exploration completeness, and (for C1) the CLI category.
 

@@ -32,6 +32,11 @@ code to review most carefully.
 > [`CODE_REVIEW_ROUND4.md`](CODE_REVIEW_ROUND4.md): a separate type-tagged
 > length-prefixed `state_key`, recursive domain checks, and Petri channel
 > payload checks.
+>
+> **Round 5 (review `df62ffd`).** See
+> [`CODE_REVIEW_ROUND5.md`](CODE_REVIEW_ROUND5.md): the callee's declared
+> `returns` type is now checked (D1), and the state-key equivalence evidence
+> (identity translation, successor quotient, edge replay) is completed.
 
 ---
 

@@ -150,10 +150,16 @@ all interleavings. A single run follows one deterministic schedule.
   a new `FrameId`, bind the callee's modeled params (positional, declaration
   order), push it. The callee's `Frame.ret_to = Some(RetAddr { caller_pc_next,
   dst })` where `dst` is resolved in the **caller's** scope.
-- `return`: pop the frame. If the stack is empty the thread becomes
-  `Finished` (and notifies enclosing scope/join). Otherwise write the return
-  value into `ret_to.dst` of the caller and resume the caller at
-  `caller_pc_next`.
+- `return`: the returned expression is evaluated, then checked against the
+  callee's **own declared `returns` type** (recursively, including composite
+  types), and independently against the caller's `dst`. If either check fails
+  the whole return step is disabled before any frame is popped, value written,
+  joiner/scope woken, or completion recorded. A disabled return therefore never
+  records `function_completed`. Then the frame is popped; if the stack is empty
+  the thread becomes `Finished` (and notifies enclosing scope/join), otherwise
+  the value is written into `ret_to.dst` of the caller and the caller resumes
+  at `caller_pc_next`. Omitting the caller `dst` or returning from the entry
+  function does not bypass the declared return type.
 - An overlapping call cannot misroute a return token: `ret_to` is stored in the
   callee frame instance, so the exact caller frame is addressed. (This closes
   the "shared return token" over-approximation for the reference semantics;
@@ -330,10 +336,26 @@ predicate remains in the key.
   encoding injective, so distinct values can never share a key. Changing the
   hash function does not substitute for this.
 
-A state key is only accepted as a dedup key if equal keys imply equal
-predicate truth and equal successor quotient behavior; `tests/round4_regressions.rs`
-checks this with an independent raw-`State`-`Eq`/`Hash` oracle that never calls
-the production key or renderer.
+Coverage of the equivalence claim is explicit and test-backed:
+
+- `tests/round4_regressions.rs` runs an independent raw-`State`-`Eq`/`Hash`
+  oracle that never calls the production key or renderer, and checks that no
+  two raw states share a key while disagreeing on a goal.
+- `tests/round5_regressions.rs` (a) translates one reachable state by a
+  constant offset in *every* `ThreadId`/`FrameId`/`ScopeId`/`HandleId`
+  occurrence and asserts the key, predicate truth, and the set of
+  `(origin, successor-key)` actions are unchanged; (b) replays every stored
+  quotient edge and asserts an enabled step of the source realizes the same
+  origin and target key; and (c) groups a bounded raw BFS by key and asserts
+  merged states agree on predicate truth and successor actions.
+
+The covered equivalence is **dynamic-identity translation/renaming**, i.e.
+alpha-equivalence of internal ids. It is not a claim that arbitrary graph
+isomorphism yields one key, and it does not by itself prove the absence of
+every missed or incorrect merge; the tests distinguish the two directions
+(key equality with divergent behavior = incorrect merge; raw
+translation-equivalent states with different keys = missed merge for the
+translated case).
 
 ### 4.2 Resource domain checks and step atomicity
 

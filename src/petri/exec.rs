@@ -1217,6 +1217,13 @@ impl<'a> PetriEngine<'a> {
                     Some(e) => Some(self.eval(&next, frame, e, &at)?),
                     None => None,
                 };
+                // Check the callee's declared return type before unwinding.
+                let returned = self.program.function(next.store.frame(frame).function).returns.clone();
+                if let (Some(ret), Some(v)) = (&returned, &val) {
+                    if !within_type(v, &ret.ty) {
+                        disabled!();
+                    }
+                }
                 let callee = next.store.frame(frame).clone();
                 next.store.frames.remove(&frame);
                 next.store.threads.get_mut(&thread).unwrap().stack.pop();
@@ -1242,8 +1249,13 @@ impl<'a> PetriEngine<'a> {
                     Some(e) => Some(self.eval(&next, frame, e, &at)?),
                     None => None,
                 };
-                let _ = val;
                 let function = next.store.frame(frame).function;
+                // Check the declared return type before finishing the thread.
+                if let (Some(ret), Some(v)) = (&self.program.function(function).returns, &val) {
+                    if !within_type(v, &ret.ty) {
+                        disabled!();
+                    }
+                }
                 next.store.frames.remove(&frame);
                 next.store.threads.get_mut(&thread).unwrap().stack.pop();
                 self.finish_thread(&mut next, thread, function);

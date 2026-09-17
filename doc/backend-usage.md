@@ -200,12 +200,26 @@ they do not change the JSON syntax.
 - **Atomicity.** A disabled update leaves no token, message, lock, control
   advance, or frame pop behind; frozen sender values are never re-evaluated.
 
+## Round-5 corrections
+
+- **Declared return type is checked.** A `return` is checked against the
+  callee's own `returns` type (recursively for composites) and then
+  independently against the caller's `dst`. Omitting `dst` or returning from
+  the entry does not bypass it. A violating return is disabled atomically: no
+  frame pop, `dst` write, join/scope wake, or completion record.
+- **C1 acceptance evidence.** The state-key equivalence is tested by an
+  independent raw-`State` oracle, by an explicit dynamic-identity translation
+  that updates every id reference, by replaying every stored quotient edge, and
+  by a raw-BFS merge-consistency check. The documented coverage is
+  dynamic-identity alpha-equivalence, not arbitrary graph isomorphism.
+
 ## Reproducible checks
 
 ```bash
 cargo test --test round2_regressions
 cargo test --test round3_regressions
 cargo test --test round4_regressions
+cargo test --test round5_regressions
 cargo test --test differential
 cargo test --test semantics_regression
 cargo test --test validator_risks
@@ -213,10 +227,9 @@ cargo test --test interp_petri_diff
 cargo test --test repair_e2e
 ```
 
-`tests/repro_round2/`, `tests/repro_round3/` and `tests/repro_round4/` contain
-the review counterexamples (CIR, contracts, patches) as fixtures; see
-`CODE_REVIEW_ROUND2.md`, `CODE_REVIEW_ROUND3.md`, and
-`CODE_REVIEW_ROUND4.md`.
+`tests/repro_round2/` … `tests/repro_round5/` contain the review
+counterexamples (CIR, contracts, patches) as fixtures; see
+`CODE_REVIEW_ROUND2.md` … `CODE_REVIEW_ROUND5.md`.
 
 Note: the pre-existing `tests/dot_export.rs` snapshot tests cannot pass on a
 fresh checkout because `**.snap` is git-ignored (no committed snapshots). This

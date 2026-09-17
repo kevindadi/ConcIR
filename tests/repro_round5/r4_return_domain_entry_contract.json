@@ -1,0 +1,13 @@
+{
+  "name": "entry-return",
+  "properties": [
+    {
+      "kind": "reachability",
+      "id": "completed",
+      "goal": {
+        "kind": "function_completed",
+        "function": "main::main"
+      }
+    }
+  ]
+}
