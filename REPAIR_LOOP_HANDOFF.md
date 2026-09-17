@@ -5,10 +5,13 @@ development benchmark.
 
 Baselines (corrected):
 - `29ee9ed` — 192 passed / 4 failed (the four DOT snapshots).
-- previous revision of this phase (`bbff35b`) — 208 passed / 0 failed after the
-  DOT goldens were committed; E1–E7 of the export/budget/dedup review fixed.
-- **this revision** — E1–E8 plus the artifact/replay follow-ups F1–F4 and
-  G1–G3: **227 passed / 0 failed**, zero warnings.
+- `bbff35b` — 222 passed / 0 failed after the DOT goldens were committed;
+  E1–E7 of the export/budget/dedup review fixed. (An intermediate,
+  uncommitted workspace state measured 208/0.)
+- `41b2d09` — E1–E8 plus the artifact/replay follow-ups F1–F4 and G1–G3:
+  227 passed / 0 failed, zero warnings.
+- **this revision** — the terminal-semantics fix (H1/H2): **229 passed /
+  0 failed**, zero warnings.
 
 This is a development regression set and a reviewable implementation; it is
 **not** an independent evaluation corpus and makes no formal-proof or
@@ -195,6 +198,46 @@ unfix wrong stop reason) and requires a non-zero `replay` exit for each.
 `already_satisfied`, root-invalid, root-unsupported, no-acceptable-candidate,
 two-step repaired, and composite-with-intermediate-FAIL artifacts.
 
+## 2d. Terminal-semantics follow-up (H1–H2)
+
+The `41b2d09` review found the G3 replay still inferred truncation from the
+deepest generated node and never compared the terminal flags.
+
+### H1 — strategy A's legal single-step result no longer rejected (P2)
+Replaying a strategy-A artifact under `--max-depth 1` / `--max-total-edits 1`
+was rejected as truncated: A never expands past the root, so its depth-1
+children are not truncation. Truncation is now decided by whether an
+**expandable** node was stopped by a bound, not by the maximum generated depth.
+
+### H2 — one shared terminal semantics (P2)
+`TerminalFacts { root_unknown, candidate_budget_hit, verification_budget_hit,
+depth_truncated, edits_truncated, saw_unknown }` with a single
+`classify()` is the definition of the terminal
+`(outcome, stop_reason, truncation)` triple. The live search fills the facts
+from its counters; `replay_artifact` re-derives them from the recorded graph
+(`derive_terminal_facts`) and compares the whole quadruple including
+`saw_unknown`. Truncation distinguishes three states: a node *reached* the
+bound, the strategy *would expand* it (`node_is_expandable`: the root, and
+every verified FAIL node under B/C — never under A), and the budget *did stop*
+it. Priority is root-unknown, candidate budget, verification budget,
+`max-depth+max-total-edits`, `max-depth`, `max-total-edits`, UNKNOWN, no
+acceptable candidate. The recorded fields are never their own evidence: they
+are compared against the re-derived facts. `validate_structure` also binds
+strategy A to a root-only graph (every node and attempt descends from node 0).
+
+### Evidence
+`tests/cli.rs::h1_h2_boundary_matrix_artifacts_replay` runs the 18-case matrix
+(A/B/C × default, depth=1, edits=1, both=1, depth=0, edits=0) on
+`preserved_unfixable`, asserts the search's terminal category per cell, and
+requires all 18 artifacts to replay. `tests/cli.rs::
+h2_terminal_flag_tampering_is_rejected` mutates one terminal field on real
+artifacts — erased truncation, fabricated truncation, swapped stop reason when
+depth and edits both reached, and root-UNKNOWN with `saw_unknown=false` — and
+requires a non-zero `replay` exit for each. Re-running the review's own
+artifacts against this build: all 18 boundary artifacts replay; all four
+terminal-flag corruptions are rejected; the 13 legitimate terminal records
+replay; the 25 earlier/14-residual negatives are all rejected.
+
 ## 3. Architecture summary
 
 - `src/repair/search.rs`: the three strategies (A single, B composite, C
@@ -254,12 +297,12 @@ patch base hash and a parent reference and asserts explicit failure.
 
 ```bash
 INSTA_UPDATE=no cargo test --offline --all-targets --no-fail-fast
-# 225 passed / 0 failed
+# 229 passed / 0 failed
 
 cargo test --test ast_roundtrip      # 2 passed
 cargo test --test repair_search      # 16 passed
 cargo test --test benchmark          # 4 passed
-cargo test --test cli                # 7 passed
+cargo test --test cli                # 11 passed
 cargo test --test dot_export         # 19 passed
 ```
 

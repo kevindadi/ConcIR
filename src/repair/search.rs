@@ -334,6 +334,79 @@ fn empty_report(
     }
 }
 
+/// The verifiable search facts that determine a run's terminal classification.
+///
+/// Both the online search and `replay_artifact` derive these facts (from the
+/// live counters and from the recorded graph, respectively) and feed them to
+/// [`TerminalFacts::classify`], so the outcome/stop_reason/truncation triple has
+/// a single definition instead of two string branches that can drift.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TerminalFacts {
+    /// The root report is UNKNOWN and the search returned before any expansion.
+    pub root_unknown: bool,
+    /// The candidate proposal budget was reached.
+    pub candidate_budget_hit: bool,
+    /// The verification budget was reached (a generated candidate could not be
+    /// verified).
+    pub verification_budget_hit: bool,
+    /// An expandable node was left unexpanded by `max_depth`.
+    pub depth_truncated: bool,
+    /// An expandable node passed the depth bound but was left unexpanded by
+    /// `max_total_edits`.
+    pub edits_truncated: bool,
+    /// An UNKNOWN verification result was observed during the search.
+    pub saw_unknown: bool,
+}
+
+impl TerminalFacts {
+    /// The single source of truth for the terminal triple once the search loop
+    /// ends without an accepted repair. The priority is: root-unknown, candidate
+    /// budget, verification budget, depth+edits truncation, depth truncation,
+    /// edit truncation, UNKNOWN, no acceptable candidate.
+    pub fn classify(&self) -> (RepairOutcome, &'static str, Option<&'static str>) {
+        if self.root_unknown {
+            (RepairOutcome::AnalysisUnknown, "root-unknown", None)
+        } else if self.candidate_budget_hit {
+            (RepairOutcome::BudgetExhausted, "candidate-budget", None)
+        } else if self.verification_budget_hit {
+            (RepairOutcome::BudgetExhausted, "verification-budget", None)
+        } else if self.depth_truncated && self.edits_truncated {
+            (
+                RepairOutcome::BudgetExhausted,
+                "max-depth+max-total-edits",
+                Some("max-depth+max-total-edits"),
+            )
+        } else if self.depth_truncated {
+            (RepairOutcome::BudgetExhausted, "max-depth", Some("max-depth"))
+        } else if self.edits_truncated {
+            (
+                RepairOutcome::BudgetExhausted,
+                "max-total-edits",
+                Some("max-total-edits"),
+            )
+        } else if self.saw_unknown {
+            (RepairOutcome::AnalysisUnknown, "analysis-unknown", None)
+        } else {
+            (
+                RepairOutcome::NoAcceptableCandidate,
+                "no-acceptable-candidate",
+                None,
+            )
+        }
+    }
+}
+
+/// Whether a node was eligible for expansion under the strategy. The search
+/// enqueues the root and, for the multi-step strategies, every verified FAIL
+/// child; strategy A only ever expands the root. `replay_artifact` uses this to
+/// distinguish "reached the bound" from "was stopped by the bound".
+fn node_is_expandable(strategy: RepairStrategy, node: &NodeReport) -> bool {
+    if node.report.outcome != Outcome::Fail {
+        return false;
+    }
+    node.id == 0 || strategy != RepairStrategy::Single
+}
+
 /// Run the budgeted search. Deterministic for a fixed input and budget.
 pub fn run_search(program: &Program, spec: &ContractSpec, config: &SearchConfig) -> SearchReport {
     let bounds = effective_bounds(spec);
@@ -646,35 +719,16 @@ pub fn run_search(program: &Program, spec: &ContractSpec, config: &SearchConfig)
         }
     }
 
-    let (outcome, stop_reason, truncation) = if candidate_budget_hit {
-        (RepairOutcome::BudgetExhausted, "candidate-budget", None)
-    } else if verification_budget_hit {
-        (
-            RepairOutcome::BudgetExhausted,
-            "verification-budget",
-            None,
-        )
-    } else if depth_truncated || edits_truncated {
-        let reason = match (depth_truncated, edits_truncated) {
-            (true, true) => "max-depth+max-total-edits",
-            (true, false) => "max-depth",
-            (false, true) => "max-total-edits",
-            _ => unreachable!(),
-        };
-        (
-            RepairOutcome::BudgetExhausted,
-            reason,
-            Some(reason.to_string()),
-        )
-    } else if saw_unknown {
-        (RepairOutcome::AnalysisUnknown, "analysis-unknown", None)
-    } else {
-        (
-            RepairOutcome::NoAcceptableCandidate,
-            "no-acceptable-candidate",
-            None,
-        )
+    let facts = TerminalFacts {
+        root_unknown: false,
+        candidate_budget_hit,
+        verification_budget_hit,
+        depth_truncated,
+        edits_truncated,
+        saw_unknown,
     };
+    let (outcome, stop_reason, truncation) = facts.classify();
+    let truncation = truncation.map(str::to_string);
 
     finish(
         config, bounds, outcome, stop_reason, saw_unknown, truncation, proposals,
@@ -1040,93 +1094,93 @@ fn validate_attempts(artifact: &SearchArtifact, rebuilt: &BTreeMap<usize, Progra
     Ok(())
 }
 
-/// G3: the terminal classification must be supported by recorded facts.
-fn validate_outcome_evidence(a: &SearchArtifact) -> Result<(), String> {
+/// Derive the terminal search facts from an artifact's recorded graph. This
+/// mirrors the live search's expansion decisions: the root is expandable when
+/// its report FAILs, and, for the multi-step strategies, so is every verified
+/// FAIL node; strategy A never expands beyond the root. A node is "reached the
+/// bound" only when such an expandable node is left unexpanded by the budget.
+fn derive_terminal_facts(a: &SearchArtifact) -> TerminalFacts {
     let cfg = &a.effective_config;
-    let has_unknown_node = a.nodes.iter().any(|n| n.report.outcome == Outcome::Unknown);
-    let budget_blocked = a.attempts.iter().filter(|x| x.result == "budget-blocked").count();
-    let max_depth = a.nodes.iter().map(|n| n.depth).max().unwrap_or(0);
-    let max_edits = a.nodes.iter().map(|n| n.total_edits).max().unwrap_or(0);
-    let exact = |want: &str| -> Result<(), String> {
+    let root_unknown = a.nodes.len() == 1 && a.nodes[0].report.outcome == Outcome::Unknown;
+    let saw_unknown = a.nodes.iter().any(|n| n.report.outcome == Outcome::Unknown);
+    let verification_budget_hit = a.attempts.iter().any(|x| x.result == "budget-blocked");
+    let expandable = |n: &NodeReport| node_is_expandable(cfg.strategy, n);
+    let depth_truncated = a.nodes.iter().any(|n| expandable(n) && n.depth >= cfg.max_depth);
+    let edits_truncated = a.nodes.iter().any(|n| {
+        expandable(n) && n.depth < cfg.max_depth && n.total_edits >= cfg.max_total_edits
+    });
+    let can_expand = a.nodes.iter().any(|n| {
+        expandable(n) && n.depth < cfg.max_depth && n.total_edits < cfg.max_total_edits
+    });
+    // The candidate budget is only checked while expanding an allowed node, and
+    // the verification-budget break happens before that check.
+    let candidate_budget_hit = !verification_budget_hit
+        && a.counts.proposals >= cfg.candidate_budget
+        && can_expand;
+    TerminalFacts {
+        root_unknown,
+        candidate_budget_hit,
+        verification_budget_hit,
+        depth_truncated,
+        edits_truncated,
+        saw_unknown,
+    }
+}
+
+/// G3: the terminal classification must be supported by recorded facts. The
+/// post-loop outcomes are re-derived through the same [`TerminalFacts`] used by
+/// the online search; the whole outcome/stop_reason/truncation/saw_unknown
+/// quadruple is compared, never the strings in isolation.
+fn validate_outcome_evidence(a: &SearchArtifact) -> Result<(), String> {
+    let facts = derive_terminal_facts(a);
+    if a.saw_unknown != facts.saw_unknown {
+        return Err(format!(
+            "saw_unknown={} does not match the recorded UNKNOWN results ({})",
+            a.saw_unknown, facts.saw_unknown
+        ));
+    }
+    let simple = |want: &str| -> Result<(), String> {
         if a.stop_reason != want {
-            Err(format!("outcome {:?} requires stop_reason '{want}', got '{}'", a.outcome, a.stop_reason))
-        } else {
-            Ok(())
+            return Err(format!(
+                "outcome {:?} requires stop_reason '{want}', got '{}'",
+                a.outcome, a.stop_reason
+            ));
         }
+        if a.truncation.is_some() {
+            return Err(format!("outcome {:?} must not record truncation", a.outcome));
+        }
+        Ok(())
     };
     match a.outcome {
-        RepairOutcome::Repaired => exact("solved")?,
-        RepairOutcome::AlreadySatisfied => exact("already-satisfied")?,
-        RepairOutcome::Invalid => exact("root-invalid")?,
-        RepairOutcome::Unsupported => exact("root-unsupported")?,
-        RepairOutcome::InvalidConfig => exact("verification-budget-zero")?,
-        RepairOutcome::AnalysisUnknown => {
-            if a.stop_reason == "root-unknown" {
-                if a.nodes.len() != 1 || a.nodes[0].report.outcome != Outcome::Unknown {
-                    return Err("root-unknown requires a single UNKNOWN root report".into());
-                }
-            } else if a.stop_reason == "analysis-unknown" {
-                if !a.saw_unknown || !has_unknown_node {
-                    return Err(
-                        "analysis_unknown requires saw_unknown and an UNKNOWN node/attempt fact"
-                            .into(),
-                    );
-                }
-            } else {
-                return Err(format!("analysis_unknown has stop_reason '{}'", a.stop_reason));
-            }
-        }
-        RepairOutcome::NoAcceptableCandidate => {
-            if a.stop_reason != "no-acceptable-candidate" {
+        RepairOutcome::Repaired => simple("solved")?,
+        RepairOutcome::AlreadySatisfied => simple("already-satisfied")?,
+        RepairOutcome::Invalid => simple("root-invalid")?,
+        RepairOutcome::Unsupported => simple("root-unsupported")?,
+        RepairOutcome::InvalidConfig => simple("verification-budget-zero")?,
+        RepairOutcome::AnalysisUnknown
+        | RepairOutcome::NoAcceptableCandidate
+        | RepairOutcome::BudgetExhausted => {
+            let (outcome, stop_reason, truncation) = facts.classify();
+            if a.outcome != outcome {
                 return Err(format!(
-                    "no_acceptable_candidate has stop_reason '{}'",
+                    "outcome {:?} is not supported by the recorded search facts (expected {:?})",
+                    a.outcome, outcome
+                ));
+            }
+            if a.stop_reason != stop_reason {
+                return Err(format!(
+                    "stop_reason '{}' is not supported by the recorded search facts (expected '{stop_reason}')",
                     a.stop_reason
                 ));
             }
-            if a.saw_unknown {
-                return Err("no_acceptable_candidate must not record saw_unknown".into());
-            }
-            if budget_blocked > 0 {
-                return Err("no_acceptable_candidate must not record a budget-blocked attempt".into());
-            }
-            if max_depth >= cfg.max_depth {
-                return Err("no_acceptable_candidate must not have depth truncation".into());
-            }
-            if max_edits >= cfg.max_total_edits {
-                return Err("no_acceptable_candidate must not have edit truncation".into());
+            let expected = truncation.map(str::to_string);
+            if a.truncation != expected {
+                return Err(format!(
+                    "truncation {:?} does not match the recorded search facts (expected {expected:?})",
+                    a.truncation
+                ));
             }
         }
-        RepairOutcome::BudgetExhausted => match a.stop_reason.as_str() {
-            "candidate-budget" => {
-                if a.counts.proposals < cfg.candidate_budget {
-                    return Err("candidate-budget stop without exhausting the candidate budget".into());
-                }
-            }
-            "verification-budget" => {
-                if budget_blocked == 0 {
-                    return Err("verification-budget stop without a budget-blocked attempt".into());
-                }
-                if a.counts.verification_calls < cfg.verification_budget {
-                    return Err("verification-budget stop without exhausting the verification budget".into());
-                }
-            }
-            "max-depth" => {
-                if max_depth < cfg.max_depth {
-                    return Err("max-depth stop without a node at the depth bound".into());
-                }
-            }
-            "max-total-edits" => {
-                if max_edits < cfg.max_total_edits {
-                    return Err("max-total-edits stop without a node at the edit bound".into());
-                }
-            }
-            "max-depth+max-total-edits" => {
-                if max_depth < cfg.max_depth || max_edits < cfg.max_total_edits {
-                    return Err("combined truncation stop without both bounds reached".into());
-                }
-            }
-            other => return Err(format!("budget_exhausted has unknown stop_reason '{other}'")),
-        },
     }
     Ok(())
 }
@@ -1439,6 +1493,17 @@ fn validate_structure(artifact: &SearchArtifact) -> Result<(), String> {
     }
     if matches!(cfg.strategy, RepairStrategy::Single) && max_depth > 1 {
         return Err("strategy single produced a node deeper than one edit".into());
+    }
+    // Strategy A only expands the root: every patch must start at node 0. This
+    // binds the recorded strategy to the graph the terminal facts are derived
+    // from.
+    if matches!(cfg.strategy, RepairStrategy::Single) {
+        if artifact.nodes.iter().any(|n| n.id != 0 && n.parent != Some(0)) {
+            return Err("strategy single has a node that does not descend from the root".into());
+        }
+        if artifact.attempts.iter().any(|x| x.parent != 0) {
+            return Err("strategy single has an attempt not rooted at node 0".into());
+        }
     }
     if cfg.verification_budget == 0 && (!artifact.nodes.is_empty() || counts.verification_calls != 0)
     {

@@ -526,3 +526,108 @@ fn g_positive_terminal_artifacts_replay() {
         );
     }
 }
+
+fn unfix_contract() -> &'static str {
+    include_str!("repro_bench/preserved_unfixable_contract.json")
+}
+
+fn unfix_cfg(strategy: RepairStrategy, max_depth: usize, max_total_edits: usize) -> SearchConfig {
+    SearchConfig {
+        strategy,
+        candidate_budget: 64,
+        verification_budget: 64,
+        max_depth,
+        max_total_edits,
+    }
+}
+
+fn replay_artifact(v: &serde_json::Value, name: &str) -> i32 {
+    let path = tmp(&format!("{name}.json"));
+    std::fs::write(&path, serde_json::to_string(v).unwrap()).unwrap();
+    Command::new(bin())
+        .args(["replay", path.to_str().unwrap()])
+        .output()
+        .unwrap()
+        .status
+        .code()
+        .unwrap_or(-1)
+}
+
+#[test]
+fn h1_h2_boundary_matrix_artifacts_replay() {
+    let model = "tests/repro_bench/preserved_unfixable.json";
+    // (label, max_depth, max_total_edits)
+    let boundaries: [(&str, usize, usize); 6] = [
+        ("default", 4, 4),
+        ("depth1", 1, 4),
+        ("edits1", 4, 1),
+        ("both1", 1, 1),
+        ("depth0", 0, 4),
+        ("edits0", 4, 0),
+    ];
+    let strategies = [
+        ("a", RepairStrategy::Single),
+        ("b", RepairStrategy::Composite),
+        ("c", RepairStrategy::Diagnostic),
+    ];
+    for (sname, strategy) in strategies {
+        for (blabel, max_depth, max_edits) in boundaries {
+            let cfg = unfix_cfg(strategy, max_depth, max_edits);
+            let v = artifact_value(model, unfix_contract(), &cfg);
+            let name = format!("matrix_{sname}_{blabel}");
+            // Expected terminal category for this strategy/boundary.
+            let (outcome, stop) = match (sname, blabel) {
+                ("a", "default" | "depth1" | "edits1" | "both1") => {
+                    ("no_acceptable_candidate", "no-acceptable-candidate")
+                }
+                ("a", "depth0") => ("budget_exhausted", "max-depth"),
+                ("a", "edits0") => ("budget_exhausted", "max-total-edits"),
+                (_, "default") => ("no_acceptable_candidate", "no-acceptable-candidate"),
+                (_, "depth1" | "both1" | "depth0") => ("budget_exhausted", "max-depth"),
+                (_, "edits1" | "edits0") => ("budget_exhausted", "max-total-edits"),
+                _ => unreachable!(),
+            };
+            assert_eq!(v["outcome"], outcome, "{name}");
+            assert_eq!(v["stop_reason"], stop, "{name}");
+            assert_eq!(replay_artifact(&v, &name), 0, "{name} must replay");
+        }
+    }
+}
+
+#[test]
+fn h2_terminal_flag_tampering_is_rejected() {
+    let model = "tests/repro_bench/preserved_unfixable.json";
+    // 1. Wrong truncation: a real depth truncation erased.
+    let b_depth1 = artifact_value(model, unfix_contract(), &unfix_cfg(RepairStrategy::Composite, 1, 4));
+    assert_eq!(b_depth1["truncation"], "max-depth");
+    let mut wrong_truncation = b_depth1.clone();
+    wrong_truncation["truncation"] = serde_json::Value::Null;
+    replay_expect_fail(&wrong_truncation, "wrong_truncation");
+
+    // 2. Fake truncation: an untruncated record labelled truncated.
+    let b_default = artifact_value(model, unfix_contract(), &unfix_cfg(RepairStrategy::Composite, 4, 4));
+    assert!(b_default["truncation"].is_null());
+    let mut fake_truncation = b_default.clone();
+    fake_truncation["truncation"] = serde_json::json!("max-depth");
+    replay_expect_fail(&fake_truncation, "fake_truncation");
+
+    // 3. Wrong priority: depth and edits both reached, stop reason swapped.
+    let b_both1 = artifact_value(model, unfix_contract(), &unfix_cfg(RepairStrategy::Composite, 1, 1));
+    assert_eq!(b_both1["stop_reason"], "max-depth");
+    assert_eq!(b_both1["truncation"], "max-depth");
+    let mut wrong_priority = b_both1.clone();
+    wrong_priority["stop_reason"] = serde_json::json!("max-total-edits");
+    replay_expect_fail(&wrong_priority, "wrong_priority");
+
+    // 4. Root UNKNOWN with saw_unknown erased.
+    let unknown = artifact_value(
+        "tests/repro_round2/finite_call_loop.json",
+        include_str!("repro_round2/tiny_bounds_contract.json"),
+        &unfix_cfg(RepairStrategy::Diagnostic, 4, 4),
+    );
+    assert_eq!(unknown["outcome"], "analysis_unknown");
+    assert_eq!(unknown["saw_unknown"], true);
+    let mut root_unknown_flag_false = unknown.clone();
+    root_unknown_flag_false["saw_unknown"] = serde_json::json!(false);
+    replay_expect_fail(&root_unknown_flag_false, "root_unknown_flag_false");
+}

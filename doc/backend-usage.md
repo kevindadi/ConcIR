@@ -180,12 +180,18 @@ stop reason, and a reproduce command.
    `budget-blocked` attempt must be an applicable, statically valid, not-yet-
    verified candidate recorded only once the verification budget is spent.
    Verified attempts must account for every node.
-4. **Outcome evidence**: the terminal `outcome`/`stop_reason` must be
-   supported by the recorded facts — `analysis_unknown` needs a `saw_unknown`
-   flag and an UNKNOWN root attempt; `no_acceptable_candidate` must not hide a
-   budget-blocked attempt or a depth/edit truncation; each
-   `budget_exhausted` stop reason must match the exhausted counter; and a
-   budget-blocked attempt may not be relabelled as `solved`.
+4. **Outcome evidence**: the terminal `outcome`/`stop_reason`/`truncation`/
+   `saw_unknown` quadruple is re-derived from the recorded search facts with the
+   same priority the searcher uses (root-unknown, candidate budget,
+   verification budget, depth+edit truncation, depth, edit, UNKNOWN, no
+   acceptable candidate) and compared as a whole, so the fields cannot
+   contradict each other. Truncation is decided by whether an *expandable* node
+   (the root, and every verified FAIL node under B/C — never under A) was
+   stopped by a bound, not by the deepest generated node; strategy A's legal
+   single-step `no_acceptable_candidate` is not treated as truncation.
+   `analysis_unknown` requires a recorded UNKNOWN root/result, and
+   `no_acceptable_candidate` must not conceal a budget-blocked attempt or a
+   depth/edit truncation.
 5. **Accepted result**: require an explicit `accepted_node`; replay
    `patch_chain` from `input_program` (permission check, parent/child
    fingerprints, edit count); require the chain end to equal the accepted
