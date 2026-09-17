@@ -1,10 +1,14 @@
 # REPAIR_LOOP_HANDOFF
 
 Phase: diagnostic-driven composite patch search, exportable artifacts, and a
-development benchmark. This revision addresses the independent review of the
-round-3 working tree (E1–E8). Baseline before this revision: `29ee9ed`,
-208 passed / 4 failed (the 4 DOT snapshots). After: **222 passed / 0 failed**,
-zero warnings.
+development benchmark.
+
+Baselines (corrected):
+- `29ee9ed` — 192 passed / 4 failed (the four DOT snapshots).
+- previous revision of this phase (`bbff35b`) — 208 passed / 0 failed after the
+  DOT goldens were committed; E1–E7 of the export/budget/dedup review fixed.
+- **this revision** — E1–E8 plus the artifact/replay follow-up F1–F4:
+  **225 passed / 0 failed**, zero warnings.
 
 This is a development regression set and a reviewable implementation; it is
 **not** an independent evaluation corpus and makes no formal-proof or
@@ -88,6 +92,63 @@ explicitly. `tests/cli.rs::e8_repair_artifact_round_trips_and_replays` and
 --artifact` writes complete per-case records
 (`e8_bench_writes_complete_records`).
 
+## 2b. Artifact/replay follow-up (F1–F4)
+
+The `bbff35b` review found the replay validated only a subset of the record.
+
+### F1 — final result bound to the real chain (P1)
+`replay_artifact` ignored `artifact.patch_chain` and only re-verified a
+standalone `accepted_program`. It now requires an explicit `accepted_node`,
+replays the `patch_chain` from `input_program` (permission check,
+parent/child fingerprints, edit count), and requires the chain end to equal the
+accepted node, `accepted_program`, and `accepted_report`. Empty chains, bad
+chain bases, unrelated accepted programs, out-of-range accepted nodes, and
+mismatched accepted reports are rejected.
+
+### F2 — permissions and frozen contract re-checked (P1)
+Every rebuilt `incoming` patch and every `patch_chain` step is checked with
+`patch::check_allowed` against the frozen contract. Reports are compared
+normatively (outcome, completeness, model/contract fingerprints, assumptions,
+bounds, property verdicts, diagnostics, unsupported/invalid). Changing
+`allow_lock_reorder` to false or deleting `preserved` while keeping the old
+patches/reports is rejected.
+
+### F3 — all public normative fields validated (P2)
+Before any expensive verification, replay checks: unique sequential node and
+attempt ids; root shape; parent existence and acyclicity; `depth`/`total_edits`
+consistency; `incoming` parent/result fingerprints; attempt `result`/`parent`/
+`patch`/`reused_node`/fingerprint/outcome relationships (rejected attempts are
+never nodes; budget-blocked attempts never carry an outcome); effective bounds
+equal to the frozen contract; derivable counts (proposals, unique programs,
+verification calls, cache hits, states, nodes) equal to `counts`; budget/depth/
+edit coherence; and outcome/root/accepted compatibility. Reports are then
+re-verified and compared normatively.
+
+### F4 — budget-blocked attempts recorded (P2)
+When the verification budget is exhausted after a candidate was generated,
+applied, and statically validated, the attempt is recorded as `budget-blocked`
+with its parent, patch, and result fingerprint but **no** outcome or node, so
+`proposals == attempts.len()` and no verification result is fabricated.
+
+### Evidence
+`tests/cli.rs`:
+- `f1_f3_single_field_tampering_is_rejected` mutates exactly one field at a time
+  (empty chain, bad chain hash, unrelated accepted resource, bad accepted node,
+  bad accepted report, bad chain result, `allow_lock_reorder=false`,
+  deleted `preserved`, bad attempt parent, false counts, false effective bounds,
+  false node completeness, emptied root properties, bad incoming result hash)
+  and requires a non-zero `replay` exit for each.
+- `f4_budget_blocked_attempt_is_recorded_and_replays` checks the recorded
+  attempt and that the artifact replays.
+- `f_positive_artifacts_replay` replays clean artifacts with reused, denied, and
+  budget-blocked attempts and the non-success terminal outcomes
+  (`unknown`, `budget_zero`, candidate-budget).
+
+Version rule: the producer's binary fingerprint is an identifier and need not
+match the replaying binary; the schema version must, and every normative field
+is compared against a fresh verification. This is internal-consistency
+checking, not cryptographic signing.
+
 ## 3. Architecture summary
 
 - `src/repair/search.rs`: the three strategies (A single, B composite, C
@@ -147,14 +208,19 @@ patch base hash and a parent reference and asserts explicit failure.
 
 ```bash
 INSTA_UPDATE=no cargo test --offline --all-targets --no-fail-fast
-# 222 passed / 0 failed
+# 225 passed / 0 failed
 
 cargo test --test ast_roundtrip      # 2 passed
 cargo test --test repair_search      # 16 passed
 cargo test --test benchmark          # 4 passed
-cargo test --test cli                # 4 passed
+cargo test --test cli                # 7 passed
 cargo test --test dot_export         # 19 passed
 ```
+
+Benchmark B/C costs are unchanged by this revision: `two_cycles` B is 7
+verifications (1 cache hit) and C is 6; `preserved_unfixable` is 4
+verifications (5 cache hits). The F4 change only adds an attempt record when
+the verification budget is exhausted; it does not alter search semantics.
 
 No warnings. No unrelated build artifacts are committed.
 

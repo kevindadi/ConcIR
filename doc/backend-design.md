@@ -670,11 +670,19 @@ run produces a self-contained `SearchArtifact` (schema
 `concir-repair-artifact-v1`) with the input program, frozen contract, effective
 config and bounds, source identity (crate version and a binary fingerprint),
 all nodes/attempts and their relationships, full verification reports, the
-patch chain, the accepted program, counts, stop reason, and a reproduce
-command. `replay_artifact` reads the artifact, re-applies every incoming patch
-to its parent, validates fingerprints, and re-verifies the accepted program;
-broken parent references, patch bases, or input fingerprints are explicit
-errors. Exhausting a strategy or budget only means "not found under this
+patch chain, the accepted node id, the accepted program, counts, stop reason,
+and a reproduce command. `replay_artifact` validates the record: structure
+(unique sequential ids, parent existence/acyclicity, depth/edit consistency,
+attempt relationships, effective bounds equal to the frozen contract, derivable
+counts, budget coherence), then rebuilds every node by applying its incoming
+patch with the frozen contract's permission check and compares the **normative
+report** (outcome, completeness, model/contract fingerprints, assumptions,
+bounds, property verdicts, diagnostics, unsupported/invalid sets), then replays
+the accepted `patch_chain` from the input and requires the chain end to equal
+the accepted node, `accepted_program`, and `accepted_report`, and finally checks
+outcome compatibility. The producer's binary fingerprint is an identifier, not
+a required match; the schema version is. Inconsistencies are explicit errors.
+Exhausting a strategy or budget only means "not found under this
 strategy/budget"; no repair-nonexistence or global-optimality claim is made.
 The development benchmark lives in `src/repair/benchmark.rs` and is exposed by
 the `bench` CLI subcommand; it is a development regression set, not an

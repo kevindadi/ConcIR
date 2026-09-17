@@ -149,10 +149,42 @@ verification calls, and cache hits separately.
 contains the input program, frozen contract, effective config and bounds, the
 source identity (crate version plus a binary fingerprint), every node and
 attempt with parent/patch relationships and full verification reports, the
-patch chain, the accepted program and report, counts, the stop reason, and a
-reproduce command. `replay` re-applies each patch to its parent, validates
-fingerprints and the input, and re-verifies the accepted program; a broken
-parent, patch base, or input fingerprint fails explicitly.
+patch chain, the accepted node id, the accepted program and report, counts, the
+stop reason, and a reproduce command.
+
+`replay <artifact.json>` validates the record in this order:
+
+1. **Structure** (before any expensive work): unique sequential node/attempt
+   ids; root shape; parents exist and are earlier (no cycles); `depth` and
+   `total_edits` match the incoming patch; attempt `result`/`parent`/`patch`/
+   `reused_node`/fingerprint/outcome relationships; `effective_config.bounds`
+   equals the frozen contract's bounds; the derivable counts (proposals =
+   attempts; unique programs = verification calls = nodes; cache hits = reused
+   attempts; states = sum of node states) match `counts`; budget/depth/edit
+   counters are coherent with the nodes.
+2. **Rebuild**: re-apply every `node.incoming` to its parent with the frozen
+   contract's permission check, and compare the rebuilt fingerprints and the
+   full normative report (outcome, completeness, model/contract fingerprints,
+   assumptions, bounds, property verdicts, diagnostics, unsupported/invalid
+   sets).
+3. **Accepted result**: require an explicit `accepted_node`; replay
+   `patch_chain` from `input_program` (permission check, parent/child
+   fingerprints, edit count); require the chain end to equal the accepted
+   node, `accepted_program`, and `accepted_report`; re-verify the accepted
+   program and compare the normative report.
+4. **Outcome compatibility**: `repaired` requires the accepted result above;
+   `already_satisfied` requires one complete-PASS root and no accepted result;
+   `invalid`/`unsupported` require a matching root; `invalid_config` requires
+   zero nodes; `unknown`/`no_acceptable_candidate`/`budget_exhausted` require
+   no accepted result but must retain the root report.
+
+Any inconsistency is an explicit non-zero failure with a locatable reason.
+Version rule: the artifact's `source.binary_fingerprint` identifies the
+producer and is **not** required to equal the current binary (the schema
+version is), but every normative field listed above is compared; a report that
+does not match the re-verification is rejected. This is internal-consistency
+checking, not cryptographic signing: a party that consistently rewrites *all*
+evidence is out of scope.
 
 The search first verifies the original program: a complete `PASS` returns
 `already_satisfied` and produces no patch; `invalid`/`unsupported`/`unknown`

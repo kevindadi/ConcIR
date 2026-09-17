@@ -137,6 +137,8 @@ pub struct SearchArtifact {
     pub nodes: Vec<NodeReport>,
     pub attempts: Vec<AttemptReport>,
     pub patch_chain: Vec<AppliedEdit>,
+    /// The id of the accepted node (final chain node), if any.
+    pub accepted_node: Option<usize>,
     pub accepted_program: Option<Program>,
     pub accepted_report: Option<VerificationReport>,
     pub outcome: RepairOutcome,
@@ -173,6 +175,8 @@ pub struct SearchReport {
     pub nodes: Vec<NodeReport>,
     pub attempts: Vec<AttemptReport>,
     pub patch_chain: Vec<AppliedEdit>,
+    /// The id of the accepted node (final chain node), if any.
+    pub accepted_node: Option<usize>,
     #[serde(skip)]
     pub accepted_program: Option<Program>,
     #[serde(skip)]
@@ -202,6 +206,7 @@ impl SearchReport {
             nodes: self.nodes.clone(),
             attempts: self.attempts.clone(),
             patch_chain: self.patch_chain.clone(),
+            accepted_node: self.accepted_node,
             accepted_program: self.accepted_program.clone(),
             accepted_report: self.accepted_report.clone(),
             outcome: self.outcome,
@@ -323,6 +328,7 @@ fn empty_report(
         nodes: Vec::new(),
         attempts: Vec::new(),
         patch_chain: Vec::new(),
+        accepted_node: None,
         accepted_program: None,
         accepted_report: None,
     }
@@ -571,7 +577,7 @@ pub fn run_search(program: &Program, spec: &ContractSpec, config: &SearchConfig)
                         let chain = build_chain(&nodes, node);
                         let accepted_report = nodes[node].report.clone();
                         let accepted_program = nodes[node].program.clone();
-                        return finish(
+                        let mut report = finish(
                             config,
                             bounds,
                             RepairOutcome::Repaired,
@@ -589,6 +595,8 @@ pub fn run_search(program: &Program, spec: &ContractSpec, config: &SearchConfig)
                             Some(accepted_program),
                             Some(accepted_report),
                         );
+                        report.accepted_node = Some(node);
+                        return report;
                     }
                     if nodes[node].report.outcome == Outcome::Fail {
                         // Strategy A only expands the root (single edit).
@@ -617,8 +625,21 @@ pub fn run_search(program: &Program, spec: &ContractSpec, config: &SearchConfig)
                         reason: Some(reason),
                     });
                 }
-                AttemptFlow::Budget => {
+                AttemptFlow::Budget { fingerprint } => {
                     verification_budget_hit = true;
+                    attempts.push(AttemptReport {
+                        id: attempt_id,
+                        parent: nid,
+                        patch: Some(candidate.clone()),
+                        result: "budget-blocked".into(),
+                        reused_node: None,
+                        program_fingerprint: Some(fingerprint),
+                        outcome: None,
+                        reason: Some(
+                            "verification budget exhausted before this candidate was verified"
+                                .into(),
+                        ),
+                    });
                     break 'outer;
                 }
             }
@@ -696,6 +717,7 @@ fn finish(
         nodes: node_reports,
         attempts,
         patch_chain,
+        accepted_node: None,
         accepted_program,
         accepted_report,
     }
@@ -705,7 +727,10 @@ enum AttemptFlow {
     Reused { node: usize, outcome: Outcome },
     Verified { node: usize, accepted: bool },
     Rejected { reason: String },
-    Budget,
+    /// The candidate was generated, applied, and statically validated, but the
+    /// verification budget was exhausted before it could be verified. No
+    /// outcome or node is fabricated.
+    Budget { fingerprint: String },
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -751,7 +776,9 @@ fn attempt_outcome(
     }
     if *verifications >= config.verification_budget {
         *verification_budget_hit = true;
-        return AttemptFlow::Budget;
+        return AttemptFlow::Budget {
+            fingerprint: child_fp,
+        };
     }
     let child_report = verify_program(&patched, spec, EngineKind::Petri);
     *verifications += 1;
@@ -884,26 +911,339 @@ fn build_chain(nodes: &[Node], target: usize) -> Vec<AppliedEdit> {
 /// parent, validate fingerprints, and re-verify the final program. Returns an
 /// error string on any inconsistency (broken parent, bad patch base, bad input
 /// fingerprint), never a silent success.
-pub fn replay_artifact(artifact_json: &str) -> Result<ReplayResult, String> {
-    let artifact: SearchArtifact =
-        serde_json::from_str(artifact_json).map_err(|e| format!("artifact parse: {e}"))?;
+/// Compare the normative fields of two verification reports. The producing
+/// binary may differ, so `source.binary_fingerprint` is not compared; every
+/// field that determines the verdict is.
+fn reports_match(a: &VerificationReport, b: &VerificationReport, what: &str) -> Result<(), String> {
+    let prop = |r: &VerificationReport| -> Vec<(String, Outcome)> {
+        r.properties.iter().map(|p| (p.id.clone(), p.outcome)).collect()
+    };
+    let diag = |r: &VerificationReport| -> Vec<(String, Outcome)> {
+        r.diagnostics.iter().map(|d| (d.property.clone(), d.outcome)).collect()
+    };
+    if a.outcome != b.outcome {
+        return Err(format!("{what}: outcome {:?} != recorded {:?}", a.outcome, b.outcome));
+    }
+    if a.complete != b.complete {
+        return Err(format!("{what}: complete {} != recorded {}", a.complete, b.complete));
+    }
+    if a.model_fingerprint != b.model_fingerprint {
+        return Err(format!("{what}: model fingerprint mismatch"));
+    }
+    if a.contract_fingerprint != b.contract_fingerprint {
+        return Err(format!("{what}: contract fingerprint mismatch"));
+    }
+    if a.assumptions != b.assumptions {
+        return Err(format!("{what}: assumptions mismatch"));
+    }
+    if a.bounds != b.bounds {
+        return Err(format!("{what}: analysis bounds mismatch"));
+    }
+    if prop(a) != prop(b) {
+        return Err(format!(
+            "{what}: property verdicts differ: {:?} != recorded {:?}",
+            prop(a),
+            prop(b)
+        ));
+    }
+    if diag(a) != diag(b) {
+        return Err(format!("{what}: diagnostic summaries differ"));
+    }
+    let codes = |v: &[crate::sem::outcome::Unsupported]| -> Vec<String> {
+        v.iter().map(|u| u.construct.clone()).collect()
+    };
+    if codes(&a.unsupported) != codes(&b.unsupported) {
+        return Err(format!("{what}: unsupported construct set differs"));
+    }
+    let icodes = |v: &[crate::sem::outcome::Invalid]| -> Vec<String> {
+        v.iter().map(|i| i.code.clone()).collect()
+    };
+    if icodes(&a.invalid) != icodes(&b.invalid) {
+        return Err(format!("{what}: invalid set differs"));
+    }
+    if a.boundary_events.len() != b.boundary_events.len() {
+        return Err(format!("{what}: boundary event count differs"));
+    }
+    Ok(())
+}
+
+fn patch_from_edit(id: String, edit: &AppliedEdit) -> CirPatch {
+    CirPatch {
+        id,
+        module: edit.module.clone(),
+        function: edit.function.clone(),
+        original_hash: edit.original_function_hash.clone(),
+        changes: edit.changes.clone(),
+        provenance: edit.provenance.clone(),
+    }
+}
+
+/// Structural validation, done before any expensive verification.
+fn validate_structure(artifact: &SearchArtifact) -> Result<(), String> {
     if artifact.schema_version != "concir-repair-artifact-v1" {
         return Err(format!("unknown artifact schema '{}'", artifact.schema_version));
     }
-    // Verify the input against the frozen contract.
-    let input_report = verify_program(&artifact.input_program, &artifact.frozen_contract, EngineKind::Petri);
-    if program_fingerprint(&artifact.input_program)
-        != artifact
-            .nodes
-            .first()
-            .map(|n| n.program_fingerprint.clone())
-            .unwrap_or_default()
-    {
-        return Err("root node fingerprint does not match input program".into());
+    if artifact.source.crate_version.is_empty() || artifact.source.binary_fingerprint.is_empty() {
+        return Err("artifact is missing source identity".into());
     }
-    // Rebuild nodes in id order (parents precede children).
+    // Nodes.
+    for (i, node) in artifact.nodes.iter().enumerate() {
+        if node.id != i {
+            return Err(format!("node at position {i} has non-sequential id {}", node.id));
+        }
+        match (i, node.parent) {
+            (0, None) => {
+                if node.depth != 0 || node.total_edits != 0 || node.incoming.is_some() {
+                    return Err("root node must have depth 0, 0 edits, and no incoming patch".into());
+                }
+            }
+            (0, Some(_)) => return Err("root node must not have a parent".into()),
+            (_, None) => return Err(format!("node {i} has no parent but is not the root")),
+            (_, Some(p)) => {
+                if p >= i {
+                    return Err(format!("node {i} parent {p} is not an earlier node (cycle)"));
+                }
+                let parent = &artifact.nodes[p];
+                let Some(edit) = &node.incoming else {
+                    return Err(format!("node {i} has a parent but no incoming patch"));
+                };
+                if node.depth != parent.depth + 1 {
+                    return Err(format!("node {i} depth {} != parent depth + 1", node.depth));
+                }
+                if node.total_edits != parent.total_edits + edit.changes.len() {
+                    return Err(format!("node {i} total_edits is inconsistent with its edit count"));
+                }
+            }
+        }
+    }
+    // Effective bounds must equal the frozen contract's bounds.
+    let expected_bounds: AnalysisBounds = (&artifact.frozen_contract.bounds).into();
+    if artifact.effective_config.bounds != expected_bounds {
+        return Err(format!(
+            "effective_config.bounds {:?} != frozen contract bounds {:?}",
+            artifact.effective_config.bounds, expected_bounds
+        ));
+    }
+    // Attempts.
+    for (i, a) in artifact.attempts.iter().enumerate() {
+        if a.id != i {
+            return Err(format!("attempt at position {i} has non-sequential id {}", a.id));
+        }
+        if a.parent >= artifact.nodes.len() {
+            return Err(format!("attempt {i} references missing parent node {}", a.parent));
+        }
+        if a.patch.is_none() {
+            return Err(format!("attempt {i} has no patch"));
+        }
+        match a.result.as_str() {
+            "verified" => {
+                let fp = a
+                    .program_fingerprint
+                    .as_ref()
+                    .ok_or_else(|| format!("verified attempt {i} has no program fingerprint"))?;
+                let node = artifact
+                    .nodes
+                    .iter()
+                    .find(|n| &n.program_fingerprint == fp)
+                    .ok_or_else(|| format!("verified attempt {i} references no node"))?;
+                if node.parent != Some(a.parent) {
+                    return Err(format!(
+                        "verified attempt {i} parent {} != node {} parent {:?}",
+                        a.parent, node.id, node.parent
+                    ));
+                }
+                if a.outcome != Some(node.report.outcome) {
+                    return Err(format!("verified attempt {i} outcome != node outcome"));
+                }
+                if a.reused_node.is_some() {
+                    return Err(format!("verified attempt {i} must not set reused_node"));
+                }
+            }
+            "reused" => {
+                let reused = a
+                    .reused_node
+                    .ok_or_else(|| format!("reused attempt {i} has no reused_node"))?;
+                let node = artifact
+                    .nodes
+                    .get(reused)
+                    .ok_or_else(|| format!("reused attempt {i} references missing node {reused}"))?;
+                if a.program_fingerprint.as_deref() != Some(node.program_fingerprint.as_str()) {
+                    return Err(format!("reused attempt {i} fingerprint != reused node fingerprint"));
+                }
+                if a.outcome != Some(node.report.outcome) {
+                    return Err(format!("reused attempt {i} outcome != reused node outcome"));
+                }
+            }
+            "budget-blocked" => {
+                if a.program_fingerprint.is_none() {
+                    return Err(format!("budget-blocked attempt {i} has no program fingerprint"));
+                }
+                if a.reused_node.is_some() || a.outcome.is_some() {
+                    return Err(format!("budget-blocked attempt {i} must have no node or outcome"));
+                }
+            }
+            "denied" | "apply-error" | "static-invalid" => {
+                if a.program_fingerprint.is_some() || a.reused_node.is_some() || a.outcome.is_some() {
+                    return Err(format!(
+                        "rejected attempt {i} must have no fingerprint, node, or outcome"
+                    ));
+                }
+            }
+            other => return Err(format!("attempt {i} has unknown result '{other}'")),
+        }
+    }
+    // Derivable counts.
+    let proposals = artifact.attempts.len();
+    let unique = artifact.nodes.len();
+    let cache_hits = artifact
+        .attempts
+        .iter()
+        .filter(|a| a.result == "reused")
+        .count();
+    let states: usize = artifact.nodes.iter().map(|n| n.report.states_explored).sum();
+    let counts = &artifact.counts;
+    if counts.proposals != proposals {
+        return Err(format!("counts.proposals {} != attempts {}", counts.proposals, proposals));
+    }
+    if counts.unique_candidate_programs != unique {
+        return Err(format!(
+            "counts.unique_candidate_programs {} != nodes {}",
+            counts.unique_candidate_programs, unique
+        ));
+    }
+    if counts.verification_calls != unique {
+        return Err(format!(
+            "counts.verification_calls {} != verified nodes {}",
+            counts.verification_calls, unique
+        ));
+    }
+    if counts.cache_hits != cache_hits {
+        return Err(format!("counts.cache_hits {} != reused attempts {}", counts.cache_hits, cache_hits));
+    }
+    if counts.states_explored != states {
+        return Err(format!(
+            "counts.states_explored {} != sum of node states {}",
+            counts.states_explored, states
+        ));
+    }
+    if counts.nodes != unique {
+        return Err(format!("counts.nodes {} != nodes {}", counts.nodes, unique));
+    }
+    // Budget coherence.
+    let cfg = &artifact.effective_config;
+    if cfg.candidate_budget < proposals {
+        return Err("candidate_budget is smaller than the recorded proposals".into());
+    }
+    if cfg.verification_budget < counts.verification_calls {
+        return Err("verification_budget is smaller than the recorded verification calls".into());
+    }
+    let max_depth = artifact.nodes.iter().map(|n| n.depth).max().unwrap_or(0);
+    let max_edits = artifact.nodes.iter().map(|n| n.total_edits).max().unwrap_or(0);
+    if max_depth > cfg.max_depth {
+        return Err("a node is deeper than max_depth".into());
+    }
+    if max_edits > cfg.max_total_edits {
+        return Err("a node has more edits than max_total_edits".into());
+    }
+    if matches!(cfg.strategy, RepairStrategy::Single) && max_depth > 1 {
+        return Err("strategy single produced a node deeper than one edit".into());
+    }
+    if cfg.verification_budget == 0 && (!artifact.nodes.is_empty() || counts.verification_calls != 0)
+    {
+        return Err("verification_budget=0 must have no verified nodes".into());
+    }
+    // Outcome / accepted consistency.
+    match artifact.outcome {
+        RepairOutcome::Repaired => {
+            if artifact.accepted_program.is_none()
+                || artifact.accepted_report.is_none()
+                || artifact.accepted_node.is_none()
+                || artifact.patch_chain.is_empty()
+            {
+                return Err("repaired artifact must have an accepted node, chain, program, and report".into());
+            }
+        }
+        RepairOutcome::AlreadySatisfied => {
+            if artifact.nodes.len() != 1
+                || artifact.nodes[0].report.outcome != Outcome::Pass
+                || !artifact.nodes[0].report.complete
+                || !artifact.patch_chain.is_empty()
+                || artifact.accepted_program.is_some()
+            {
+                return Err("already_satisfied must have one PASS root and no accepted result".into());
+            }
+        }
+        RepairOutcome::Invalid | RepairOutcome::Unsupported => {
+            if artifact.nodes.len() != 1
+                || artifact.accepted_program.is_some()
+                || !artifact.patch_chain.is_empty()
+            {
+                return Err(format!(
+                    "{:?} must have a single root report and no accepted result",
+                    artifact.outcome
+                ));
+            }
+            let expected = if artifact.outcome == RepairOutcome::Invalid {
+                Outcome::Invalid
+            } else {
+                Outcome::Unsupported
+            };
+            if artifact.nodes[0].report.outcome != expected {
+                return Err("root report outcome is incompatible with the artifact outcome".into());
+            }
+        }
+        RepairOutcome::InvalidConfig => {
+            if !artifact.nodes.is_empty() || counts.verification_calls != 0 {
+                return Err("invalid_config must have no nodes or verifications".into());
+            }
+        }
+        RepairOutcome::AnalysisUnknown | RepairOutcome::NoAcceptableCandidate
+        | RepairOutcome::BudgetExhausted => {
+            if artifact.accepted_program.is_some() || !artifact.patch_chain.is_empty() {
+                return Err(format!("{:?} must not carry an accepted result", artifact.outcome));
+            }
+            if artifact.nodes.is_empty() {
+                return Err(format!("{:?} must retain the root report", artifact.outcome));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Replay an artifact: validate structure, rebuild every node by applying its
+/// incoming patch (with the frozen contract's permissions), compare the
+/// normative reports, replay the accepted patch chain, and re-verify the
+/// accepted program. Any inconsistency is an explicit error.
+pub fn replay_artifact(artifact_json: &str) -> Result<ReplayResult, String> {
+    let artifact: SearchArtifact =
+        serde_json::from_str(artifact_json).map_err(|e| format!("artifact parse: {e}"))?;
+    validate_structure(&artifact)?;
+
+    // Re-verify the input and compare it to the root node's report.
+    let input_report =
+        verify_program(&artifact.input_program, &artifact.frozen_contract, EngineKind::Petri);
+    let root_fp = program_fingerprint(&artifact.input_program);
+    if artifact.nodes.is_empty() {
+        // InvalidConfig: nothing else to check.
+        if artifact.outcome != RepairOutcome::InvalidConfig {
+            return Err("artifact has no nodes but is not invalid_config".into());
+        }
+        return Ok(ReplayResult {
+            nodes: 0,
+            input_outcome: input_report.outcome,
+            accepted_ok: None,
+            accepted_node: None,
+            chain_len: 0,
+            outcome: artifact.outcome,
+        });
+    }
+    if artifact.nodes[0].program_fingerprint != root_fp {
+        return Err("root node fingerprint does not match the input program".into());
+    }
+    reports_match(&input_report, &artifact.nodes[0].report, "root node")?;
+
+    // Rebuild nodes in id order, re-checking permissions and fingerprints.
     let mut rebuilt: BTreeMap<usize, Program> = BTreeMap::new();
-    let mut reports: BTreeMap<usize, VerificationReport> = BTreeMap::new();
     for node in &artifact.nodes {
         let program = match node.parent {
             None => artifact.input_program.clone(),
@@ -912,63 +1252,115 @@ pub fn replay_artifact(artifact_json: &str) -> Result<ReplayResult, String> {
                     .get(&p)
                     .cloned()
                     .ok_or_else(|| format!("node {} references missing parent {}", node.id, p))?;
-                let Some(edit) = &node.incoming else {
-                    return Err(format!("node {} has a parent but no incoming patch", node.id));
-                };
-                let patch = CirPatch {
-                    id: format!("replay:{}", node.id),
-                    module: edit.module.clone(),
-                    function: edit.function.clone(),
-                    original_hash: edit.original_function_hash.clone(),
-                    changes: edit.changes.clone(),
-                    provenance: edit.provenance.clone(),
-                };
-                let (patched, _) = patch::apply(&base, &patch).map_err(|e| {
-                    format!("node {}: patch does not apply to its parent: {e}", node.id)
-                })?;
-                if program_fingerprint(&patched) != node.program_fingerprint {
-                    return Err(format!(
-                        "node {}: rebuilt fingerprint does not match the recorded program",
-                        node.id
-                    ));
+                let edit = node
+                    .incoming
+                    .as_ref()
+                    .ok_or_else(|| format!("node {} has a parent but no incoming patch", node.id))?;
+                let patch = patch_from_edit(format!("replay:node:{}", node.id), edit);
+                patch::check_allowed(&artifact.frozen_contract.allowed_scope, &patch)
+                    .map_err(|e| format!("node {}: patch is not allowed by the frozen contract: {e}", node.id))?;
+                let base_fp = program_fingerprint(&base);
+                if edit.parent_fingerprint != base_fp {
+                    return Err(format!("node {}: incoming parent fingerprint mismatch", node.id));
                 }
-                if edit.parent_fingerprint != program_fingerprint(&base) {
-                    return Err(format!(
-                        "node {}: parent fingerprint mismatch in incoming patch",
-                        node.id
-                    ));
+                let (patched, _) = patch::apply(&base, &patch)
+                    .map_err(|e| format!("node {}: patch does not apply to its parent: {e}", node.id))?;
+                if program_fingerprint(&patched) != node.program_fingerprint {
+                    return Err(format!("node {}: rebuilt fingerprint mismatch", node.id));
+                }
+                if edit.program_fingerprint != node.program_fingerprint {
+                    return Err(format!("node {}: incoming result fingerprint mismatch", node.id));
                 }
                 patched
             }
         };
         let report = verify_program(&program, &artifact.frozen_contract, EngineKind::Petri);
-        if report.outcome != node.report.outcome {
+        reports_match(&report, &node.report, &format!("node {}", node.id))?;
+        rebuilt.insert(node.id, program);
+    }
+
+    // Replay the accepted patch chain from the root.
+    let mut accepted_ok = None;
+    let mut accepted_node = None;
+    let mut chain_len = artifact.patch_chain.len();
+    if artifact.outcome == RepairOutcome::Repaired {
+        let node_id = artifact
+            .accepted_node
+            .ok_or_else(|| "repaired artifact has no accepted_node".to_string())?;
+        let node = artifact
+            .nodes
+            .get(node_id)
+            .ok_or_else(|| format!("accepted_node {node_id} is out of range"))?;
+        if node.depth != artifact.patch_chain.len() {
             return Err(format!(
-                "node {}: rebuilt outcome {:?} != recorded {:?}",
-                node.id, report.outcome, node.report.outcome
+                "accepted node depth {} != patch chain length {}",
+                node.depth,
+                artifact.patch_chain.len()
             ));
         }
-        rebuilt.insert(node.id, program);
-        reports.insert(node.id, report);
-    }
-    // Re-verify the accepted program and compare the outcome.
-    let mut accepted_ok = None;
-    if let Some(accepted) = &artifact.accepted_program {
+        let mut program = artifact.input_program.clone();
+        let mut running_fp = program_fingerprint(&program);
+        let mut running_edits = 0usize;
+        for (i, edit) in artifact.patch_chain.iter().enumerate() {
+            let patch = patch_from_edit(format!("replay:chain:{i}"), edit);
+            patch::check_allowed(&artifact.frozen_contract.allowed_scope, &patch)
+                .map_err(|e| format!("patch_chain[{i}] is not allowed by the frozen contract: {e}"))?;
+            if edit.parent_fingerprint != running_fp {
+                return Err(format!("patch_chain[{i}] parent fingerprint mismatch"));
+            }
+            let (patched, _) = patch::apply(&program, &patch)
+                .map_err(|e| format!("patch_chain[{i}] does not apply: {e}"))?;
+            let fp = program_fingerprint(&patched);
+            if fp != edit.program_fingerprint {
+                return Err(format!("patch_chain[{i}] result fingerprint mismatch"));
+            }
+            running_edits += edit.changes.len();
+            program = patched;
+            running_fp = fp;
+        }
+        if running_edits != node.total_edits {
+            return Err(format!(
+                "patch chain edits {running_edits} != accepted node total_edits {}",
+                node.total_edits
+            ));
+        }
+        if running_fp != node.program_fingerprint {
+            return Err("patch chain end does not match the accepted node fingerprint".into());
+        }
+        let accepted = artifact
+            .accepted_program
+            .as_ref()
+            .ok_or_else(|| "repaired artifact has no accepted_program".to_string())?;
+        if program_fingerprint(accepted) != running_fp {
+            return Err("patch chain result does not match accepted_program".into());
+        }
+        // Re-verify the accepted program and compare to both reports.
         let re = verify_program(accepted, &artifact.frozen_contract, EngineKind::Petri);
-        accepted_ok = Some(re.outcome == Outcome::Pass && re.complete);
-        if accepted_ok != Some(true) {
+        let accepted_report = artifact
+            .accepted_report
+            .as_ref()
+            .ok_or_else(|| "repaired artifact has no accepted_report".to_string())?;
+        reports_match(&re, accepted_report, "accepted report")?;
+        reports_match(&re, &node.report, "accepted node report")?;
+        if !(re.outcome == Outcome::Pass && re.complete) {
             return Err(format!(
                 "accepted program does not re-verify to a complete PASS (got {:?})",
                 re.outcome
             ));
         }
-    } else if artifact.outcome == RepairOutcome::Repaired {
-        return Err("artifact reports repaired but has no accepted program".into());
+        accepted_ok = Some(true);
+        accepted_node = Some(node_id);
+        chain_len = artifact.patch_chain.len();
+    } else if artifact.accepted_program.is_some() || artifact.accepted_report.is_some() {
+        return Err("non-repaired artifact must not carry an accepted program or report".into());
     }
+
     Ok(ReplayResult {
         nodes: rebuilt.len(),
         input_outcome: input_report.outcome,
         accepted_ok,
+        accepted_node,
+        chain_len,
         outcome: artifact.outcome,
     })
 }
@@ -978,5 +1370,7 @@ pub struct ReplayResult {
     pub nodes: usize,
     pub input_outcome: Outcome,
     pub accepted_ok: Option<bool>,
+    pub accepted_node: Option<usize>,
+    pub chain_len: usize,
     pub outcome: RepairOutcome,
 }

@@ -147,3 +147,187 @@ fn e8_bench_writes_complete_records() {
         assert!(r["artifact"]["source"]["binary_fingerprint"].is_string());
     }
 }
+
+use concir::ast::Program;
+use concir::explore::contract::ContractSpec;
+use concir::repair::search::{run_search, RepairStrategy, SearchConfig};
+
+fn write_artifact(name: &str, cfg: &SearchConfig, contract_json: &str) -> (PathBuf, serde_json::Value) {
+    let p: Program = serde_json::from_str(&std::fs::read_to_string("tests/repro_bench/two_cycles.json").unwrap()).unwrap();
+    let spec: ContractSpec = serde_json::from_str(contract_json).unwrap();
+    let report = run_search(&p, &spec, cfg);
+    let artifact = report.artifact_with_config(&p, &spec, cfg);
+    let v = serde_json::to_value(&artifact).unwrap();
+    let path = tmp(name);
+    std::fs::write(&path, serde_json::to_string(&v).unwrap()).unwrap();
+    (path, v)
+}
+
+const TWO_CYCLES_CONTRACT: &str =
+    include_str!("repro_bench/two_cycles_contract.json");
+
+fn replay_expect_fail(v: &serde_json::Value, name: &str) {
+    let path = tmp(&format!("{name}.json"));
+    std::fs::write(&path, serde_json::to_string(v).unwrap()).unwrap();
+    let out = Command::new(bin())
+        .args(["replay", path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let code = out.status.code().unwrap_or(-1);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_ne!(code, 0, "{name}: tamper was accepted");
+    assert!(err.contains("replay failed"), "{name}: stderr '{err}'");
+}
+
+#[test]
+fn f1_f3_single_field_tampering_is_rejected() {
+    let cfg = SearchConfig {
+        strategy: RepairStrategy::Diagnostic,
+        ..SearchConfig::default()
+    };
+    let (_path, clean) = write_artifact("clean", &cfg, TWO_CYCLES_CONTRACT);
+    // Sanity: the clean artifact replays.
+    let clean_path = tmp("clean-replay.json");
+    std::fs::write(&clean_path, serde_json::to_string(&clean).unwrap()).unwrap();
+    assert_eq!(
+        Command::new(bin())
+            .args(["replay", clean_path.to_str().unwrap()])
+            .output()
+            .unwrap()
+            .status
+            .code()
+            .unwrap_or(-1),
+        0
+    );
+
+    // F1: empty patch chain.
+    let mut v = clean.clone();
+    v["patch_chain"] = serde_json::json!([]);
+    replay_expect_fail(&v, "empty_chain");
+
+    // F1: bad chain function base.
+    let mut v = clean.clone();
+    v["patch_chain"][0]["original_function_hash"] = serde_json::json!("bad-hash");
+    replay_expect_fail(&v, "bad_chain_hash");
+
+    // F1: unrelated resource added to accepted_program only.
+    let mut v = clean.clone();
+    let res = serde_json::json!({"name":"extra","kind":"sync","type":"Mutex","mode":"Sync"});
+    v["accepted_program"]["modules"][0]["resources"]
+        .as_array_mut()
+        .unwrap()
+        .push(res);
+    replay_expect_fail(&v, "unrelated_accepted");
+
+    // F1: accepted_node out of range.
+    let mut v = clean.clone();
+    v["accepted_node"] = serde_json::json!(999);
+    replay_expect_fail(&v, "bad_accepted_node");
+
+    // F1: accepted_report fingerprint mismatch.
+    let mut v = clean.clone();
+    v["accepted_report"]["model_fingerprint"] = serde_json::json!("bad-model");
+    replay_expect_fail(&v, "bad_accepted_report");
+
+    // F1: chain end fingerprint mismatch.
+    let mut v = clean.clone();
+    let last = v["patch_chain"].as_array().unwrap().len() - 1;
+    v["patch_chain"][last]["program_fingerprint"] = serde_json::json!("bad-fp");
+    replay_expect_fail(&v, "bad_chain_result");
+
+    // F2: permission disallowed by the frozen contract.
+    let mut v = clean.clone();
+    v["frozen_contract"]["allowed_scope"]["allow_lock_reorder"] = serde_json::json!(false);
+    replay_expect_fail(&v, "forbidden_scope");
+
+    // F2: preserved removed from the frozen contract.
+    let mut v = clean.clone();
+    v["frozen_contract"]["preserved"] = serde_json::json!([]);
+    replay_expect_fail(&v, "deleted_preserved");
+
+    // F3: attempt parent out of range.
+    let mut v = clean.clone();
+    v["attempts"][0]["parent"] = serde_json::json!(99999);
+    replay_expect_fail(&v, "bad_attempt_parent");
+
+    // F3: false counts.
+    let mut v = clean.clone();
+    v["counts"]["verification_calls"] = serde_json::json!(0);
+    replay_expect_fail(&v, "false_counts");
+
+    // F3: false effective bounds.
+    let mut v = clean.clone();
+    v["effective_config"]["bounds"]["max_states"] = serde_json::json!(1);
+    replay_expect_fail(&v, "false_effective_bounds");
+
+    // F3: false node completeness.
+    let mut v = clean.clone();
+    let last = v["nodes"].as_array().unwrap().len() - 1;
+    v["nodes"][last]["report"]["complete"] = serde_json::json!(false);
+    replay_expect_fail(&v, "false_node_complete");
+
+    // F3: emptied root properties.
+    let mut v = clean.clone();
+    v["nodes"][0]["report"]["properties"] = serde_json::json!([]);
+    replay_expect_fail(&v, "false_root_properties");
+
+    // F3: incoming result fingerprint mismatch.
+    let mut v = clean.clone();
+    v["nodes"][1]["incoming"]["program_fingerprint"] = serde_json::json!("bad-hash");
+    replay_expect_fail(&v, "bad_incoming_result_hash");
+}
+
+#[test]
+fn f4_budget_blocked_attempt_is_recorded_and_replays() {
+    let cfg = SearchConfig {
+        strategy: RepairStrategy::Composite,
+        verification_budget: 1,
+        ..SearchConfig::default()
+    };
+    let (path, v) = write_artifact("budget_one", &cfg, TWO_CYCLES_CONTRACT);
+    // The generated candidate is recorded, not dropped.
+    let attempts = v["attempts"].as_array().unwrap();
+    assert_eq!(attempts.len(), 1, "{v}");
+    assert_eq!(attempts[0]["result"], "budget-blocked");
+    assert!(attempts[0]["patch"].is_object());
+    assert!(attempts[0]["program_fingerprint"].is_string());
+    assert!(attempts[0]["outcome"].is_null());
+    assert_eq!(v["counts"]["proposals"], 1);
+    assert_eq!(v["counts"]["verification_calls"], 1);
+    // And the artifact replays cleanly.
+    let out = Command::new(bin())
+        .args(["replay", path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code().unwrap_or(-1), 0, "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[test]
+fn f_positive_artifacts_replay() {
+    // Reused + denied + budget-blocked attempts, and every terminal outcome.
+    let contract: ContractSpec = serde_json::from_str(TWO_CYCLES_CONTRACT).unwrap();
+    let mut denied = contract.clone();
+    denied.allowed_scope.modules = vec!["other".to_string()];
+    let denied_json = serde_json::to_string(&denied).unwrap();
+
+    let singles: [(&str, SearchConfig, &str); 5] = [
+        ("reused", SearchConfig { strategy: RepairStrategy::Composite, ..SearchConfig::default() }, TWO_CYCLES_CONTRACT),
+        ("denied", SearchConfig { strategy: RepairStrategy::Composite, ..SearchConfig::default() }, &denied_json),
+        ("unknown", SearchConfig { strategy: RepairStrategy::Composite, ..SearchConfig::default() }, include_str!("repro_round2/tiny_bounds_contract.json")),
+        ("budget_zero", SearchConfig { strategy: RepairStrategy::Diagnostic, verification_budget: 0, ..SearchConfig::default() }, TWO_CYCLES_CONTRACT),
+        ("cand_budget", SearchConfig { strategy: RepairStrategy::Composite, candidate_budget: 1, ..SearchConfig::default() }, TWO_CYCLES_CONTRACT),
+    ];
+    for (name, cfg, cj) in singles {
+        let (path, _) = write_artifact(name, &cfg, cj);
+        let out = Command::new(bin())
+            .args(["replay", path.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert_eq!(
+            out.status.code().unwrap_or(-1),
+            0,
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
