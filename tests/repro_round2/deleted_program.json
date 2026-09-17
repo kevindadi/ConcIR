@@ -1,0 +1,126 @@
+{
+  "program": "lockorder_bug",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "a",
+          "b",
+          "x"
+        ],
+        "functions": [
+          "main",
+          "t1",
+          "t2"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "a",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "b",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "x",
+          "kind": "var",
+          "type": "Var",
+          "base": "Int",
+          "init": 0
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "t1",
+                "t2"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "t1",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "a"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "b"
+            },
+            {
+              "sid": "s3",
+              "kind": "write_shared",
+              "resource": "x",
+              "expr": "x + 1"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "b"
+            },
+            {
+              "sid": "s5",
+              "kind": "mutex_unlock",
+              "resource": "a"
+            },
+            {
+              "sid": "s6",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "t2",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "a"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "a"
+            },
+            {
+              "sid": "s6",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

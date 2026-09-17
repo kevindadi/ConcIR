@@ -1,9 +1,10 @@
 //! Machine state for the reference interpreter.
 //!
 //! The state is a complete semantic state: shared store, per-frame activation
-//! data, thread stacks and statuses, wait queues, and durable completion
-//! facts. Identity allocation counters travel with the state but are excluded
-//! from equality/dedup (they affect only internal identities).
+//! data (including that frame's spawn/join handle bindings), thread stacks and
+//! statuses, wait data, and durable completion facts. Identity allocation
+//! counters travel with the state but are excluded from equality/dedup (they
+//! affect only internal identities).
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::{Hash, Hasher};
@@ -41,12 +42,15 @@ pub struct CondvarState {
     pub lock: Option<ResourceId>,
 }
 
+/// A dynamic activation. Handle name → child bindings belong to the frame, so
+/// a callee cannot clobber its caller's names.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Frame {
     pub id: FrameId,
     pub function: FunctionId,
     pub pc: usize,
     pub locals: BTreeMap<usize, Value>,
+    pub handles: BTreeMap<String, HandleId>,
     pub ret: Option<RetAddr>,
 }
 
@@ -116,8 +120,8 @@ pub struct ThreadState {
     pub stack: Vec<FrameId>,
     /// Function this thread was created to run.
     pub entry_function: FunctionId,
-    /// Spawn handles created by this activation (name → handle id).
-    pub handles: BTreeMap<String, HandleId>,
+    /// Child threads this activation created, keyed by unique handle id. The
+    /// *names* live on frames; this map only stores concrete child identity.
     pub handle_children: BTreeMap<HandleId, ThreadId>,
     /// Set when this thread was spawned by a `scope` statement.
     pub parent_scope: Option<ScopeId>,
@@ -168,7 +172,7 @@ impl Hash for Alloc {
 pub struct MachineState {
     pub store: Store,
     pub threads: BTreeMap<ThreadId, ThreadState>,
-    pub mutex_waiters: BTreeMap<ResourceId, VecDeque<ThreadId>>,
+    /// Requested permit counts of threads blocked on a semaphore.
     pub sem_waiters: BTreeMap<ResourceId, VecDeque<(ThreadId, i64)>>,
     pub scopes: BTreeMap<ScopeId, ScopeState>,
     pub finished: BTreeSet<ThreadId>,
@@ -200,7 +204,6 @@ impl MachineState {
         let mut state = MachineState {
             store: Store::default(),
             threads: BTreeMap::new(),
-            mutex_waiters: BTreeMap::new(),
             sem_waiters: BTreeMap::new(),
             scopes: BTreeMap::new(),
             finished: BTreeSet::new(),
@@ -212,7 +215,24 @@ impl MachineState {
         state.init_resources(program);
         let tid = ThreadId(state.alloc.next_thread);
         state.alloc.next_thread += 1;
-        let frame = state.alloc_frame(program, program.entry())?;
+        let entry = program.entry();
+        if program.function(entry).is_transparent_nobody() {
+            state.threads.insert(
+                tid,
+                ThreadState {
+                    id: tid,
+                    status: ThreadStatus::Finished,
+                    stack: Vec::new(),
+                    entry_function: entry,
+                    handle_children: BTreeMap::new(),
+                    parent_scope: None,
+                },
+            );
+            state.finished.insert(tid);
+            state.completed_functions.insert(entry, 1);
+            return Ok(state);
+        }
+        let frame = state.alloc_frame(program, entry)?;
         let fid = frame.id;
         state.store.write_frame(fid, frame);
         state.threads.insert(
@@ -221,8 +241,7 @@ impl MachineState {
                 id: tid,
                 status: ThreadStatus::Runnable,
                 stack: vec![fid],
-                entry_function: program.entry(),
-                handles: BTreeMap::new(),
+                entry_function: entry,
                 handle_children: BTreeMap::new(),
                 parent_scope: None,
             },
@@ -282,6 +301,7 @@ impl MachineState {
             function,
             pc: 0,
             locals,
+            handles: BTreeMap::new(),
             ret: None,
         })
     }

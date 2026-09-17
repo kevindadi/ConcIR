@@ -1,0 +1,83 @@
+{
+  "program": "nested_handle_names",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "spawn",
+              "func": "a",
+              "handle": "h"
+            },
+            {
+              "sid": "s2",
+              "kind": "call",
+              "func": "helper"
+            },
+            {
+              "sid": "s3",
+              "kind": "join",
+              "handle": "h"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "helper",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "spawn",
+              "func": "b",
+              "handle": "h"
+            },
+            {
+              "sid": "s2",
+              "kind": "join",
+              "handle": "h"
+            },
+            {
+              "sid": "s3",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "a",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "return"
+            }
+          ],
+          "form": "closure"
+        },
+        {
+          "name": "b",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "return"
+            }
+          ],
+          "form": "closure"
+        }
+      ]
+    }
+  ]
+}

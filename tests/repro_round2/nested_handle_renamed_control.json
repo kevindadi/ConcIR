@@ -1,0 +1,101 @@
+{
+  "program": "nested_handle_false_pass",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [
+        {
+          "name": "gate",
+          "kind": "sync",
+          "type": "Semaphore",
+          "mode": "Sync",
+          "count": 0
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "spawn",
+              "func": "a",
+              "handle": "h"
+            },
+            {
+              "sid": "s2",
+              "kind": "call",
+              "func": "helper"
+            },
+            {
+              "sid": "s3",
+              "kind": "join",
+              "handle": "h"
+            },
+            {
+              "sid": "s4",
+              "kind": "semaphore_release",
+              "resource": "gate"
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "helper",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "spawn",
+              "func": "b",
+              "handle": "local_h"
+            },
+            {
+              "sid": "s2",
+              "kind": "join",
+              "handle": "local_h"
+            },
+            {
+              "sid": "s3",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "a",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "semaphore_acquire",
+              "resource": "gate"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ],
+          "form": "closure"
+        },
+        {
+          "name": "b",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "return"
+            }
+          ],
+          "form": "closure"
+        }
+      ]
+    }
+  ]
+}

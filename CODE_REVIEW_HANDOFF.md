@@ -7,6 +7,15 @@ This document is the reviewer's map. It lists changed files, capabilities,
 key semantic decisions, how to reproduce the checks, open issues, and the
 code to review most carefully.
 
+> **Round 2 (review of commit `736f7e1`).** A second independent review found
+> wrong `PASS`, wrongly accepted repairs, and engine disagreement. The
+> corrections, evidence, and remaining items are in
+> [`CODE_REVIEW_ROUND2.md`](CODE_REVIEW_ROUND2.md). In particular the eager
+> hand-off below was removed: waiting is now enabledness with all eligible
+> waiters as choices, handle names belong to frames, the contract is re-bound
+> per candidate, and there is one checked verification entry with documented
+> exit codes.
+
 ---
 
 ## 1. Files and responsibilities
@@ -110,11 +119,12 @@ New docs: `doc/backend-design.md`, `doc/backend-usage.md`.
 1. **Precise activation store.** Every parameter/local/return slot is tracked
    concretely per dynamic frame. The legacy `modeled` flag is a CVN projection
    hint and does *not* restrict the precise backend.
-2. **Atomic eager hand-off.** A mutex unlock, semaphore release, condvar
-   notify, or channel recv that can immediately admit a waiter does so inside
-   the same step. This removes intermediate "freed but not handed over" states
-   and makes the interpreter and net agree exactly (see
-   `tests/petri_projection.rs`).
+2. **Waiting is enabledness, not a forced hand-off.** A blocked
+   mutex/semaphore/channel thread becomes enabled when its condition holds and
+   completes its own operation; every eligible waiter is an independent
+   choice. `notify_one` enumerates every current waiter. Channel *messages* are
+   FIFO; waiting *thread* order is not. Handles belong to the frame. See
+   `tests/differential.rs` (full projection + edge relation).
 3. **Bounded `Int` disables the step.** An update leaving `[lo, hi]` is not
    enabled, matching the documented CVN rule; this keeps counter loops finite.
 4. **Program limits vs analyzer limits.** Channel capacity, semaphore count,

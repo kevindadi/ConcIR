@@ -114,10 +114,24 @@ pub fn apply(program: &Program, patch: &CirPatch) -> Result<(Program, String), P
         .ok_or_else(|| PatchError::UnknownFunction(patch.function.clone()))?;
 
     let mut seen = std::collections::HashSet::new();
+    let mut touched: std::collections::HashSet<String> = std::collections::HashSet::new();
     for change in &patch.changes {
         let key = format!("{change:?}");
         if !seen.insert(key) {
             return Err(PatchError::DuplicateChange(format!("{change:?}")));
+        }
+        // A statement touched by two changes is a conflict, regardless of the
+        // change kinds. This is typed, not a Debug-string coincidence.
+        let ids: Vec<&String> = match change {
+            PatchChange::SwapStatements { a, b } => vec![a, b],
+            PatchChange::DeleteStatement { sid } => vec![sid],
+        };
+        for id in ids {
+            if !touched.insert(id.clone()) {
+                return Err(PatchError::DuplicateChange(format!(
+                    "statement '{id}' is modified by more than one change"
+                )));
+            }
         }
         match change {
             PatchChange::SwapStatements { a, b } => apply_swap(f, a, b)?,
@@ -216,4 +230,40 @@ fn render_diff(function: &str, changes: &[PatchChange]) -> String {
         })
         .collect();
     lines.join("\n")
+}
+
+/// Provider-independent permission check. Every candidate — automatic or from
+/// a file — must pass this before it can be applied or verified.
+pub fn check_allowed(
+    scope: &crate::explore::contract::PatchScope,
+    patch: &CirPatch,
+) -> Result<(), PatchError> {
+    if !scope.allows_module(&patch.module) {
+        return Err(PatchError::IllegalChange(format!(
+            "module '{}' is outside the allowed patch scope",
+            patch.module
+        )));
+    }
+    if !scope.allows_function(&patch.function) {
+        return Err(PatchError::IllegalChange(format!(
+            "function '{}' is outside the allowed patch scope",
+            patch.function
+        )));
+    }
+    for change in &patch.changes {
+        match change {
+            PatchChange::SwapStatements { .. } if !scope.allow_lock_reorder => {
+                return Err(PatchError::IllegalChange(
+                    "lock reordering is not allowed by the contract".into(),
+                ))
+            }
+            PatchChange::DeleteStatement { .. } if !scope.allow_statement_delete => {
+                return Err(PatchError::IllegalChange(
+                    "statement deletion is not allowed by the contract".into(),
+                ))
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }

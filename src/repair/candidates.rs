@@ -6,14 +6,14 @@ use std::path::PathBuf;
 use serde::Deserialize;
 
 use crate::ast::{Op, Program};
-use crate::explore::contract::{PatchScope, VerificationContract};
+use crate::explore::contract::{ContractSpec, PatchScope};
 
 use super::patch::{function_hash, is_control_target, CirPatch, PatchChange, SourceRelation};
 
 /// Context handed to a provider each round.
 pub struct RepairContext<'a> {
     pub program: &'a Program,
-    pub contract: &'a VerificationContract,
+    pub spec: &'a ContractSpec,
     pub round: usize,
 }
 
@@ -86,7 +86,7 @@ impl CandidateProvider for LockOrderEnumerator {
         while self.cursor < self.targets.len() {
             let (module, function, a, b) = self.targets[self.cursor].clone();
             self.cursor += 1;
-            if !ctx.contract.allowed_scope.allow_lock_reorder {
+            if !ctx.spec.allowed_scope.allow_lock_reorder {
                 return None;
             }
             let hash = function_hash(ctx.program, &module, &function).ok()?;

@@ -6,6 +6,7 @@
 
 pub mod eval;
 pub mod ids;
+pub mod monitor;
 pub mod outcome;
 pub mod program;
 pub mod system;

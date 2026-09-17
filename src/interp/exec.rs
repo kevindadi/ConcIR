@@ -2,12 +2,19 @@
 //!
 //! Synchronization transitions here are implemented independently from the
 //! Petri-net executor. The two share the resolved program, values, expression
-//! evaluation, and bounds — but not the transition code.
+//! evaluation, bounds, and monitor configuration — but not transition code.
+//!
+//! Waiting on a mutex/semaphore/channel is *enabledness*, not a forced
+//! hand-off: a blocked thread can be scheduled as soon as its condition holds,
+//! and every eligible waiter is an independent choice. Channel message order
+//! is FIFO; waiting-thread order is not.
 
 use crate::sem::eval::eval;
 use crate::sem::ids::{FrameId, FunctionId, HandleId, ResourceId, ScopeId, SlotRef, ThreadId};
+use crate::sem::monitor::MonitorConfig;
 use crate::sem::outcome::{
-    BackendError, BackendResult, BoundaryEvent, BoundaryKind, Phase, StepLabel, TransitionOrigin,
+    AnalysisBounds, BackendError, BackendResult, BoundaryEvent, BoundaryKind, Phase, StepLabel,
+    TransitionOrigin,
 };
 use crate::sem::program::{SemOp, SemProgram};
 use crate::sem::system::{
@@ -16,18 +23,35 @@ use crate::sem::system::{
 use crate::sem::value::{within_type, Value};
 
 use super::state::{
-    BlockReason, FrameView, MachineState, MutexState, PendingSend, ScopeState, ThreadState,
+    BlockReason, FrameView, MachineState, MutexState, PendingSend, RetAddr, ScopeState, ThreadState,
     ThreadStatus,
 };
 
 pub struct Interpreter<'a> {
     pub program: &'a SemProgram,
-    pub bounds: crate::sem::outcome::AnalysisBounds,
+    pub bounds: AnalysisBounds,
+    pub monitor: MonitorConfig,
 }
 
 impl<'a> Interpreter<'a> {
-    pub fn new(program: &'a SemProgram, bounds: crate::sem::outcome::AnalysisBounds) -> Self {
-        Interpreter { program, bounds }
+    pub fn new(program: &'a SemProgram, bounds: AnalysisBounds) -> Self {
+        Interpreter {
+            program,
+            bounds,
+            monitor: MonitorConfig::unbounded(),
+        }
+    }
+
+    pub fn with_monitor(
+        program: &'a SemProgram,
+        bounds: AnalysisBounds,
+        monitor: MonitorConfig,
+    ) -> Self {
+        Interpreter {
+            program,
+            bounds,
+            monitor,
+        }
     }
 
     fn eval(
@@ -44,18 +68,14 @@ impl<'a> Interpreter<'a> {
         eval(expr, &view, at)
     }
 
-    fn grant_lock(&self, state: &mut MachineState, r: ResourceId) {
-        if !matches!(state.store.mutexes.get(&r), Some(MutexState::Free)) {
+    fn record_completion(&self, state: &mut MachineState, function: FunctionId) {
+        let max = self.monitor.max_for(function);
+        if max == 0 {
             return;
         }
-        let waiter = state
-            .mutex_waiters
-            .get_mut(&r)
-            .and_then(|q| q.pop_front());
-        if let Some(w) = waiter {
-            state.store.mutexes.insert(r, MutexState::Held(w));
-            state.set_runnable(w);
-            state.advance(w);
+        let e = state.completed_functions.entry(function).or_insert(0);
+        if *e < max {
+            *e += 1;
         }
     }
 
@@ -74,113 +94,10 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    /// Drain a channel: move pending sends into buffered space, pair
-    /// rendezvous sides, and hand buffered values to waiting receivers.
-    fn drain_channel(&self, state: &mut MachineState, chan: ResourceId) {
-        let cap = self.program.resource(chan).capacity;
-        if cap > 0 {
-            loop {
-                let mut progress = false;
-                // Admit blocked senders while there is space.
-                loop {
-                    let has_space = state
-                        .store
-                        .channels
-                        .get(&chan)
-                        .map(|c| c.buffer.len() < cap)
-                        .unwrap_or(false);
-                    if !has_space {
-                        break;
-                    }
-                    let send = state
-                        .store
-                        .channels
-                        .get_mut(&chan)
-                        .and_then(|c| c.pending_send.pop_front());
-                    let Some(send) = send else { break };
-                    state
-                        .store
-                        .channels
-                        .get_mut(&chan)
-                        .unwrap()
-                        .buffer
-                        .push_back(send.value);
-                    self.complete(state, send.thread);
-                    progress = true;
-                }
-                // Deliver buffered values to waiting receivers.
-                loop {
-                    let value = state
-                        .store
-                        .channels
-                        .get_mut(&chan)
-                        .and_then(|c| c.buffer.pop_front());
-                    let Some(value) = value else { break };
-                    let recv = state
-                        .store
-                        .channels
-                        .get_mut(&chan)
-                        .and_then(|c| c.pending_recv.pop_front());
-                    match recv {
-                        Some(r) => {
-                            if let Some(dst) = self.recv_dst_of(state, r) {
-                                if let Some(fid) = state.current_frame_id(r) {
-                                    let _ = state.write_dst(fid, dst, value);
-                                }
-                            }
-                            self.complete(state, r);
-                            progress = true;
-                        }
-                        None => {
-                            state
-                                .store
-                                .channels
-                                .get_mut(&chan)
-                                .unwrap()
-                                .buffer
-                                .push_front(value);
-                            break;
-                        }
-                    }
-                }
-                if !progress {
-                    break;
-                }
-            }
-        } else {
-            loop {
-                let send = state
-                    .store
-                    .channels
-                    .get_mut(&chan)
-                    .and_then(|c| c.pending_send.pop_front());
-                let Some(send) = send else { break };
-                let recv = state
-                    .store
-                    .channels
-                    .get_mut(&chan)
-                    .and_then(|c| c.pending_recv.pop_front());
-                match recv {
-                    Some(r) => {
-                        if let Some(dst) = self.recv_dst_of(state, r) {
-                            if let Some(fid) = state.current_frame_id(r) {
-                                let _ = state.write_dst(fid, dst, send.value);
-                            }
-                        }
-                        self.complete(state, r);
-                        self.complete(state, send.thread);
-                    }
-                    None => {
-                        state
-                            .store
-                            .channels
-                            .get_mut(&chan)
-                            .unwrap()
-                            .pending_send
-                            .push_front(send);
-                        break;
-                    }
-                }
+    fn deliver_to_recv(&self, state: &mut MachineState, recv: ThreadId, value: Value) {
+        if let Some(dst) = self.recv_dst_of(state, recv) {
+            if let Some(fid) = state.current_frame_id(recv) {
+                let _ = state.write_dst(fid, dst, value);
             }
         }
     }
@@ -190,7 +107,7 @@ impl<'a> Interpreter<'a> {
             t.status = ThreadStatus::Finished;
         }
         state.finished.insert(tid);
-        *state.completed_functions.entry(function).or_insert(0) += 1;
+        self.record_completion(state, function);
 
         let scope = state.threads[&tid].parent_scope;
         if let Some(scope) = scope {
@@ -239,10 +156,7 @@ impl<'a> Interpreter<'a> {
             .values()
             .filter(|t| {
                 t.status != ThreadStatus::Finished
-                    && t.stack
-                        .first()
-                        .map(|fid| state.frame(*fid).function)
-                        == Some(func)
+                    && t.stack.first().map(|fid| state.frame(*fid).function) == Some(func)
             })
             .count();
         active < bound.max(0) as usize
@@ -278,13 +192,12 @@ impl<'a> Interpreter<'a> {
                     status: ThreadStatus::Finished,
                     stack: Vec::new(),
                     entry_function: func,
-                    handles: Default::default(),
                     handle_children: Default::default(),
                     parent_scope,
                 },
             );
             state.finished.insert(tid);
-            *state.completed_functions.entry(func).or_insert(0) += 1;
+            self.record_completion(state, func);
             return Ok(Some(tid));
         }
         let frame = state.alloc_frame(self.program, func)?;
@@ -297,7 +210,6 @@ impl<'a> Interpreter<'a> {
                 status: ThreadStatus::Runnable,
                 stack: vec![fid],
                 entry_function: func,
-                handles: Default::default(),
                 handle_children: Default::default(),
                 parent_scope,
             },
@@ -305,12 +217,23 @@ impl<'a> Interpreter<'a> {
         Ok(Some(tid))
     }
 
+    fn step_label(&self, function: FunctionId, sid: usize, tid: ThreadId, fid: FrameId) -> StepLabel {
+        StepLabel::new(TransitionOrigin {
+            module: self.program.function(function).module,
+            function,
+            sid: Some(sid),
+            phase: Phase::Statement,
+        })
+        .with_binding(tid, fid)
+    }
+
+    /// A step for a runnable thread.
     fn step_thread(
         &self,
         state: &MachineState,
         tid: ThreadId,
         boundary: &mut Vec<BoundaryEvent>,
-    ) -> BackendResult<Option<Step<MachineState>>> {
+    ) -> BackendResult<Vec<Step<MachineState>>> {
         let mut next = state.clone();
         let fid = next
             .current_frame_id(tid)
@@ -327,17 +250,14 @@ impl<'a> Interpreter<'a> {
         next.reached.insert((function_id, pc));
         let stmt = &function.body[pc];
         let at = self.program.location(function_id, Some(pc));
-        let label = StepLabel::new(TransitionOrigin {
-            module: function.module,
-            function: function_id,
-            sid: Some(pc),
-            phase: Phase::Statement,
-        })
-        .with_binding(tid, fid);
+        let label = self.step_label(function_id, pc, tid, fid);
         let op = stmt.op.clone();
 
-        // Blocking / synchronization choices are cloned so that reads of the
-        // program do not conflict with mutations of `next`.
+        // notify_one has one successor per eligible waiter.
+        if let SemOp::CondvarNotify { condvar } = op {
+            return self.step_notify(state, tid, function_id, pc, condvar);
+        }
+
         match op {
             SemOp::Nop => {
                 next.advance(tid);
@@ -346,7 +266,7 @@ impl<'a> Interpreter<'a> {
                 let v = self.eval(&next, fid, &expr, &at)?;
                 if let SlotRef::Local(slot) = target {
                     if !within_type(&v, &function.slots[slot].ty) {
-                        return Ok(None);
+                        return Ok(Vec::new());
                     }
                 }
                 next.write_dst(fid, target, v)?;
@@ -365,7 +285,7 @@ impl<'a> Interpreter<'a> {
                 let v = self.eval(&next, fid, &expr, &at)?;
                 let ty = self.program.resource(resource).ty.clone().unwrap();
                 if !within_type(&v, &ty) {
-                    return Ok(None);
+                    return Ok(Vec::new());
                 }
                 next.store.vars.insert(resource, v);
                 next.advance(tid);
@@ -381,7 +301,7 @@ impl<'a> Interpreter<'a> {
                 let v = self.eval(&next, fid, &value, &at)?;
                 let ty = self.program.resource(resource).ty.clone().unwrap();
                 if !within_type(&v, &ty) {
-                    return Ok(None);
+                    return Ok(Vec::new());
                 }
                 next.store.atomics.insert(resource, v);
                 next.advance(tid);
@@ -396,7 +316,7 @@ impl<'a> Interpreter<'a> {
                 let des = self.eval(&next, fid, &desired, &at)?;
                 let ty = self.program.resource(resource).ty.clone().unwrap();
                 if !within_type(&des, &ty) {
-                    return Ok(None);
+                    return Ok(Vec::new());
                 }
                 let old = next.store.atomics.get(&resource).cloned().ok_or_else(|| {
                     BackendError::invalid("E900", format!("Atomic {resource} has no value"))
@@ -412,7 +332,6 @@ impl<'a> Interpreter<'a> {
                     next.store.mutexes.insert(resource, MutexState::Held(tid));
                     next.advance(tid);
                 } else {
-                    next.mutex_waiters.entry(resource).or_default().push_back(tid);
                     next.block(tid, BlockReason::Lock(resource));
                 }
             }
@@ -435,42 +354,100 @@ impl<'a> Interpreter<'a> {
                     }
                 }
                 next.store.mutexes.insert(resource, MutexState::Free);
-                self.grant_lock(&mut next, resource);
                 next.advance(tid);
             }
             SemOp::ChannelSend { channel, value } => {
                 let v = self.eval(&next, fid, &value, &at)?;
-                {
-                    let ch = next.store.channels.get_mut(&channel).unwrap();
-                    ch.pending_send.push_back(PendingSend { thread: tid, value: v });
-                }
-                self.drain_channel(&mut next, channel);
-                let still = next
-                    .store
-                    .channels
-                    .get(&channel)
-                    .map(|c| c.pending_send.iter().any(|p| p.thread == tid))
-                    .unwrap_or(false);
-                if still {
-                    next.block(tid, BlockReason::ChannelSend(channel));
+                let cap = self.program.resource(channel).capacity;
+                if cap == 0 {
+                    // Rendezvous: pair with the oldest waiting receiver, if any.
+                    let recv = next
+                        .store
+                        .channels
+                        .get_mut(&channel)
+                        .and_then(|c| c.pending_recv.pop_front());
+                    if let Some(r) = recv {
+                        self.deliver_to_recv(&mut next, r, v);
+                        self.complete(&mut next, r);
+                        next.advance(tid);
+                    } else {
+                        next.store
+                            .channels
+                            .get_mut(&channel)
+                            .unwrap()
+                            .pending_send
+                            .push_back(PendingSend { thread: tid, value: v });
+                        next.block(tid, BlockReason::ChannelSend(channel));
+                    }
+                } else {
+                    let has_space = next
+                        .store
+                        .channels
+                        .get(&channel)
+                        .map(|c| c.buffer.len() < cap)
+                        .unwrap_or(false);
+                    if has_space {
+                        next.store
+                            .channels
+                            .get_mut(&channel)
+                            .unwrap()
+                            .buffer
+                            .push_back(v);
+                        next.advance(tid);
+                    } else {
+                        next.store
+                            .channels
+                            .get_mut(&channel)
+                            .unwrap()
+                            .pending_send
+                            .push_back(PendingSend { thread: tid, value: v });
+                        next.block(tid, BlockReason::ChannelSend(channel));
+                    }
                 }
             }
-            SemOp::ChannelRecv { channel, dst: _ } => {
-                next.store
-                    .channels
-                    .get_mut(&channel)
-                    .unwrap()
-                    .pending_recv
-                    .push_back(tid);
-                self.drain_channel(&mut next, channel);
-                let still = next
-                    .store
-                    .channels
-                    .get(&channel)
-                    .map(|c| c.pending_recv.contains(&tid))
-                    .unwrap_or(false);
-                if still {
-                    next.block(tid, BlockReason::ChannelRecv(channel));
+            SemOp::ChannelRecv { channel, .. } => {
+                let cap = self.program.resource(channel).capacity;
+                if cap == 0 {
+                    let send = next
+                        .store
+                        .channels
+                        .get_mut(&channel)
+                        .and_then(|c| c.pending_send.pop_front());
+                    if let Some(s) = send {
+                        self.deliver_to_recv(&mut next, tid, s.value);
+                        self.complete(&mut next, s.thread);
+                        next.advance(tid);
+                    } else {
+                        next.store
+                            .channels
+                            .get_mut(&channel)
+                            .unwrap()
+                            .pending_recv
+                            .push_back(tid);
+                        next.block(tid, BlockReason::ChannelRecv(channel));
+                    }
+                } else {
+                    let value = next
+                        .store
+                        .channels
+                        .get_mut(&channel)
+                        .and_then(|c| c.buffer.pop_front());
+                    match value {
+                        Some(v) => {
+                            let dst = self.recv_dst_of(&next, tid).unwrap_or(SlotRef::Discard);
+                            next.write_dst(fid, dst, v)?;
+                            next.advance(tid);
+                        }
+                        None => {
+                            next.store
+                                .channels
+                                .get_mut(&channel)
+                                .unwrap()
+                                .pending_recv
+                                .push_back(tid);
+                            next.block(tid, BlockReason::ChannelRecv(channel));
+                        }
+                    }
                 }
             }
             SemOp::CondvarWait { condvar, lock } => {
@@ -485,7 +462,6 @@ impl<'a> Interpreter<'a> {
                     }
                 }
                 next.store.mutexes.insert(lock, MutexState::Free);
-                self.grant_lock(&mut next, lock);
                 {
                     let cv = next.store.condvars.get_mut(&condvar).unwrap();
                     cv.waiters.push_back(tid);
@@ -493,20 +469,7 @@ impl<'a> Interpreter<'a> {
                 }
                 next.block(tid, BlockReason::Condvar(condvar, lock));
             }
-            SemOp::CondvarNotify { condvar } => {
-                let lock = next.store.condvars.get(&condvar).and_then(|c| c.lock);
-                let w = next
-                    .store
-                    .condvars
-                    .get_mut(&condvar)
-                    .and_then(|c| c.waiters.pop_front());
-                if let (Some(w), Some(lock)) = (w, lock) {
-                    next.mutex_waiters.entry(lock).or_default().push_back(w);
-                    next.block(w, BlockReason::Lock(lock));
-                    self.grant_lock(&mut next, lock);
-                }
-                next.advance(tid);
-            }
+            SemOp::CondvarNotify { .. } => unreachable!("handled above"),
             SemOp::CondvarNotifyAll { condvar } => {
                 let lock = next.store.condvars.get(&condvar).and_then(|c| c.lock);
                 let waiters: Vec<ThreadId> = {
@@ -515,10 +478,8 @@ impl<'a> Interpreter<'a> {
                 };
                 if let Some(lock) = lock {
                     for w in waiters {
-                        next.mutex_waiters.entry(lock).or_default().push_back(w);
                         next.block(w, BlockReason::Lock(lock));
                     }
-                    self.grant_lock(&mut next, lock);
                 }
                 next.advance(tid);
             }
@@ -544,26 +505,12 @@ impl<'a> Interpreter<'a> {
                 }
                 let available = *next.store.semaphores.get(&resource).unwrap_or(&0);
                 next.store.semaphores.insert(resource, available + count);
-                loop {
-                    let front = next
-                        .sem_waiters
-                        .get(&resource)
-                        .and_then(|q| q.front().copied());
-                    let Some((w, n)) = front else { break };
-                    let avail = *next.store.semaphores.get(&resource).unwrap_or(&0);
-                    if avail >= n {
-                        next.sem_waiters.get_mut(&resource).unwrap().pop_front();
-                        next.store.semaphores.insert(resource, avail - n);
-                        self.complete(&mut next, w);
-                    } else {
-                        break;
-                    }
-                }
                 next.advance(tid);
             }
             SemOp::Call { func, args, dst } => {
                 let callee = self.program.function(func);
                 if callee.is_transparent_nobody() {
+                    self.record_completion(&mut next, func);
                     next.advance(tid);
                 } else {
                     if next.threads[&tid].stack.len() >= self.bounds.max_frames_per_thread {
@@ -571,7 +518,7 @@ impl<'a> Interpreter<'a> {
                             BoundaryKind::FrameLimit,
                             format!("frame limit {} reached while calling '{}'", self.bounds.max_frames_per_thread, callee.name),
                         ));
-                        return Ok(None);
+                        return Ok(Vec::new());
                     }
                     let mut values = Vec::with_capacity(args.len());
                     for a in &args {
@@ -588,7 +535,7 @@ impl<'a> Interpreter<'a> {
                     for (slot, val) in modeled.iter().zip(values) {
                         frame.locals.insert(*slot, val);
                     }
-                    frame.ret = Some(crate::interp::state::RetAddr {
+                    frame.ret = Some(RetAddr {
                         pc_next: pc + 1,
                         dst: dst.unwrap_or(SlotRef::Discard),
                     });
@@ -599,16 +546,20 @@ impl<'a> Interpreter<'a> {
             }
             SemOp::Spawn { func, handle } => {
                 if !self.within_function_bound(&next, func) {
-                    return Ok(None);
+                    return Ok(Vec::new());
                 }
                 let Some(child) = self.create_thread(&mut next, func, None, boundary)? else {
-                    return Ok(None);
+                    return Ok(Vec::new());
                 };
                 let hid = HandleId(next.alloc.next_handle);
                 next.alloc.next_handle += 1;
-                let t = next.threads.get_mut(&tid).unwrap();
-                t.handles.insert(handle, hid);
-                t.handle_children.insert(hid, child);
+                // Bind the name in the *current frame*, not the thread.
+                next.frame_mut(fid).handles.insert(handle, hid);
+                next.threads
+                    .get_mut(&tid)
+                    .unwrap()
+                    .handle_children
+                    .insert(hid, child);
                 next.advance(tid);
             }
             SemOp::Scope { funcs } => {
@@ -617,7 +568,7 @@ impl<'a> Interpreter<'a> {
                 }
                 for func in &funcs {
                     if !self.within_function_bound(&next, *func) {
-                        return Ok(None);
+                        return Ok(Vec::new());
                     }
                 }
                 let scope = ScopeId(next.alloc.next_scope);
@@ -626,7 +577,7 @@ impl<'a> Interpreter<'a> {
                 for func in &funcs {
                     let Some(child) = self.create_thread(&mut next, *func, Some(scope), boundary)?
                     else {
-                        return Ok(None);
+                        return Ok(Vec::new());
                     };
                     if next.threads[&child].status != ThreadStatus::Finished {
                         remaining.insert(child);
@@ -649,13 +600,9 @@ impl<'a> Interpreter<'a> {
                 }
             }
             SemOp::Join { handle } => {
-                let hid = next.threads[&tid]
-                    .handles
-                    .get(&handle)
-                    .copied()
-                    .ok_or_else(|| {
-                        BackendError::invalid("E402", format!("join handle '{handle}' was never spawned")).at(&at)
-                    })?;
+                let hid = next.frame(fid).handles.get(&handle).copied().ok_or_else(|| {
+                    BackendError::invalid("E402", format!("join handle '{handle}' was never spawned in this activation")).at(&at)
+                })?;
                 let child = next.threads[&tid].handle_children.get(&hid).copied();
                 match child {
                     Some(c) if next.finished.contains(&c) => next.advance(tid),
@@ -727,7 +674,7 @@ impl<'a> Interpreter<'a> {
                         }
                         next.frame_mut(caller).pc = ret.pc_next;
                     }
-                    *next.completed_functions.entry(function_id).or_insert(0) += 1;
+                    self.record_completion(&mut next, function_id);
                 } else {
                     next.threads.get_mut(&tid).unwrap().stack.pop();
                     next.store.frames.remove(&fid);
@@ -743,10 +690,198 @@ impl<'a> Interpreter<'a> {
             }
         }
 
-        Ok(Some(Step {
-            label,
-            state: next,
-        }))
+        Ok(vec![Step { label, state: next }])
+    }
+
+    /// notify_one: one successor per current waiter (plus one when there is
+    /// none). The enumeration order is deterministic; the *choice* is not
+    /// removed.
+    fn step_notify(
+        &self,
+        state: &MachineState,
+        tid: ThreadId,
+        function_id: FunctionId,
+        pc: usize,
+        condvar: ResourceId,
+    ) -> BackendResult<Vec<Step<MachineState>>> {
+        let fid = state.current_frame_id(tid).unwrap();
+        let label = self.step_label(function_id, pc, tid, fid);
+        let waiters: Vec<ThreadId> = state
+            .store
+            .condvars
+            .get(&condvar)
+            .map(|c| c.waiters.iter().copied().collect())
+            .unwrap_or_default();
+        let lock = state.store.condvars.get(&condvar).and_then(|c| c.lock);
+
+        if waiters.is_empty() {
+            let mut next = state.clone();
+            next.reached.insert((function_id, pc));
+            next.advance(tid);
+            return Ok(vec![Step { label, state: next }]);
+        }
+        let mut out = Vec::new();
+        for w in waiters {
+            let mut next = state.clone();
+            next.reached.insert((function_id, pc));
+            if let Some(cv) = next.store.condvars.get_mut(&condvar) {
+                cv.waiters.retain(|x| *x != w);
+            }
+            if let Some(lock) = lock {
+                next.block(w, BlockReason::Lock(lock));
+            }
+            next.advance(tid);
+            out.push(Step {
+                label: label.clone(),
+                state: next,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Resume a thread blocked on a resource whose condition now holds.
+    fn resume_thread(
+        &self,
+        state: &MachineState,
+        tid: ThreadId,
+        reason: &BlockReason,
+    ) -> BackendResult<Vec<Step<MachineState>>> {
+        let mut next = state.clone();
+        let fid = next
+            .current_frame_id(tid)
+            .ok_or_else(|| BackendError::invalid("E999", format!("thread {tid} has no frame")))?;
+        let function_id = next.frame(fid).function;
+        let pc = next.frame(fid).pc;
+        let label = self.step_label(function_id, pc, tid, fid);
+
+        match reason {
+            BlockReason::Lock(r) => {
+                if !matches!(next.store.mutexes.get(r), Some(MutexState::Free)) {
+                    return Ok(Vec::new());
+                }
+                next.store.mutexes.insert(*r, MutexState::Held(tid));
+                next.set_runnable(tid);
+                next.advance(tid);
+            }
+            BlockReason::Semaphore(r) => {
+                let need = next
+                    .sem_waiters
+                    .get(r)
+                    .and_then(|q| q.iter().find(|(t, _)| *t == tid).map(|(_, n)| *n));
+                let Some(need) = need else { return Ok(Vec::new()) };
+                let available = *next.store.semaphores.get(r).unwrap_or(&0);
+                if available < need {
+                    return Ok(Vec::new());
+                }
+                next.store.semaphores.insert(*r, available - need);
+                if let Some(q) = next.sem_waiters.get_mut(r) {
+                    q.retain(|(t, _)| *t != tid);
+                }
+                next.set_runnable(tid);
+                next.advance(tid);
+            }
+            BlockReason::ChannelSend(c) => {
+                let cap = self.program.resource(*c).capacity;
+                if cap == 0 {
+                    // Should not normally occur (the second arrival pairs),
+                    // but handle it: pair with the oldest receiver if any.
+                    let recv = next
+                        .store
+                        .channels
+                        .get_mut(c)
+                        .and_then(|ch| ch.pending_recv.pop_front());
+                    let Some(recv) = recv else { return Ok(Vec::new()) };
+                    let value = match next
+                        .store
+                        .channels
+                        .get_mut(c)
+                        .and_then(|ch| ch.pending_send.iter().position(|p| p.thread == tid))
+                    {
+                        Some(pos) => next
+                            .store
+                            .channels
+                            .get_mut(c)
+                            .unwrap()
+                            .pending_send
+                            .remove(pos)
+                            .map(|p| p.value)
+                            .unwrap(),
+                        None => return Ok(Vec::new()),
+                    };
+                    self.deliver_to_recv(&mut next, recv, value);
+                    self.complete(&mut next, recv);
+                    next.set_runnable(tid);
+                next.advance(tid);
+                } else {
+                    let has_space = next
+                        .store
+                        .channels
+                        .get(c)
+                        .map(|ch| ch.buffer.len() < cap)
+                        .unwrap_or(false);
+                    if !has_space {
+                        return Ok(Vec::new());
+                    }
+                    let pos = next
+                        .store
+                        .channels
+                        .get(c)
+                        .and_then(|ch| ch.pending_send.iter().position(|p| p.thread == tid));
+                    let Some(pos) = pos else { return Ok(Vec::new()) };
+                    let send = next
+                        .store
+                        .channels
+                        .get_mut(c)
+                        .unwrap()
+                        .pending_send
+                        .remove(pos)
+                        .unwrap();
+                    next.store
+                        .channels
+                        .get_mut(c)
+                        .unwrap()
+                        .buffer
+                        .push_back(send.value);
+                    next.set_runnable(tid);
+                next.advance(tid);
+                }
+            }
+            BlockReason::ChannelRecv(c) => {
+                let cap = self.program.resource(*c).capacity;
+                if cap == 0 {
+                    let send = next
+                        .store
+                        .channels
+                        .get_mut(c)
+                        .and_then(|ch| ch.pending_send.pop_front());
+                    let Some(send) = send else { return Ok(Vec::new()) };
+                    self.deliver_to_recv(&mut next, tid, send.value);
+                    self.complete(&mut next, send.thread);
+                    next.set_runnable(tid);
+                next.advance(tid);
+                } else {
+                    let value = next
+                        .store
+                        .channels
+                        .get_mut(c)
+                        .and_then(|ch| ch.buffer.pop_front());
+                    let Some(v) = value else { return Ok(Vec::new()) };
+                    let dst = self.recv_dst_of(&next, tid).unwrap_or(SlotRef::Discard);
+                    next.write_dst(fid, dst, v)?;
+                    if let Some(ch) = next.store.channels.get_mut(c) {
+                        ch.pending_recv.retain(|t| *t != tid);
+                    }
+                    next.set_runnable(tid);
+                next.advance(tid);
+                }
+            }
+            // Condvar waiters are resumed by `notify`; join/scope by completion.
+            BlockReason::Condvar(_, _) | BlockReason::Join(_) | BlockReason::Scope(_) => {
+                return Ok(Vec::new());
+            }
+        }
+
+        Ok(vec![Step { label, state: next }])
     }
 }
 
@@ -758,17 +893,31 @@ impl<'a> TransitionSystem for Interpreter<'a> {
     }
 
     fn initial(&self) -> BackendResult<MachineState> {
-        MachineState::initial(self.program)
+        let mut state = MachineState::initial(self.program)?;
+        // Drop the transparent-entry completion if the contract does not
+        // observe it.
+        let entry = self.program.entry();
+        if self.monitor.max_for(entry) == 0 {
+            state.completed_functions.remove(&entry);
+        }
+        Ok(state)
     }
 
     fn successors(&self, state: &MachineState) -> BackendResult<Enabled<MachineState>> {
         let mut enabled = Enabled::empty();
         for tid in state.threads.keys().copied().collect::<Vec<_>>() {
-            if state.threads[&tid].status != ThreadStatus::Runnable {
-                continue;
-            }
-            if let Some(step) = self.step_thread(state, tid, &mut enabled.boundary)? {
-                enabled.steps.push(step);
+            match &state.threads[&tid].status {
+                ThreadStatus::Runnable => {
+                    for step in self.step_thread(state, tid, &mut enabled.boundary)? {
+                        enabled.steps.push(step);
+                    }
+                }
+                ThreadStatus::Blocked(reason) => {
+                    for step in self.resume_thread(state, tid, reason)? {
+                        enabled.steps.push(step);
+                    }
+                }
+                ThreadStatus::Finished => {}
             }
         }
         Ok(enabled)
@@ -783,6 +932,13 @@ impl<'a> TransitionSystem for Interpreter<'a> {
 
     fn blocked(&self, state: &MachineState) -> Vec<BlockedRecord> {
         let mut out = Vec::new();
+        let count_lock = |r: &ResourceId| -> usize {
+            state
+                .threads
+                .values()
+                .filter(|t| matches!(&t.status, ThreadStatus::Blocked(BlockReason::Lock(x)) if x == r))
+                .count()
+        };
         for t in state.threads.values() {
             if let ThreadStatus::Blocked(reason) = &t.status {
                 out.push(match reason {
@@ -794,7 +950,7 @@ impl<'a> TransitionSystem for Interpreter<'a> {
                             Some(MutexState::Held(h)) => Some(*h),
                             _ => None,
                         },
-                        waiting: state.mutex_waiters.get(r).map(|q| q.len()).unwrap_or(0),
+                        waiting: count_lock(r),
                         detail: "waiting for mutex".into(),
                     },
                     BlockReason::ChannelSend(c) => BlockedRecord {
@@ -837,7 +993,7 @@ impl<'a> TransitionSystem for Interpreter<'a> {
                             .get(cv)
                             .map(|c| c.waiters.len())
                             .unwrap_or(0),
-                        detail: "waiting on condvar to re-acquire the lock".into(),
+                        detail: "waiting on condvar to be notified".into(),
                     },
                     BlockReason::Semaphore(r) => BlockedRecord {
                         thread: t.id,
@@ -1010,12 +1166,18 @@ fn render_state(program: &SemProgram, state: &MachineState) -> String {
             .iter()
             .map(|(k, v)| format!("{k}={}", v.canonical()))
             .collect();
+        let handles: Vec<String> = frame
+            .handles
+            .iter()
+            .map(|(k, h)| format!("{k}->h{}", h.0))
+            .collect();
         out.push_str(&format!(
-            "  frame {} func=f{} pc={} locals={{{}}}\n",
+            "  frame {} func=f{} pc={} locals={{{}}} handles={{{}}}\n",
             fname(*f),
             frame.function.0,
             frame.pc,
-            locals.join(",")
+            locals.join(","),
+            handles.join(",")
         ));
     }
     out.push_str("THREADS\n");
@@ -1033,13 +1195,6 @@ fn render_state(program: &SemProgram, state: &MachineState) -> String {
             status,
             stack.join(","),
             th.parent_scope.map(|s| s.0)
-        ));
-    }
-    for (r, q) in &state.mutex_waiters {
-        out.push_str(&format!(
-            "  lockq r{}=[{}]\n",
-            r.0,
-            q.iter().map(|t| tname(*t)).collect::<Vec<_>>().join(",")
         ));
     }
     for (r, q) in &state.sem_waiters {

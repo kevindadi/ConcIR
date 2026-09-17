@@ -39,6 +39,9 @@ pub struct PatchScope {
     /// If empty, every function is in scope.
     #[serde(default)]
     pub functions: Vec<String>,
+    /// Module names this patch scope is restricted to. Empty = all modules.
+    #[serde(default)]
+    pub modules: Vec<String>,
     /// If true, a patch may reorder lock acquisitions.
     #[serde(default)]
     pub allow_lock_reorder: bool,
@@ -48,6 +51,10 @@ pub struct PatchScope {
 }
 
 impl PatchScope {
+    pub fn allows_module(&self, name: &str) -> bool {
+        self.modules.is_empty() || self.modules.iter().any(|m| m == name)
+    }
+
     pub fn allows_function(&self, name: &str) -> bool {
         self.functions.is_empty() || self.functions.iter().any(|f| f == name)
     }
@@ -55,11 +62,31 @@ impl PatchScope {
     pub fn unrestricted() -> Self {
         PatchScope {
             functions: Vec::new(),
+            modules: Vec::new(),
             allow_lock_reorder: true,
             allow_statement_delete: false,
         }
     }
 }
+
+/// A contract-spec error. `Unsupported` means the requested semantics/config
+/// is not implemented; `Invalid` means the input is malformed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContractError {
+    Unsupported(String),
+    Invalid(String),
+}
+
+impl std::fmt::Display for ContractError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ContractError::Unsupported(m) => write!(f, "unsupported contract: {m}"),
+            ContractError::Invalid(m) => write!(f, "invalid contract: {m}"),
+        }
+    }
+}
+
+impl std::error::Error for ContractError {}
 
 /// One required property.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -148,6 +175,41 @@ pub struct VerificationContract {
     pub assumptions: Assumptions,
     pub bounds: crate::sem::outcome::AnalysisBounds,
     pub allowed_scope: PatchScope,
+    /// The symbolic spec this contract was resolved from, so it can be
+    /// re-bound against a patched program without reusing stale body indices.
+    pub source: ContractSpec,
+}
+
+impl VerificationContract {
+    /// Every predicate the contract observes (for monitor derivation).
+    pub fn predicates(&self) -> Vec<&Predicate> {
+        let mut out = Vec::new();
+        for p in &self.properties {
+            collect_property_predicates(&p.property, &mut out);
+        }
+        for p in &self.preserved {
+            match &p.behavior {
+                Preserved::Reachable(pred) | Preserved::Always(pred) => out.push(pred),
+            }
+        }
+        out
+    }
+
+    /// Re-bind this contract against a (possibly patched) program. Fails if a
+    /// referenced function, statement, resource, or type no longer exists.
+    pub fn rebind(&self, program: &SemProgram) -> Result<VerificationContract, ContractError> {
+        self.source.resolve(program)
+    }
+}
+
+fn collect_property_predicates<'a>(p: &'a Property, out: &mut Vec<&'a Predicate>) {
+    match p {
+        Property::Safety { invariant } | Property::Unreachable { bad: invariant } => {
+            out.push(invariant)
+        }
+        Property::Reachability { goal } | Property::AlwaysReachable { goal } => out.push(goal),
+        Property::DeadlockFree => {}
+    }
 }
 
 /// Serializable contract document.
@@ -220,34 +282,53 @@ impl From<&BoundsSpec> for crate::sem::outcome::AnalysisBounds {
 }
 
 impl ContractSpec {
-    pub fn resolve(&self, program: &SemProgram) -> Result<VerificationContract, String> {
+    pub fn resolve(&self, program: &SemProgram) -> Result<VerificationContract, ContractError> {
+        validate_assumptions(&self.assumptions)?;
+        validate_bounds(&self.bounds)?;
+        let mut seen_ids = std::collections::HashSet::new();
+        for p in &self.properties {
+            let id = property_id(p);
+            if id.trim().is_empty() {
+                return Err(ContractError::Invalid(
+                    "property id must not be empty".into(),
+                ));
+            }
+            if !seen_ids.insert(id.to_string()) {
+                return Err(ContractError::Invalid(format!(
+                    "duplicate property id '{id}'"
+                )));
+            }
+        }
         let default_module = crate::sem::ids::ModuleId(0);
         let mut properties = Vec::new();
         for p in &self.properties {
+            let resolve = |e: &PredicateSpec| {
+                e.resolve(program, default_module).map_err(ContractError::Invalid)
+            };
             let (id, property) = match p {
                 PropertySpec::Safety { id, invariant } => (
                     id.clone(),
                     Property::Safety {
-                        invariant: invariant.resolve(program, default_module)?,
+                        invariant: resolve(invariant)?,
                     },
                 ),
                 PropertySpec::DeadlockFree { id } => (id.clone(), Property::DeadlockFree),
                 PropertySpec::Reachability { id, goal } => (
                     id.clone(),
                     Property::Reachability {
-                        goal: goal.resolve(program, default_module)?,
+                        goal: resolve(goal)?,
                     },
                 ),
                 PropertySpec::AlwaysReachable { id, goal } => (
                     id.clone(),
                     Property::AlwaysReachable {
-                        goal: goal.resolve(program, default_module)?,
+                        goal: resolve(goal)?,
                     },
                 ),
                 PropertySpec::Unreachable { id, bad } => (
                     id.clone(),
                     Property::Unreachable {
-                        bad: bad.resolve(program, default_module)?,
+                        bad: resolve(bad)?,
                     },
                 ),
             };
@@ -258,14 +339,21 @@ impl ContractSpec {
             preserved.push(match p {
                 PreservedSpec::Reachable { description, goal } => PreservedBehavior {
                     description: description.clone(),
-                    behavior: Preserved::Reachable(goal.resolve(program, default_module)?),
+                    behavior: Preserved::Reachable(
+                        goal.resolve(program, default_module)
+                            .map_err(ContractError::Invalid)?,
+                    ),
                 },
                 PreservedSpec::Always {
                     description,
                     invariant,
                 } => PreservedBehavior {
                     description: description.clone(),
-                    behavior: Preserved::Always(invariant.resolve(program, default_module)?),
+                    behavior: Preserved::Always(
+                        invariant
+                            .resolve(program, default_module)
+                            .map_err(ContractError::Invalid)?,
+                    ),
                 },
             });
         }
@@ -276,8 +364,48 @@ impl ContractSpec {
             assumptions: self.assumptions.clone(),
             bounds: (&self.bounds).into(),
             allowed_scope: self.allowed_scope.clone(),
+            source: self.clone(),
         })
     }
+}
+
+fn property_id(p: &PropertySpec) -> &str {
+    match p {
+        PropertySpec::Safety { id, .. }
+        | PropertySpec::DeadlockFree { id }
+        | PropertySpec::Reachability { id, .. }
+        | PropertySpec::AlwaysReachable { id, .. }
+        | PropertySpec::Unreachable { id, .. } => id,
+    }
+}
+
+fn validate_assumptions(a: &Assumptions) -> Result<(), ContractError> {
+    if !a.sequential_consistency {
+        return Err(ContractError::Unsupported(
+            "sequential_consistency = false is not modeled".into(),
+        ));
+    }
+    if !a.no_spurious_wakeups {
+        return Err(ContractError::Unsupported(
+            "no_spurious_wakeups = false is not modeled".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_bounds(b: &BoundsSpec) -> Result<(), ContractError> {
+    for (name, v) in [
+        ("max_threads", b.max_threads),
+        ("max_frames_per_thread", b.max_frames_per_thread),
+        ("max_states", b.max_states),
+        ("max_depth", b.max_depth),
+        ("max_boundary_events", b.max_boundary_events),
+    ] {
+        if v == 0 {
+            return Err(ContractError::Invalid(format!("{name} must be >= 1")));
+        }
+    }
+    Ok(())
 }
 
 impl PredicateSpec {
@@ -336,17 +464,27 @@ impl PredicateSpec {
                 Predicate::StatementReached { func: f, sid: idx }
             }
             PredicateSpec::MutexFree { resource } => {
-                Predicate::MutexFree(resolve_resource(program, default_module, resource)?)
+                let rid = resolve_resource(program, default_module, resource)?;
+                expect_kind(program, rid, resource, &[ResKind::Mutex])?;
+                Predicate::MutexFree(rid)
             }
             PredicateSpec::MutexHeld { resource } => {
-                Predicate::MutexHeld(resolve_resource(program, default_module, resource)?)
+                let rid = resolve_resource(program, default_module, resource)?;
+                expect_kind(program, rid, resource, &[ResKind::Mutex])?;
+                Predicate::MutexHeld(rid)
             }
             PredicateSpec::ChannelEmpty { resource } => {
-                Predicate::ChannelEmpty(resolve_resource(program, default_module, resource)?)
+                let rid = resolve_resource(program, default_module, resource)?;
+                expect_kind(program, rid, resource, &[ResKind::Channel])?;
+                Predicate::ChannelEmpty(rid)
             }
-            PredicateSpec::ChannelAtLeast { resource, len } => Predicate::ChannelAtLeast {
-                resource: resolve_resource(program, default_module, resource)?,
-                len: *len,
+            PredicateSpec::ChannelAtLeast { resource, len } => {
+                let rid = resolve_resource(program, default_module, resource)?;
+                expect_kind(program, rid, resource, &[ResKind::Channel])?;
+                Predicate::ChannelAtLeast {
+                    resource: rid,
+                    len: *len,
+                }
             },
             PredicateSpec::Not { predicate } => {
                 Predicate::not(predicate.resolve(program, default_module)?)
@@ -375,6 +513,22 @@ fn resolve_resource(
     program
         .resolve_resource(default_module, name)
         .ok_or_else(|| format!("unknown resource '{name}'"))
+}
+
+fn expect_kind(
+    program: &SemProgram,
+    resource: ResourceId,
+    name: &str,
+    allowed: &[ResKind],
+) -> Result<(), String> {
+    let r = program.resource(resource);
+    if allowed.contains(&r.kind) {
+        Ok(())
+    } else {
+        Err(format!(
+            "resource '{name}' has an incompatible kind for this predicate"
+        ))
+    }
 }
 
 fn resolve_function(

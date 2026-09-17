@@ -1,0 +1,13 @@
+{
+  "name": "nested_handle_false_pass",
+  "properties": [
+    {
+      "kind": "deadlock_free",
+      "id": "deadlock"
+    }
+  ],
+  "bounds": {
+    "max_depth": 40,
+    "max_states": 10000
+  }
+}

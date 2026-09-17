@@ -1,0 +1,36 @@
+{
+  "program": "runtime_invalid_exit",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [
+        {
+          "name": "m",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_unlock",
+              "resource": "m"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

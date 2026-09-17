@@ -1,0 +1,24 @@
+{
+  "program": "bodyless_entry",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [],
+          "effects": {
+            "reads": [],
+            "writes": []
+          },
+          "may_block": false
+        }
+      ]
+    }
+  ]
+}

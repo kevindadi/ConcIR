@@ -2,10 +2,18 @@
 //!
 //! Subcommands:
 //!   check   <program.json>                         static validation (same as `cir`)
-//!   explore <program.json> [contract.json]         verify properties, print report
+//!   explore <program.json> [contract.json] [interp|petri]   checked verification
 //!   run     <program.json>                         list enabled steps from the initial state
 //!   repair  <program.json> <contract.json> [patches.json] [budget]
 //!   support <program.json>                         print the supportability report
+//!
+//! Exit codes (documented, stable):
+//!   0 PASS / repaired
+//!   1 FAIL
+//!   2 usage / input error
+//!   3 UNKNOWN
+//!   4 INVALID (static or semantic)
+//!   5 UNSUPPORTED
 
 use std::env;
 use std::fs;
@@ -13,15 +21,20 @@ use std::process;
 
 use concir::ast::Program;
 use concir::explore::contract::ContractSpec;
-use concir::explore::verify;
+use concir::explore::{verify_program, EngineKind};
 use concir::interp::Interpreter;
-use concir::petri::PetriEngine;
 use concir::repair::candidates::{CandidateProvider, FileCandidateProvider, LockOrderEnumerator};
-use concir::repair::run_repair;
-use concir::sem::outcome::AnalysisBounds;
+use concir::repair::{run_repair, RepairOutcome};
+use concir::sem::outcome::{AnalysisBounds, Outcome};
 use concir::sem::program;
 use concir::sem::system::TransitionSystem;
 use concir::validate;
+
+const EXIT_FAIL: i32 = 1;
+const EXIT_USAGE: i32 = 2;
+const EXIT_UNKNOWN: i32 = 3;
+const EXIT_INVALID: i32 = 4;
+const EXIT_UNSUPPORTED: i32 = 5;
 
 fn usage() -> ! {
     eprintln!(
@@ -30,9 +43,10 @@ fn usage() -> ! {
          concir-backend explore <program.json> [contract.json] [interp|petri]\n  \
          concir-backend run     <program.json>\n  \
          concir-backend repair  <program.json> <contract.json> [patches.json] [budget]\n  \
-         concir-backend support <program.json>"
+         concir-backend support <program.json>\n\n\
+         exit codes: 0 pass/repaired, 1 fail, 2 usage, 3 unknown, 4 invalid, 5 unsupported"
     );
-    process::exit(2);
+    process::exit(EXIT_USAGE);
 }
 
 fn read(path: &str) -> String {
@@ -40,7 +54,7 @@ fn read(path: &str) -> String {
         Ok(s) => s,
         Err(e) => {
             eprintln!("error reading '{path}': {e}");
-            process::exit(2);
+            process::exit(EXIT_USAGE);
         }
     }
 }
@@ -50,43 +64,43 @@ fn parse_program(path: &str) -> Program {
         Ok(p) => p,
         Err(e) => {
             eprintln!("JSON parse error in '{path}': {e}");
-            process::exit(2);
+            process::exit(EXIT_USAGE);
         }
     }
 }
 
-fn default_contract() -> String {
-    r#"{ "name": "default", "properties": [ { "kind": "deadlock_free", "id": "no-deadlock" } ] }"#
-        .to_string()
-}
-
-fn resolve_contract(program: &Program, source: Option<&str>) -> (ContractSpec, concir::explore::contract::VerificationContract) {
-    let text = match source {
+fn parse_contract(path: Option<&String>) -> ContractSpec {
+    let text = match path {
         Some(p) => read(p),
-        None => default_contract(),
+        None => {
+            r#"{ "name": "default", "properties": [ { "kind": "deadlock_free", "id": "no-deadlock" } ] }"#
+                .to_string()
+        }
     };
-    let spec: ContractSpec = match serde_json::from_str(&text) {
+    match serde_json::from_str(&text) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("contract parse error: {e}");
-            process::exit(2);
+            process::exit(EXIT_USAGE);
         }
-    };
-    let sem = match program::lower(program) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("cannot lower program: {e}");
-            process::exit(1);
-        }
-    };
-    let contract = match spec.resolve(&sem) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("contract resolution error: {e}");
-            process::exit(2);
-        }
-    };
-    (spec, contract)
+    }
+}
+
+fn outcome_exit(outcome: Outcome) -> i32 {
+    match outcome {
+        Outcome::Pass => 0,
+        Outcome::Fail => EXIT_FAIL,
+        Outcome::Unknown => EXIT_UNKNOWN,
+        Outcome::Invalid => EXIT_INVALID,
+        Outcome::Unsupported => EXIT_UNSUPPORTED,
+    }
+}
+
+fn engine_kind(s: Option<&String>) -> EngineKind {
+    match s.map(String::as_str) {
+        Some("interp") => EngineKind::Interpreter,
+        _ => EngineKind::Petri,
+    }
 }
 
 fn main() {
@@ -104,7 +118,7 @@ fn main() {
                 serde_json::to_string_pretty(&report).expect("serialize")
             );
             if !report.valid {
-                process::exit(1);
+                process::exit(EXIT_INVALID);
             }
         }
         "support" => {
@@ -114,7 +128,7 @@ fn main() {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("cannot lower program: {e}");
-                    process::exit(1);
+                    process::exit(EXIT_INVALID);
                 }
             };
             let unsupported = sem.unsupported();
@@ -124,7 +138,7 @@ fn main() {
             });
             println!("{}", serde_json::to_string_pretty(&out).expect("serialize"));
             if !unsupported.is_empty() {
-                process::exit(1);
+                process::exit(EXIT_UNSUPPORTED);
             }
         }
         "run" => {
@@ -134,7 +148,7 @@ fn main() {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("cannot lower program: {e}");
-                    process::exit(1);
+                    process::exit(EXIT_INVALID);
                 }
             };
             let it = Interpreter::new(&sem, AnalysisBounds::default());
@@ -142,7 +156,7 @@ fn main() {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("initial state error: {e}");
-                    process::exit(1);
+                    process::exit(EXIT_INVALID);
                 }
             };
             match it.successors(&init) {
@@ -156,56 +170,44 @@ fn main() {
                 }
                 Err(e) => {
                     eprintln!("step error: {e}");
-                    process::exit(1);
+                    process::exit(EXIT_INVALID);
                 }
             }
         }
         "explore" => {
             let path = args.get(2).unwrap_or_else(|| usage());
-            let contract_path = args.get(3).map(String::as_str);
-            let engine = args.get(4).map(String::as_str).unwrap_or("petri");
+            let spec = parse_contract(args.get(3));
+            let engine = engine_kind(args.get(4));
             let program = parse_program(path);
-            let (_, contract) = resolve_contract(&program, contract_path);
-            let sem = program::lower(&program).unwrap();
-            let report = match engine {
-                "interp" => {
-                    let e = Interpreter::new(&sem, contract.bounds.clone());
-                    verify(&e, &contract)
-                }
-                _ => {
-                    let e = PetriEngine::new(&sem, contract.bounds.clone());
-                    verify(&e, &contract)
-                }
-            };
+            let report = verify_program(&program, &spec, engine);
             println!(
                 "{}",
                 serde_json::to_string_pretty(&report).expect("serialize")
             );
-            if report.outcome == concir::sem::outcome::Outcome::Fail {
-                process::exit(1);
+            let code = outcome_exit(report.outcome);
+            if code != 0 {
+                process::exit(code);
             }
         }
         "repair" => {
             let path = args.get(2).unwrap_or_else(|| usage());
-            let contract_path = args.get(3);
+            let contract_path = args.get(3).unwrap_or_else(|| usage());
             let program = parse_program(path);
-            let (_, contract) = resolve_contract(&program, contract_path.map(String::as_str));
-            let sem = program::lower(&program).unwrap();
+            let spec = parse_contract(Some(contract_path));
             let provider: Box<dyn CandidateProvider> = if let Some(p) = args.get(4) {
                 match FileCandidateProvider::from_file(p) {
                     Ok(fp) => Box::new(fp),
                     Err(e) => {
                         eprintln!("{e}");
-                        process::exit(2);
+                        process::exit(EXIT_USAGE);
                     }
                 }
             } else {
-                Box::new(LockOrderEnumerator::new(&program, &contract.allowed_scope))
+                Box::new(LockOrderEnumerator::new(&program, &spec.allowed_scope))
             };
             let budget: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(16);
             let mut provider = provider;
-            let report = run_repair(&program, &contract, provider.as_mut(), budget);
-            let _ = sem;
+            let report = run_repair(&program, &spec, provider.as_mut(), budget);
             let json = serde_json::json!({
                 "outcome": report.outcome,
                 "candidates_tried": report.candidates_tried,
@@ -213,8 +215,10 @@ fn main() {
                 "accepted_patch": report.accepted,
             });
             println!("{}", serde_json::to_string_pretty(&json).expect("serialize"));
-            if report.outcome != concir::repair::RepairOutcome::Repaired {
-                process::exit(1);
+            match report.outcome {
+                RepairOutcome::Repaired => {}
+                RepairOutcome::AnalysisUnknown => process::exit(EXIT_UNKNOWN),
+                _ => process::exit(EXIT_FAIL),
             }
         }
         _ => usage(),

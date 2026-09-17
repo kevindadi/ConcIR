@@ -1,0 +1,40 @@
+{
+  "program": "finite_call_loop",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "call",
+              "func": "helper"
+            },
+            {
+              "sid": "s2",
+              "kind": "goto",
+              "target": "s1"
+            }
+          ]
+        },
+        {
+          "name": "helper",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

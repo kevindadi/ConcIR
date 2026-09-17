@@ -1,0 +1,13 @@
+{
+  "name": "unsupported-semantics",
+  "properties": [
+    {
+      "kind": "deadlock_free",
+      "id": "deadlock"
+    }
+  ],
+  "assumptions": {
+    "sequential_consistency": false,
+    "no_spurious_wakeups": false
+  }
+}

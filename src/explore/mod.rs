@@ -18,7 +18,7 @@ use crate::sem::outcome::{
 use crate::sem::program::SemProgram;
 use crate::sem::system::{BlockedRecord, InstanceState, Step, TransitionSystem};
 
-use contract::{Preserved, Property, VerificationContract};
+use contract::{ContractError, ContractSpec, Preserved, Property, VerificationContract};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CirStatementRef {
@@ -61,6 +61,14 @@ pub struct VerificationReport {
     pub boundary_events: Vec<BoundaryEvent>,
     pub unsupported: Vec<Unsupported>,
     pub invalid: Vec<Invalid>,
+    /// Hash of the program model actually analyzed.
+    pub model_fingerprint: String,
+    /// Hash of the symbolic contract document.
+    pub contract_fingerprint: String,
+    /// Semantic assumptions actually used.
+    pub assumptions: crate::explore::contract::Assumptions,
+    /// Analysis bounds actually used.
+    pub bounds: crate::sem::outcome::AnalysisBounds,
 }
 
 impl VerificationReport {
@@ -233,11 +241,21 @@ pub fn verify<S: TransitionSystem>(
         Ok(s) => s,
         Err(BackendError::Unsupported(u)) => {
             unsupported.push(u);
-            return report_early(Outcome::Unsupported, unsupported, invalid, boundary_events);
+            let mut r = report_early(Outcome::Unsupported, unsupported, invalid, boundary_events);
+            r.model_fingerprint = model_fingerprint(program);
+            r.contract_fingerprint = contract_fingerprint(contract);
+            r.assumptions = contract.assumptions.clone();
+            r.bounds = contract.bounds.clone();
+            return r;
         }
         Err(BackendError::Invalid(i)) => {
             invalid.push(i);
-            return report_early(Outcome::Invalid, unsupported, invalid, boundary_events);
+            let mut r = report_early(Outcome::Invalid, unsupported, invalid, boundary_events);
+            r.model_fingerprint = model_fingerprint(program);
+            r.contract_fingerprint = contract_fingerprint(contract);
+            r.assumptions = contract.assumptions.clone();
+            r.bounds = contract.bounds.clone();
+            return r;
         }
     };
 
@@ -431,6 +449,10 @@ pub fn verify<S: TransitionSystem>(
         boundary_events,
         unsupported,
         invalid,
+        model_fingerprint: model_fingerprint(program),
+        contract_fingerprint: contract_fingerprint(contract),
+        assumptions: contract.assumptions.clone(),
+        bounds: contract.bounds.clone(),
     }
 }
 
@@ -450,6 +472,10 @@ fn report_early(
         boundary_events,
         unsupported,
         invalid,
+        model_fingerprint: String::new(),
+        contract_fingerprint: String::new(),
+        assumptions: Default::default(),
+        bounds: crate::sem::outcome::AnalysisBounds::default(),
     }
 }
 
@@ -784,4 +810,166 @@ pub fn reachable_canonical<S: TransitionSystem>(
     out.sort();
     out.dedup();
     (out, r.boundary_events)
+}
+
+// ─────────────────── Unified checked verification entry ───────────────────
+
+/// Which engine to run. Both are checked implementations; they must agree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineKind {
+    Interpreter,
+    Petri,
+}
+
+fn fnv(s: &str) -> String {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in s.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("{h:016x}")
+}
+
+fn model_fingerprint(program: &SemProgram) -> String {
+    let mut out = String::new();
+    for m in program.functions() {
+        out.push_str(&format!(
+            "{}::{}:{};",
+            program.module_name(m.module),
+            m.name,
+            m.body.len()
+        ));
+    }
+    for r in program.resources() {
+        out.push_str(&format!(
+            "{}::{}/{:?};",
+            program.module_name(r.module),
+            r.name,
+            r.kind
+        ));
+    }
+    fnv(&out)
+}
+
+fn contract_fingerprint(contract: &VerificationContract) -> String {
+    match serde_json::to_string(&contract.source) {
+        Ok(s) => fnv(&s),
+        Err(_) => String::new(),
+    }
+}
+
+impl VerificationReport {
+    fn synthetic(outcome: Outcome, complete: bool) -> Self {
+        VerificationReport {
+            outcome,
+            complete,
+            states_explored: 0,
+            transitions_explored: 0,
+            properties: Vec::new(),
+            diagnostics: Vec::new(),
+            boundary_events: Vec::new(),
+            unsupported: Vec::new(),
+            invalid: Vec::new(),
+            model_fingerprint: String::new(),
+            contract_fingerprint: String::new(),
+            assumptions: Default::default(),
+            bounds: crate::sem::outcome::AnalysisBounds::default(),
+        }
+    }
+}
+
+/// The single checked entry point: static validation, semantic supportability,
+/// contract validation and rebinding, monitor derivation, exploration, and
+/// property checking. CLI and repair reuse this.
+pub fn verify_program(
+    program: &crate::ast::Program,
+    spec: &ContractSpec,
+    engine: EngineKind,
+) -> VerificationReport {
+    let program_fp = fnv(&serde_json::to_string(program).unwrap_or_default());
+    let contract_fp = fnv(&serde_json::to_string(spec).unwrap_or_default());
+
+    let finish_meta = |mut report: VerificationReport| {
+        report.model_fingerprint = program_fp.clone();
+        report.contract_fingerprint = contract_fp.clone();
+        report
+    };
+
+    // 1. Static validation.
+    let static_report = crate::validate::validate(program);
+    if !static_report.valid {
+        let mut report = VerificationReport::synthetic(Outcome::Invalid, true);
+        report.invalid = static_report
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == crate::diagnostic::Severity::Error)
+            .map(|d| {
+                let inv = Invalid::new(d.code, d.message.clone());
+                match &d.location {
+                    Some(loc) => inv.at(loc),
+                    None => inv,
+                }
+            })
+            .collect();
+        return finish_meta(report);
+    }
+
+    // 2. Lowering.
+    let sem = match crate::sem::program::lower(program) {
+        Ok(s) => s,
+        Err(e) => {
+            let mut report = VerificationReport::synthetic(Outcome::Invalid, true);
+            let inv = Invalid::new("E100", e.to_string());
+            report.invalid.push(match e.location() {
+                Some(l) => inv.at(l),
+                None => inv,
+            });
+            return finish_meta(report);
+        }
+    };
+
+    // 3. Supportability of the program (including the entry).
+    let mut unsupported = sem.unsupported().to_vec();
+    let entry = sem.entry();
+    let ef = sem.function(entry);
+    if ef.is_nobody && !ef.is_transparent_nobody() {
+        unsupported.push(Unsupported::new(
+            "external entry function",
+            "entry is body-less with declared effects, blocking, or a return",
+        ));
+    }
+    if !unsupported.is_empty() {
+        let mut report = VerificationReport::synthetic(Outcome::Unsupported, false);
+        report.unsupported = unsupported;
+        return finish_meta(report);
+    }
+
+    // 4. Contract validation and binding.
+    let contract = match spec.resolve(&sem) {
+        Ok(c) => c,
+        Err(ContractError::Unsupported(m)) => {
+            let mut report = VerificationReport::synthetic(Outcome::Unsupported, false);
+            report.unsupported.push(Unsupported::new("contract", m));
+            return finish_meta(report);
+        }
+        Err(ContractError::Invalid(m)) => {
+            let mut report = VerificationReport::synthetic(Outcome::Invalid, true);
+            report.invalid.push(Invalid::new("C001", m));
+            return finish_meta(report);
+        }
+    };
+
+    // 5. Monitors, exploration, properties.
+    let monitor = crate::sem::monitor::MonitorConfig::from_predicates(contract.predicates());
+    let report = match engine {
+        EngineKind::Interpreter => {
+            let e = crate::interp::Interpreter::with_monitor(&sem, contract.bounds.clone(), monitor);
+            verify(&e, &contract)
+        }
+        EngineKind::Petri => {
+            let e = crate::petri::PetriEngine::with_monitor(&sem, contract.bounds.clone(), monitor);
+            verify(&e, &contract)
+        }
+    };
+    finish_meta(report)
 }

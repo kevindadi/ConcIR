@@ -1,0 +1,24 @@
+{
+  "program": "ignored_assumptions",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

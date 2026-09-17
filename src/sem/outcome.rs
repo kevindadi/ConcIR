@@ -130,7 +130,7 @@ pub type BackendResult<T> = Result<T, BackendError>;
 
 /// Analyzer limits. These are *not* part of the program semantics: reaching
 /// one is recorded as a boundary and makes a search incomplete.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AnalysisBounds {
     pub max_threads: usize,
     pub max_frames_per_thread: usize,

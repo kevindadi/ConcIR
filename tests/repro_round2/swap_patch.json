@@ -1,0 +1,14 @@
+[
+  {
+    "id": "swap",
+    "module": "main",
+    "function": "t1",
+    "changes": [
+      {
+        "kind": "swap_statements",
+        "a": "s1",
+        "b": "s2"
+      }
+    ]
+  }
+]

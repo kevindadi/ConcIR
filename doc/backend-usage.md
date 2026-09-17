@@ -125,16 +125,53 @@ they do not change the JSON syntax.
 
 `E512` is documented in [`error_codes.md`](error_codes.md).
 
+## Round-2 semantics and contract hardening
+
+- **Waiting is enabledness, not a forced hand-off.** A mutex/semaphore/channel
+  waiter becomes enabled when its condition holds, and every eligible waiter is
+  an independent choice. Channel *messages* are FIFO; waiting *thread* order is
+  not. `notify_one` enumerates every current waiter. No FIFO wake policy is
+  forced on generic CIR primitives.
+- **Per-frame handles.** Spawn/join handle names belong to the activation, so a
+  callee cannot overwrite its caller's bindings. Renaming a callee-local handle
+  does not change a property's result.
+- **Contract-driven monitors.** Completion facts are saturated to what the
+  contract observes, so a finite control loop (repeated calls, no growing data)
+  yields a finite graph and a complete `PASS`. Unbounded data, recursion depth,
+  and the search budget still produce `UNKNOWN`.
+- **Unified checked entry.** The CLI and repair use
+  `explore::verify_program`, which runs static validation, supportability,
+  contract validation and binding, monitor derivation, exploration, and
+  property checking. `sequential_consistency=false` or
+  `no_spurious_wakeups=false` is `UNSUPPORTED`; malformed bounds/ids/predicates
+  are `INVALID`; a statically invalid program is `INVALID`, never `PASS`.
+- **Immutable symbolic contract.** The repair loop re-resolves the frozen
+  `ContractSpec` against every candidate program, so statement/scope targets
+  are re-bound. A deleted target rejects the candidate.
+- **Unified patch permissions.** Every provider (including file candidates)
+  passes the same `module::function` scope and per-change `allow_lock_reorder` /
+  `allow_statement_delete` check. Duplicate candidates are detected by
+  normalized change content; conflicting changes on one statement are rejected.
+- **Exit codes.** `0` PASS/repaired · `1` FAIL · `2` usage · `3` UNKNOWN ·
+  `4` INVALID · `5` UNSUPPORTED.
+- **Reports** carry model and contract fingerprints, the assumptions used, and
+  the analysis bounds.
+
 ## Reproducible checks
 
 ```bash
+cargo test --test round2_regressions
+cargo test --test differential
 cargo test --test semantics_regression
 cargo test --test validator_risks
 cargo test --test interp_petri_diff
-cargo test --test petri_projection
 cargo test --test repair_e2e
 ```
+
+`tests/repro_round2/` contains the round-2 review counterexamples (CIR,
+contracts, patches) as fixtures; see `CODE_REVIEW_ROUND2.md`.
 
 Note: the pre-existing `tests/dot_export.rs` snapshot tests cannot pass on a
 fresh checkout because `**.snap` is git-ignored (no committed snapshots). This
 is unrelated to the backend and left untouched.
+

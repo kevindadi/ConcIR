@@ -1,0 +1,21 @@
+[
+  {
+    "id": "delete-three",
+    "module": "main",
+    "function": "t2",
+    "changes": [
+      {
+        "kind": "delete_statement",
+        "sid": "s1"
+      },
+      {
+        "kind": "delete_statement",
+        "sid": "s3"
+      },
+      {
+        "kind": "delete_statement",
+        "sid": "s5"
+      }
+    ]
+  }
+]

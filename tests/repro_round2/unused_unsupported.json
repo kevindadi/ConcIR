@@ -1,0 +1,31 @@
+{
+  "program": "unused_unsupported",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [
+        {
+          "name": "rw",
+          "kind": "sync",
+          "type": "RwLock",
+          "mode": "Sync"
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

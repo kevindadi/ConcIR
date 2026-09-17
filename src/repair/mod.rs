@@ -1,13 +1,13 @@
 //! Phase 4: structured CIR patches and the LLM-free iterative repair loop.
 //!
-//! The [`VerificationContract`] is built from data and is never modified by a
-//! patch or by the loop. Candidates are proposed by a [`CandidateProvider`],
-//! applied to the parsed [`Program`], then re-validated, re-lowered,
-//! re-translated, and re-verified in full.
+//! The [`ContractSpec`](crate::explore::contract::ContractSpec) is the frozen,
+//! symbolic contract. It is re-resolved against every candidate program, so
+//! statement/scope targets are re-bound (never stale body indices). Every
+//! candidate — automatic or file-provided — goes through the same permission
+//! check, static validation, supportability, re-binding, re-translation, and
+//! full verification.
 //!
-//! Old-counterexample replay is intentionally *not* an acceptance criterion:
-//! every candidate goes through full verification. Replay may only be used as
-//! an optional fast pre-filter.
+//! Old-counterexample replay is intentionally *not* an acceptance criterion.
 
 pub mod candidates;
 pub mod patch;
@@ -17,9 +17,8 @@ use std::collections::HashSet;
 use serde::Serialize;
 
 use crate::ast::Program;
-use crate::explore::contract::VerificationContract;
-use crate::explore::{self, VerificationReport};
-use crate::petri::PetriEngine;
+use crate::explore::contract::{ContractError, ContractSpec};
+use crate::explore::{self, EngineKind, VerificationReport};
 use crate::sem::outcome::Outcome;
 use crate::validate;
 
@@ -42,7 +41,6 @@ pub struct RoundRecord {
     pub accepted: bool,
     pub reason: String,
     pub patched_outcome: Option<Outcome>,
-    /// Difference the patch would make (kept for the repair log).
     pub diff: Option<String>,
 }
 
@@ -59,14 +57,15 @@ pub struct RepairReport {
     pub accepted_report: Option<VerificationReport>,
 }
 
+fn content_key(patch: &CirPatch) -> String {
+    let changes = serde_json::to_string(&patch.changes).unwrap_or_default();
+    format!("{}::{}::{changes}", patch.module, patch.function)
+}
+
 /// Run the deterministic repair loop.
-///
-/// Each candidate goes through: patch legality → CIR static validation →
-/// supportability → re-translation → full verification of every required
-/// property (and preserved behaviour) → accept or reject.
 pub fn run_repair(
     program: &Program,
-    contract: &VerificationContract,
+    spec: &ContractSpec,
     provider: &mut dyn CandidateProvider,
     budget: usize,
 ) -> RepairReport {
@@ -79,7 +78,7 @@ pub fn run_repair(
     for round in 0..budget {
         let ctx = RepairContext {
             program: &current,
-            contract,
+            spec,
             round,
         };
         let Some(candidate) = provider.next_candidate(&ctx) else {
@@ -96,7 +95,8 @@ pub fn run_repair(
                 accepted_report: None,
             };
         };
-        if !tried.insert(candidate.id.clone()) {
+        // Deduplicate by normalized change content, not by a user-chosen id.
+        if !tried.insert(content_key(&candidate)) {
             rounds.push(RoundRecord {
                 round,
                 candidate: candidate.id.clone(),
@@ -109,8 +109,9 @@ pub fn run_repair(
         }
         candidates_tried += 1;
 
-        if !contract.allowed_scope.allows_function(&candidate.function) {
-            rounds.push(reject(round, &candidate, "function outside allowed patch scope", None, None));
+        // Unified, provider-independent permission check.
+        if let Err(e) = patch::check_allowed(&spec.allowed_scope, &candidate) {
+            rounds.push(reject(round, &candidate, &format!("disallowed: {e}"), None, None));
             continue;
         }
 
@@ -168,8 +169,33 @@ pub fn run_repair(
             continue;
         }
 
-        let engine = PetriEngine::new(&sem, contract.bounds.clone());
-        let report = explore::verify(&engine, contract);
+        // Re-bind the frozen symbolic contract against the *new* program. A
+        // deleted target fails here instead of being silently redirected.
+        let rebound = match spec.resolve(&sem) {
+            Ok(c) => c,
+            Err(ContractError::Unsupported(m)) => {
+                rounds.push(reject(
+                    round,
+                    &candidate,
+                    &format!("contract unsupported after patch: {m}"),
+                    Some(Outcome::Unsupported),
+                    Some(diff),
+                ));
+                continue;
+            }
+            Err(ContractError::Invalid(m)) => {
+                rounds.push(reject(
+                    round,
+                    &candidate,
+                    &format!("contract cannot be re-bound after patch: {m}"),
+                    Some(Outcome::Invalid),
+                    Some(diff),
+                ));
+                continue;
+            }
+        };
+
+        let report = explore::verify_program(&patched, spec, EngineKind::Petri);
         match report.outcome {
             Outcome::Pass => {
                 rounds.push(RoundRecord {
@@ -180,6 +206,7 @@ pub fn run_repair(
                     patched_outcome: Some(Outcome::Pass),
                     diff: Some(diff),
                 });
+                let _ = rebound;
                 return RepairReport {
                     outcome: RepairOutcome::Repaired,
                     candidates_tried,

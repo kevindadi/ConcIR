@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 
 use crate::sem::eval::eval;
 use crate::sem::ids::{FrameId, FunctionId, HandleId, ResourceId, ScopeId, SlotRef, ThreadId};
+use crate::sem::monitor::MonitorConfig;
 use crate::sem::outcome::{
     AnalysisBounds, BackendError, BackendResult, BoundaryEvent, BoundaryKind, StepLabel,
 };
@@ -28,6 +29,7 @@ pub struct PetriEngine<'a> {
     pub program: &'a SemProgram,
     pub net: PetriNet,
     pub bounds: AnalysisBounds,
+    pub monitor: MonitorConfig,
 }
 
 enum FireBind {
@@ -40,17 +42,42 @@ enum FireBind {
         frame: FrameId,
         wait: NetToken,
     },
+    ControlChooseWait {
+        thread: ThreadId,
+        frame: FrameId,
+        wait: NetToken,
+    },
     Wait(NetToken),
     Pair(NetToken, NetToken),
 }
 
 impl<'a> PetriEngine<'a> {
     pub fn new(program: &'a SemProgram, bounds: AnalysisBounds) -> Self {
+        Self::with_monitor(program, bounds, MonitorConfig::unbounded())
+    }
+
+    pub fn with_monitor(
+        program: &'a SemProgram,
+        bounds: AnalysisBounds,
+        monitor: MonitorConfig,
+    ) -> Self {
         let net = build(program);
         PetriEngine {
             program,
             net,
             bounds,
+            monitor,
+        }
+    }
+
+    fn record_completion(&self, state: &mut NetState, function: FunctionId) {
+        let max = self.monitor.max_for(function);
+        if max == 0 {
+            return;
+        }
+        let e = state.store.completed_functions.entry(function).or_insert(0);
+        if *e < max {
+            *e += 1;
         }
     }
 
@@ -127,48 +154,6 @@ impl<'a> PetriEngine<'a> {
         }
     }
 
-    /// Hand a free mutex to the front lock waiter, if any.
-    fn grant_lock_now(&self, state: &mut NetState, resource: ResourceId) {
-        let Some(mtx) = self.place(&PlaceKey::Mutex(resource)) else {
-            return;
-        };
-        if !matches!(state.read_mutex(mtx), Some(MutexToken::Free)) {
-            return;
-        }
-        let Some(lw) = self.place(&PlaceKey::LockWait(resource)) else {
-            return;
-        };
-        let front = state.place_tokens(lw).first().cloned();
-        if let Some(token @ NetToken::LockWait { thread, .. }) = front {
-            state.take_first(lw);
-            state.set_mutex(mtx, MutexToken::Held(thread));
-            self.wake_control_next(state, &token);
-        }
-    }
-
-    /// Grant semaphore permits to waiting acquirers while possible.
-    fn grant_semaphore_now(&self, state: &mut NetState, resource: ResourceId) {
-        let Some(sem) = self.place(&PlaceKey::Semaphore(resource)) else {
-            return;
-        };
-        let Some(sw) = self.place(&PlaceKey::SemWait(resource)) else {
-            return;
-        };
-        loop {
-            let available = state.read_data(sem).and_then(Value::as_int).unwrap_or(0);
-            let front = state.place_tokens(sw).first().cloned();
-            let Some(token @ NetToken::SemWait { count, .. }) = front else {
-                break;
-            };
-            if available < count {
-                break;
-            }
-            state.take_first(sw);
-            state.set_data(sem, Value::Int(available - count));
-            self.wake_control_next(state, &token);
-        }
-    }
-
     fn create_thread(
         &self,
         state: &mut NetState,
@@ -195,7 +180,6 @@ impl<'a> PetriEngine<'a> {
         let thread = NetThread {
             entry_function: func,
             stack: Vec::new(),
-            handles: Default::default(),
             handle_children: Default::default(),
             parent_scope,
             blocked_at: None,
@@ -203,7 +187,7 @@ impl<'a> PetriEngine<'a> {
         state.store.threads.insert(tid, thread);
         if f.is_transparent_nobody() {
             state.store.finished.insert(tid);
-            *state.store.completed_functions.entry(func).or_insert(0) += 1;
+            self.record_completion(state, func);
             return Ok(Some(tid));
         }
         let frame = NetFrame {
@@ -211,6 +195,7 @@ impl<'a> PetriEngine<'a> {
             function: func,
             pc: 0,
             locals: default_locals(self.program, func),
+            handles: Default::default(),
             ret: None,
         };
         state.store.alloc.next_frame += 1;
@@ -239,7 +224,7 @@ impl<'a> PetriEngine<'a> {
 
     fn finish_thread(&self, state: &mut NetState, thread: ThreadId, function: FunctionId) {
         state.store.finished.insert(thread);
-        *state.store.completed_functions.entry(function).or_insert(0) += 1;
+        self.record_completion(state, function);
 
         let scope = state.store.threads.get(&thread).and_then(|t| t.parent_scope);
         if let Some(scope) = scope {
@@ -309,9 +294,9 @@ impl<'a> PetriEngine<'a> {
                 };
                 let child = state
                     .store
-                    .threads
-                    .get(&jt)
-                    .and_then(|t| t.handles.get(handle))
+                    .frames
+                    .get(&jf)
+                    .and_then(|fr| fr.handles.get(handle))
                     .and_then(|h| state.store.threads.get(&jt).and_then(|t| t.handle_children.get(h)))
                     .copied();
                 if child == Some(thread) {
@@ -336,8 +321,9 @@ impl<'a> PetriEngine<'a> {
     ) -> BackendResult<Option<NetState>> {
         let mut next = state.clone();
         let control = match bind {
-            FireBind::Control { thread, frame } => Some((*thread, *frame)),
-            FireBind::ControlWait { thread, frame, .. } => Some((*thread, *frame)),
+            FireBind::Control { thread, frame }
+            | FireBind::ControlWait { thread, frame, .. }
+            | FireBind::ControlChooseWait { thread, frame, .. } => Some((*thread, *frame)),
             _ => None,
         };
         // Remove the input control token for control-bound transitions.
@@ -349,6 +335,10 @@ impl<'a> PetriEngine<'a> {
                 },
                 FireBind::ControlWait { .. } => match t.binding {
                     Binding::ControlWait(pid, _) => Some(pid),
+                    _ => None,
+                },
+                FireBind::ControlChooseWait { .. } => match t.binding {
+                    Binding::ControlChooseWait(pid, _) => Some(pid),
                     _ => None,
                 },
                 _ => None,
@@ -492,7 +482,6 @@ impl<'a> PetriEngine<'a> {
                 match next.read_mutex(mtx) {
                     Some(MutexToken::Held(owner)) if owner == thread => {
                         next.set_mutex(mtx, MutexToken::Free);
-                        self.grant_lock_now(&mut next, *resource);
                     }
                     Some(MutexToken::Held(_)) => {
                         return Err(BackendError::invalid(
@@ -549,7 +538,6 @@ impl<'a> PetriEngine<'a> {
                     }
                 }
                 next.set_mutex(mtx, MutexToken::Free);
-                self.grant_lock_now(&mut next, *lock);
                 let cv = self.place(&PlaceKey::Condvar(*condvar)).unwrap();
                 next.put(
                     cv,
@@ -561,19 +549,23 @@ impl<'a> PetriEngine<'a> {
                 );
                 self.set_blocked(&mut next, thread, PlaceKey::Condvar(*condvar));
             }
-            NetOp::CondvarNotifyHit { condvar, lock } => {
+            NetOp::CondvarNotifyHit { condvar } => {
                 let (thread, frame) = control.unwrap();
-                let cv = self.place(&PlaceKey::Condvar(*condvar)).unwrap();
-                let token = next.take_first(cv);
-                let Some(token) = token else { disabled!() };
-                let (wt, wf) = match &token {
-                    NetToken::CondvarWait { thread, frame, .. } => (*thread, *frame),
+                let wait = match bind {
+                    FireBind::ControlChooseWait { wait, .. } => wait.clone(),
                     _ => disabled!(),
                 };
-                let lw = self.place(&PlaceKey::LockWait(*lock)).unwrap();
+                let (wt, wf, lock) = match &wait {
+                    NetToken::CondvarWait { thread, frame, lock } => (*thread, *frame, *lock),
+                    _ => disabled!(),
+                };
+                let cv = self.place(&PlaceKey::Condvar(*condvar)).unwrap();
+                if !next.take_token(cv, &wait) {
+                    disabled!();
+                }
+                let lw = self.place(&PlaceKey::LockWait(lock)).unwrap();
                 next.put(lw, NetToken::LockWait { thread: wt, frame: wf });
-                self.set_blocked(&mut next, wt, PlaceKey::LockWait(*lock));
-                self.grant_lock_now(&mut next, *lock);
+                self.set_blocked(&mut next, wt, PlaceKey::LockWait(lock));
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, thread, frame);
             }
@@ -586,7 +578,7 @@ impl<'a> PetriEngine<'a> {
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, thread, frame);
             }
-            NetOp::CondvarNotifyAll { condvar, lock } => {
+            NetOp::CondvarNotifyAll { condvar } => {
                 let (thread, frame) = control.unwrap();
                 let cv = self.place(&PlaceKey::Condvar(*condvar)).unwrap();
                 let waiters: Vec<NetToken> = next
@@ -596,14 +588,13 @@ impl<'a> PetriEngine<'a> {
                     .cloned()
                     .collect();
                 for token in waiters {
-                    if let NetToken::CondvarWait { thread: wt, frame: wf, .. } = &token {
+                    if let NetToken::CondvarWait { thread: wt, frame: wf, lock } = &token {
                         next.take_token(cv, &token);
                         let lw = self.place(&PlaceKey::LockWait(*lock)).unwrap();
                         next.put(lw, NetToken::LockWait { thread: *wt, frame: *wf });
                         self.set_blocked(&mut next, *wt, PlaceKey::LockWait(*lock));
                     }
                 }
-                self.grant_lock_now(&mut next, *lock);
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, thread, frame);
             }
@@ -649,7 +640,6 @@ impl<'a> PetriEngine<'a> {
                 let sem = self.place(&PlaceKey::Semaphore(*resource)).unwrap();
                 let available = next.read_data(sem).and_then(Value::as_int).unwrap_or(0);
                 next.set_data(sem, Value::Int(available + *count));
-                self.grant_semaphore_now(&mut next, *resource);
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, thread, frame);
             }
@@ -811,26 +801,6 @@ impl<'a> PetriEngine<'a> {
                     a.push(v);
                     next.set_data(ch, Value::Array(a));
                 }
-                // Eagerly hand to a waiting receiver (matches the reference
-                // interpreter's atomic drain).
-                let recv_place = self.place(&PlaceKey::ChannelRecv(*channel)).unwrap();
-                if let Some(wait @ NetToken::RecvWait { frame: rf, .. }) =
-                    next.place_tokens(recv_place).first().cloned()
-                {
-                    next.take_first(recv_place);
-                    if let Some(Value::Array(mut a)) = next.read_data(ch).cloned() {
-                        if !a.is_empty() {
-                            let head = a.remove(0);
-                            next.set_data(ch, Value::Array(a));
-                            if let Some(dst) = recv_dst(self.program, &next, rf) {
-                                if dst != SlotRef::Discard {
-                                    self.write_dst(&mut next, rf, dst, head)?;
-                                }
-                            }
-                        }
-                    }
-                    self.wake_control_next(&mut next, &wait);
-                }
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, thread, frame);
             }
@@ -870,19 +840,6 @@ impl<'a> PetriEngine<'a> {
                 };
                 let Some(v) = popped else { disabled!() };
                 self.write_dst(&mut next, frame, *dst, v)?;
-                // Eagerly admit a blocked sender into the freed slot.
-                let send_place = self.place(&PlaceKey::ChannelSend(*channel)).unwrap();
-                if let Some(wait) = next.place_tokens(send_place).first().cloned() {
-                    if let NetToken::SendWait { value, .. } = &wait {
-                        let value = value.clone();
-                        next.take_first(send_place);
-                        if let Some(Value::Array(mut a)) = next.read_data(ch).cloned() {
-                            a.push(value);
-                            next.set_data(ch, Value::Array(a));
-                        }
-                        self.wake_control_next(&mut next, &wait);
-                    }
-                }
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, thread, frame);
             }
@@ -1045,6 +1002,7 @@ impl<'a> PetriEngine<'a> {
                         function: *func,
                         pc: 0,
                         locals,
+                        handles: Default::default(),
                         ret: Some(NetRetAddr {
                             pc_next: caller_pc + 1,
                             dst: dst.unwrap_or(SlotRef::Discard),
@@ -1065,9 +1023,16 @@ impl<'a> PetriEngine<'a> {
                 };
                 let hid = HandleId(next.store.alloc.next_handle);
                 next.store.alloc.next_handle += 1;
-                let tstate = next.store.threads.get_mut(&thread).unwrap();
-                tstate.handles.insert(handle.clone(), hid);
-                tstate.handle_children.insert(hid, child);
+                next.store
+                    .frame_mut(frame)
+                    .handles
+                    .insert(handle.clone(), hid);
+                next.store
+                    .threads
+                    .get_mut(&thread)
+                    .unwrap()
+                    .handle_children
+                    .insert(hid, child);
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, thread, frame);
             }
@@ -1127,7 +1092,7 @@ impl<'a> PetriEngine<'a> {
             }
             NetOp::JoinReady { handle } => {
                 let (thread, frame) = control.unwrap();
-                let hid = next.store.threads[&thread]
+                let hid = next.store.frame(frame)
                     .handles
                     .get(handle)
                     .copied()
@@ -1145,7 +1110,7 @@ impl<'a> PetriEngine<'a> {
             }
             NetOp::JoinBlock { handle } => {
                 let (thread, frame) = control.unwrap();
-                let hid = next.store.threads[&thread]
+                let hid = next.store.frame(frame)
                     .handles
                     .get(handle)
                     .copied()
@@ -1191,11 +1156,7 @@ impl<'a> PetriEngine<'a> {
                         self.place_control(&mut next, dest, thread, caller);
                     }
                 }
-                *next
-                    .store
-                    .completed_functions
-                    .entry(callee.function)
-                    .or_insert(0) += 1;
+                self.record_completion(&mut next, callee.function);
             }
             NetOp::ReturnFinal { value } => {
                 let (thread, frame) = control.unwrap();
@@ -1321,15 +1282,14 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
             NetThread {
                 entry_function: entry,
                 stack: Vec::new(),
-                handles: Default::default(),
-                handle_children: Default::default(),
+                    handle_children: Default::default(),
                 parent_scope: None,
                 blocked_at: None,
             },
         );
         if self.program.function(entry).is_transparent_nobody() {
             state.store.finished.insert(tid);
-            *state.store.completed_functions.entry(entry).or_insert(0) += 1;
+            self.record_completion(&mut state, entry);
             return Ok(state);
         }
         let fid = FrameId(0);
@@ -1341,6 +1301,7 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                 function: entry,
                 pc: 0,
                 locals: default_locals(self.program, entry),
+                handles: Default::default(),
                 ret: None,
             },
         );
@@ -1379,8 +1340,10 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                     }
                 }
                 Binding::Wait(pid) => {
-                    let front = state.place_tokens(*pid).first().cloned();
-                    if let Some(token) = front {
+                    // Every waiting token is an independent choice; blocking
+                    // order is not part of the CIR semantics.
+                    let tokens: Vec<NetToken> = state.place_tokens(*pid).to_vec();
+                    for token in tokens {
                         let bind = FireBind::Wait(token);
                         if let Some(s) =
                             self.fire(state, t, &bind, &mut enabled.boundary)?
@@ -1414,6 +1377,7 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                         .filter(|t| matches!(t, NetToken::Control { .. }))
                         .cloned()
                         .collect();
+                    // Channel message order is FIFO: pair with the front waiter.
                     let wait = state.place_tokens(*w).first().cloned();
                     if let Some(wait) = wait {
                         for token in tokens {
@@ -1422,6 +1386,36 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                                 _ => continue,
                             };
                             let bind = FireBind::ControlWait {
+                                thread,
+                                frame,
+                                wait: wait.clone(),
+                            };
+                            if let Some(s) =
+                                self.fire(state, t, &bind, &mut enabled.boundary)?
+                            {
+                                let label = StepLabel::new(t.origin.clone())
+                                    .with_binding(thread, frame);
+                                enabled.steps.push(Step { label, state: s });
+                            }
+                        }
+                    }
+                }
+                Binding::ControlChooseWait(c, w) => {
+                    let tokens: Vec<NetToken> = state
+                        .place_tokens(*c)
+                        .iter()
+                        .filter(|t| matches!(t, NetToken::Control { .. }))
+                        .cloned()
+                        .collect();
+                    // notify_one: every current waiter is a legal choice.
+                    let waits: Vec<NetToken> = state.place_tokens(*w).to_vec();
+                    for wait in waits {
+                        for token in &tokens {
+                            let (thread, frame) = match token {
+                                NetToken::Control { thread, frame } => (*thread, *frame),
+                                _ => continue,
+                            };
+                            let bind = FireBind::ControlChooseWait {
                                 thread,
                                 frame,
                                 wait: wait.clone(),
@@ -1665,8 +1659,9 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
 
 fn binding_ids(bind: &FireBind) -> (ThreadId, FrameId) {
     match bind {
-        FireBind::Control { thread, frame } => (*thread, *frame),
-        FireBind::ControlWait { thread, frame, .. } => (*thread, *frame),
+        FireBind::Control { thread, frame }
+        | FireBind::ControlWait { thread, frame, .. }
+        | FireBind::ControlChooseWait { thread, frame, .. } => (*thread, *frame),
         FireBind::Wait(t) => (t.thread().unwrap_or(ThreadId(0)), t.frame().unwrap_or(FrameId(0))),
         FireBind::Pair(a, _) => (a.thread().unwrap_or(ThreadId(0)), a.frame().unwrap_or(FrameId(0))),
     }

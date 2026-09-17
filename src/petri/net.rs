@@ -148,6 +148,9 @@ pub enum Binding {
     Pair(PlaceId, PlaceId),
     /// Pair a control token with the front wait token of another place.
     ControlWait(PlaceId, PlaceId),
+    /// Pair a control token with *any* wait token of another place; each token
+    /// is an independent choice (used for `notify_one`).
+    ControlChooseWait(PlaceId, PlaceId),
 }
 
 #[derive(Debug, Clone)]
@@ -197,14 +200,12 @@ pub enum NetOp {
     },
     CondvarNotifyHit {
         condvar: ResourceId,
-        lock: ResourceId,
     },
     CondvarNotifyMiss {
         condvar: ResourceId,
     },
     CondvarNotifyAll {
         condvar: ResourceId,
-        lock: ResourceId,
     },
     SemAcquire {
         resource: ResourceId,
@@ -322,8 +323,6 @@ pub struct PetriNet {
     pub place_of: BTreeMap<PlaceKey, PlaceId>,
     pub transitions: Vec<Transition>,
     pub entry: FunctionId,
-    /// Condvar → associated mutex, learned from `condvar_wait` sites.
-    pub condvar_lock: BTreeMap<ResourceId, ResourceId>,
 }
 
 // ─────────────────────────── Net state ───────────────────────────
@@ -334,6 +333,8 @@ pub struct NetFrame {
     pub function: FunctionId,
     pub pc: usize,
     pub locals: BTreeMap<SlotId, Value>,
+    /// Handle name → child bindings belong to the activation.
+    pub handles: BTreeMap<String, HandleId>,
     pub ret: Option<NetRetAddr>,
 }
 
@@ -356,7 +357,7 @@ pub struct NetScope {
 pub struct NetThread {
     pub entry_function: FunctionId,
     pub stack: Vec<FrameId>,
-    pub handles: BTreeMap<String, HandleId>,
+    /// Concrete child identity by handle id; names live on frames.
     pub handle_children: BTreeMap<HandleId, ThreadId>,
     pub parent_scope: Option<ScopeId>,
     /// Static key of the place the thread is currently waiting in, if any.
@@ -481,7 +482,6 @@ struct Builder<'a> {
     places: Vec<Place>,
     place_of: BTreeMap<PlaceKey, PlaceId>,
     transitions: Vec<Transition>,
-    condvar_lock: BTreeMap<ResourceId, ResourceId>,
 }
 
 impl<'a> Builder<'a> {
@@ -540,18 +540,7 @@ pub fn build(program: &SemProgram) -> PetriNet {
         places: Vec::new(),
         place_of: BTreeMap::new(),
         transitions: Vec::new(),
-        condvar_lock: BTreeMap::new(),
     };
-
-    // Learn condvar → mutex associations from wait sites.
-    for f in program.functions() {
-        for stmt in &f.body {
-            if let SemOp::CondvarWait { condvar, lock } = &stmt.op {
-                b.condvar_lock.insert(*condvar, *lock);
-            }
-        }
-    }
-    let condvar_lock = b.condvar_lock.clone();
 
     for f in program.functions() {
         for (si, stmt) in f.body.iter().enumerate() {
@@ -563,17 +552,71 @@ pub fn build(program: &SemProgram) -> PetriNet {
     for rid in resource_ids {
         match program.resource(rid).kind {
             ResKind::Mutex => {
-                b.place(PlaceKey::LockWait(rid));
-                b.place(PlaceKey::Mutex(rid));
+                let lw = b.place(PlaceKey::LockWait(rid));
+                let mtx = b.place(PlaceKey::Mutex(rid));
+                b.add(
+                    NetOp::LockWaitAcquire { resource: rid },
+                    Binding::Wait(lw),
+                    None,
+                    vec![mtx],
+                    crate::sem::outcome::TransitionOrigin {
+                        module: program.resource(rid).module,
+                        function: program.entry(),
+                        sid: None,
+                        phase: Phase::Reacquire,
+                    },
+                );
             }
             ResKind::Semaphore => {
-                b.place(PlaceKey::SemWait(rid));
-                b.place(PlaceKey::Semaphore(rid));
+                let sw = b.place(PlaceKey::SemWait(rid));
+                let sem = b.place(PlaceKey::Semaphore(rid));
+                b.add(
+                    NetOp::SemGrant { resource: rid },
+                    Binding::Wait(sw),
+                    None,
+                    vec![sem],
+                    crate::sem::outcome::TransitionOrigin {
+                        module: program.resource(rid).module,
+                        function: program.entry(),
+                        sid: None,
+                        phase: Phase::Reacquire,
+                    },
+                );
             }
             ResKind::Channel => {
-                b.place(PlaceKey::Channel(rid));
-                b.place(PlaceKey::ChannelSend(rid));
-                b.place(PlaceKey::ChannelRecv(rid));
+                let cap = program.resource(rid).capacity;
+                let ch = b.place(PlaceKey::Channel(rid));
+                if cap == 0 {
+                    b.place(PlaceKey::ChannelSend(rid));
+                    b.place(PlaceKey::ChannelRecv(rid));
+                } else {
+                    let send = b.place(PlaceKey::ChannelSend(rid));
+                    let recv = b.place(PlaceKey::ChannelRecv(rid));
+                    b.add(
+                        NetOp::BufferDeliver { channel: rid },
+                        Binding::Wait(send),
+                        None,
+                        vec![ch, send],
+                        crate::sem::outcome::TransitionOrigin {
+                            module: program.resource(rid).module,
+                            function: program.entry(),
+                            sid: None,
+                            phase: Phase::Wake,
+                        },
+                    );
+                    b.add(
+                        NetOp::BufferRecvWait { channel: rid },
+                        Binding::Wait(recv),
+                        None,
+                        vec![ch, recv],
+                        crate::sem::outcome::TransitionOrigin {
+                            module: program.resource(rid).module,
+                            function: program.entry(),
+                            sid: None,
+                            phase: Phase::Wake,
+                        },
+                    );
+                }
             }
             _ => {}
         }
@@ -584,7 +627,6 @@ pub fn build(program: &SemProgram) -> PetriNet {
         place_of: b.place_of,
         transitions: b.transitions,
         entry: program.entry(),
-        condvar_lock,
     }
 }
 
@@ -807,18 +849,17 @@ fn build_stmt(b: &mut Builder, f: &SemFunction, si: usize, stmt: &crate::sem::pr
         }
         SemOp::CondvarNotify { condvar } => {
             let cv = b.place(PlaceKey::Condvar(*condvar));
-            let lock_opt = b.condvar_lock.get(condvar).copied();
-            if let Some(lock) = lock_opt {
-                let mtx = b.place(PlaceKey::Mutex(lock));
-                let lw = b.place(PlaceKey::LockWait(lock));
-                b.add(
-                    NetOp::CondvarNotifyHit { condvar: *condvar, lock },
-                    Binding::Control(input),
-                    Some(fall),
-                    vec![fall, cv, lw, mtx],
-                    origin.clone(),
-                );
-            }
+            // Choose any current waiter (one successor per token); the lock to
+            // re-acquire is carried by the waiter token itself.
+            b.add(
+                NetOp::CondvarNotifyHit {
+                    condvar: *condvar,
+                },
+                Binding::ControlChooseWait(input, cv),
+                Some(fall),
+                vec![fall, cv],
+                origin.clone(),
+            );
             b.add(
                 NetOp::CondvarNotifyMiss { condvar: *condvar },
                 Binding::Control(input),
@@ -829,21 +870,17 @@ fn build_stmt(b: &mut Builder, f: &SemFunction, si: usize, stmt: &crate::sem::pr
         }
         SemOp::CondvarNotifyAll { condvar } => {
             let cv = b.place(PlaceKey::Condvar(*condvar));
-            let lock_opt = b.condvar_lock.get(condvar).copied();
-            if let Some(lock) = lock_opt {
-                let mtx = b.place(PlaceKey::Mutex(lock));
-                let lw = b.place(PlaceKey::LockWait(lock));
-                b.add(
-                    NetOp::CondvarNotifyAll {
-                        condvar: *condvar,
-                        lock,
-                    },
-                    Binding::Control(input),
-                    Some(fall),
-                    vec![fall, cv, lw, mtx],
-                    origin,
-                );
-            }
+            // Bulk transition: moves every current waiter to its lock queue.
+            // Built unconditionally so it also advances with no wait site.
+            b.add(
+                NetOp::CondvarNotifyAll {
+                    condvar: *condvar,
+                },
+                Binding::Control(input),
+                Some(fall),
+                vec![fall, cv],
+                origin,
+            );
         }
         SemOp::SemaphoreAcquire { resource, count } => {
             let sem = b.place(PlaceKey::Semaphore(*resource));

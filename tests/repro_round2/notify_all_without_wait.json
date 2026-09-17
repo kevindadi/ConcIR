@@ -1,0 +1,36 @@
+{
+  "program": "notify_all_without_wait",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "resources": [
+        {
+          "name": "cv",
+          "kind": "sync",
+          "type": "Condvar",
+          "mode": "Sync"
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "condvar_notify_all",
+              "condvar": "cv"
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

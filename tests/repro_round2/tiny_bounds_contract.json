@@ -1,0 +1,10 @@
+{
+  "name": "tiny",
+  "properties": [
+    { "kind": "deadlock_free", "id": "deadlock" }
+  ],
+  "bounds": {
+    "max_states": 1,
+    "max_depth": 40
+  }
+}

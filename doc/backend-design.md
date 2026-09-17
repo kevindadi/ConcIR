@@ -166,67 +166,95 @@ all interleavings. A single run follows one deterministic schedule.
   fall through. The wait is on the scope's own member set, not on a global
   "all threads" condition.
 
-### 3.4 Mutex
+### 3.4 Waiting is enabledness, not a forced hand-off
+
+A thread blocked on a mutex, semaphore, or channel is **enabled again as soon
+as its condition holds**, and it completes its own blocking operation. There is
+no forced atomic hand-off from an unlock/release/notify to a specific waiter,
+and no FIFO order over waiting *threads*: every eligible waiter is an
+independent choice, so the program's nondeterminism is preserved. Message order
+on a channel is FIFO (a property of the channel), but the order in which
+waiting threads are served is not specified.
+
+### 3.5 Mutex
 
 `Store.mutexes[m]` is `Free` or `Held(t)`.
 
 - `lock m`: if `Free`, set `Held(t)` and fall through; otherwise block with
   `Lock(m)`.
-- `unlock m`: if `Held(t)` for the current thread, set `Free` and wake the
-  first waiter; otherwise it is a **semantic error** (`Invalid`), not ordinary
-  blocking.
-- On `unlock`/wake, a `Lock` waiter becomes runnable and resumes **after** its
-  acquire statement.
+- `unlock m`: if `Held(t)` for the current thread, set `Free`; otherwise it is a
+  **semantic error** (`Invalid`), not ordinary blocking. `unlock` does not
+  force the lock onto a particular waiter.
+- While `m` is `Free`, **any** thread blocked in `Lock(m)` may acquire it (each
+  is a separate choice); a runnable thread may also acquire it.
 
-### 3.5 Bounded channel
+### 3.6 Bounded channel
 
 `capacity` is required (the validator enforces it).
 
-- `capacity >= 1`: `ChannelState::Buffered(VecDeque<Value>)`.
+- `capacity >= 1`:
   - send: evaluate the value **once**, at the send statement. If `len <
     capacity`, push and fall through; otherwise block with the captured value
     in `SendWait`.
   - recv: if non-empty, pop the head into `dst` and fall through; otherwise
     block in `RecvWait`.
-  - When a recv frees a slot and a `SendWait` exists, the blocked sender's
-    captured value enters the queue and the sender is resumed. Values are never
-    re-evaluated while blocked.
+  - A blocked sender is enabled once there is space and pushes its captured
+    value; a blocked receiver is enabled once the buffer is non-empty. Values
+    are never re-evaluated while blocked. The buffer is a FIFO queue, so
+    messages are received in send order.
 - `capacity == 0`: rendezvous. A send registers in `SendWait` with its captured
-  value; a recv registers in `RecvWait`. When both sides exist, they pair in
-  FIFO order: the receiver gets the oldest sender's value, both sides resume.
+  value; a recv registers in `RecvWait`. The arriving side pairs with the
+  front waiter of the other side (FIFO message order); both sides resume. The
+  two blocked sides can never coexist, because the second arrival pairs.
 - A missing `capacity` (validator E001) is `Invalid` for the backend.
 
-### 3.6 Condvar
+### 3.7 Condvar
 
 A condvar has a wait set of `(ThreadId, FrameId, pc)` and is always paired with
 a mutex at `wait`.
 
 - `wait cv, m`: it is a **semantic error** if the current thread does not hold
-  `m`. Otherwise, atomically: release `m` (waking a lock waiter as usual), add
-  the caller to `cv`'s wait set, and block with `CondvarWait { cv, m }`.
-- `notify cv`: if the wait set is non-empty, remove the **oldest** waiter and
-  place it on `m`'s re-acquire queue. If empty, nothing is remembered — there
-  is **no stored permit**.
+  `m`. Otherwise, atomically: release `m`, add the caller to `cv`'s wait set,
+  and block with `CondvarWait { cv, m }`.
+- `notify cv`: if the wait set is non-empty, remove **any** current waiter
+  (every waiter is a legal choice; the enumeration order is deterministic but
+  the choice is not fixed) and place it on `m`'s re-acquire queue. If empty,
+  nothing is remembered — there is **no stored permit**.
 - `notify_all cv`: remove **all** current waiters and place them on `m`'s
-  re-acquire queue. Waiters that arrive later are unaffected.
+  re-acquire queue. Waiters that arrive later are unaffected. It also advances
+  normally when there is no wait site and no waiter at all.
 - A notified waiter becomes runnable only after it re-acquires the same `m`.
   Only then does its `wait` complete. The model has **no spurious wakeups**;
   progress never depends on one.
 - `wait` does not exist for `Async` mode here (that is `Unsupported`).
 
-### 3.7 Semaphore
+### 3.8 Semaphore
 
 `Store.semaphores[s]` is the number of available permits (initialised from the
 resource `count`). `acquire n` (default 1): if `available >= n`, subtract and
-fall through; else block in `SemWait`. `release n`: add `n` and wake waiters
-(FIFO). `n <= 0` is `Invalid`.
+fall through; else block in `SemWait`. `release n`: add `n`; every waiter whose
+request can now be satisfied is an independent choice (no FIFO wake order).
+`n <= 0` is `Invalid`.
 
-### 3.8 Atomics and shared Vars
+### 3.9 Atomics and shared Vars
 
 All are immediate (never queue). Bounded-Int writes whose result leaves the
 declared range **disable** the step (no transition), matching the documented
 CVN rule; this keeps counter loops finite. Unbounded `Int` is allowed but the
 explorer may truncate and report `Unknown`.
+
+### 3.10 Per-frame handles and finite monitors
+
+Spawn/join handle **names** are bound to the current activation (frame), not to
+the thread, so a callee cannot clobber its caller's bindings. Concrete child
+identity is keyed by a unique handle id in the thread's child table.
+
+Historical completion facts are monitored per the contract: a plain
+`FunctionCompleted` needs a boolean, `FunctionCompletedAtLeast(n)` saturates at
+`n`, and functions no predicate observes are not counted. This keeps a finite
+control loop (repeated calls with no growing data) a finite state graph and
+never masks a genuine growth in data, recursion depth, or the search budget.
+
 
 ---
 
@@ -337,24 +365,42 @@ VerificationContract
 ```
 
 The contract object is constructed from data and is **never** modified by a
-candidate patch or by the repair loop. It is cloned into each verification run.
+candidate patch or by the repair loop. It is cloned into each verification run,
+and it retains the symbolic `ContractSpec` it was resolved from.
 
 ### 6.2 Properties
 
-- **Safety**: `Assertion { location, condition }` and resource invariants
-  (e.g. mutex owner check, channel capacity).
+- **Safety**: `invariant` holds in every reachable state (the `Safety` /
+  `Unreachable` forms).
 - **Deadlock**: a reachable state where no thread can step, at least one thread
   is not `Finished`, and no boundary was hit from that state.
 - **EF goal**: some reachable state satisfies the goal.
 - **AG EF goal**: every reachable state can still reach the goal. Implemented
   exactly as: build the full reachable graph; compute backwards the set of
   states that can reach a goal state; report a reachable state outside it.
-- Goals name a task / thread instance / scope completion. Completion facts are
-  durable: they survive `join` consuming the finished thread.
+- Goals name a task / function activation / scope statement completion.
+  Completion facts are durable: they survive `join` consuming the finished
+  thread.
 - Conjunctive goals (several must jointly hold) are checked as a conjunction,
   not as separate EF checks.
 
-### 6.3 Result types
+### 6.3 Unified checked entry
+
+`explore::verify_program(program, contract_spec, engine)` is the only entry the
+CLI and the repair loop use. It performs, in order:
+
+1. CIR static validation (`validate::validate`); errors ⇒ `Invalid`.
+2. Lowering; unknown names/types ⇒ `Invalid`.
+3. Supportability (including the entry function) ⇒ `Unsupported`.
+4. Contract validation, then resolution against the current program
+   (properties, preserved behaviour, assumptions, bounds, predicate kinds).
+   Unsupported assumptions ⇒ `Unsupported`; malformed input ⇒ `Invalid`.
+5. Contract-driven monitors, exploration, and property checking.
+
+The report records the model and contract fingerprints, the semantic
+assumptions actually used, and the analysis bounds.
+
+### 6.4 Result types and exit codes
 
 ```
 Outcome = Pass | Fail | Unknown | Invalid | Unsupported
@@ -365,14 +411,15 @@ Outcome = Pass | Fail | Unknown | Invalid | Unsupported
 - `Fail` when a concrete counterexample exists; a valid safety counterexample
   found during a partial search is still a `Fail`.
 - `Unknown` when the analysis is incomplete and no counterexample was found.
-- `Invalid` for semantic errors of the program under the fixed semantics
-  (e.g. unlock by a non-owner, wait without the lock).
-- `Unsupported` for constructs in §1.2.
+- `Invalid` for a statically invalid or semantically erroneous program, or for
+  a malformed contract.
+- `Unsupported` for constructs in §1.2 or unsupported semantic configuration.
 
-Dead transitions and unreachable statements are **diagnostics**, not repair
-acceptance failures, unless the contract explicitly requires their liveness.
+CLI exit codes: `0` PASS / repaired, `1` FAIL, `2` usage/input error, `3`
+UNKNOWN, `4` INVALID, `5` UNSUPPORTED. Only an overall PASS is success; the JSON
+report keeps the detailed category.
 
-### 6.4 Diagnostics
+### 6.5 Diagnostics
 
 ```
 DiagnosticRecord
@@ -398,16 +445,19 @@ fields.
 
 ```
 CirPatch
-  target_module, target_function, target_sid
+  target_module, target_function
   original_hash            // hash of the target function (version guard)
-  changes: Vec<PatchChange> // e.g. SwapLockOrder, InsertUnlock, ...
+  changes: Vec<PatchChange> // swap_statements, delete_statement
   provenance: Vec<SourceRelation> // stable origin mapping
-  diff: before/after text
 ```
 
-Patch application fails loudly on: unknown target, hash mismatch, conflicting
-changes. The contract and the patcher are separate types; a patch cannot touch
-the contract.
+Patch application fails loudly on: unknown target, hash mismatch, a statement
+touched by more than one change, or an illegal change. The contract and the
+patcher are separate types; a patch cannot touch the contract. A
+provider-independent `check_allowed(scope, patch)` enforces the full
+`module::function` scope and the per-change `allow_lock_reorder` /
+`allow_statement_delete` permissions for **every** provider, including file
+candidates.
 
 ### 7.2 CandidateProvider
 
@@ -427,21 +477,27 @@ exists in this crate.
 
 Each candidate goes through:
 
-1. patch legality (target exists, hash matches, no conflict),
-2. CIR static validation (`validate::validate`),
-3. supportability check (no §1.2 constructs),
-4. re-translation,
-5. verification of **all** required properties,
-6. accept or reject.
+1. unified permission check (`module::function` scope, per-change `allow_*`),
+2. patch legality (target exists, hash matches, no conflict),
+3. CIR static validation (`validate::validate`),
+4. supportability check (no §1.2 constructs),
+5. re-lowering,
+6. **re-binding the frozen symbolic `ContractSpec` against the new program**
+   (a deleted `StatementReached` / `ScopeCompleted` target rejects the
+   candidate; old body indices are never reused),
+7. full verification of every property and preserved behaviour,
+8. accept or reject.
 
 Old-counterexample replay is a fast pre-filter only, never an acceptance
-criterion. The loop has a deterministic candidate order, duplicate detection,
-an iteration budget, and per-round diagnostics. Terminal states:
-`Repaired`, `NoAcceptableCandidate`, `BudgetExhausted`, `AnalysisUnknown`.
+criterion. The loop has a deterministic candidate order, content-based
+duplicate detection (normalized module/function/changes, not a user id), an
+iteration budget, and per-round diagnostics. Terminal states: `Repaired`,
+`NoAcceptableCandidate`, `BudgetExhausted`, `AnalysisUnknown`.
 
 Acceptance means "satisfies the fixed contract"; it makes no claim about
 natural-language requirements. A fully LLM-free end-to-end demo (buggy CIR →
-rejected candidates → accepted patch) ships in `tests/repair_e2e.rs`.
+rejected candidates → accepted patch) ships in `tests/repair_e2e.rs`; the
+round-2 review regressions ship in `tests/round2_regressions.rs`.
 
 ---
 
