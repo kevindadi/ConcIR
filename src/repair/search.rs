@@ -907,25 +907,301 @@ fn build_chain(nodes: &[Node], target: usize) -> Vec<AppliedEdit> {
     chain
 }
 
+/// G1: every attempt's actual patch must explain its recorded result.
+fn validate_attempts(artifact: &SearchArtifact, rebuilt: &BTreeMap<usize, Program>) -> Result<(), String> {
+    // Nodes are verified in attempt order: root first, then one per verified
+    // attempt. `verified_created` is the next expected node id and the running
+    // verification count.
+    let mut verified_created = if artifact.nodes.is_empty() { 0usize } else { 1usize };
+    let budget = artifact.effective_config.verification_budget;
+    for (i, a) in artifact.attempts.iter().enumerate() {
+        let parent = rebuilt
+            .get(&a.parent)
+            .ok_or_else(|| format!("attempt {i}: parent node {} was not rebuilt", a.parent))?;
+        let patch = a
+            .patch
+            .clone()
+            .ok_or_else(|| format!("attempt {i}: no patch"))?;
+        let allowed = patch::check_allowed(&artifact.frozen_contract.allowed_scope, &patch);
+        match a.result.as_str() {
+            "denied" => {
+                if allowed.is_ok() {
+                    return Err(format!(
+                        "attempt {i}: recorded denied but the frozen contract allows the patch"
+                    ));
+                }
+            }
+            "apply-error" => {
+                allowed.map_err(|e| {
+                    format!("attempt {i}: recorded apply-error but it is disallowed: {e}")
+                })?;
+                if patch::apply(parent, &patch).is_ok() {
+                    return Err(format!("attempt {i}: recorded apply-error but the patch applies"));
+                }
+            }
+            "static-invalid" => {
+                allowed.map_err(|e| {
+                    format!("attempt {i}: recorded static-invalid but it is disallowed: {e}")
+                })?;
+                let (patched, _) = patch::apply(parent, &patch).map_err(|e| {
+                    format!("attempt {i}: recorded static-invalid but it does not apply: {e}")
+                })?;
+                if validate::validate(&patched).valid {
+                    return Err(format!(
+                        "attempt {i}: recorded static-invalid but the program validates"
+                    ));
+                }
+            }
+            "verified" => {
+                allowed.map_err(|e| format!("attempt {i}: verified patch is disallowed: {e}"))?;
+                let (patched, _) = patch::apply(parent, &patch)
+                    .map_err(|e| format!("attempt {i}: verified patch does not apply: {e}"))?;
+                let fp = program_fingerprint(&patched);
+                if a.program_fingerprint.as_deref() != Some(fp.as_str()) {
+                    return Err(format!("attempt {i}: verified result fingerprint mismatch"));
+                }
+                let node = artifact
+                    .nodes
+                    .get(verified_created)
+                    .filter(|n| n.program_fingerprint == fp && n.parent == Some(a.parent))
+                    .ok_or_else(|| {
+                        format!(
+                            "attempt {i}: no node at verification position {verified_created} matches its result"
+                        )
+                    })?;
+                let inc = node
+                    .incoming
+                    .as_ref()
+                    .ok_or_else(|| format!("attempt {i}: verified node has no incoming patch"))?;
+                if inc.module != patch.module
+                    || inc.function != patch.function
+                    || inc.changes != patch.changes
+                    || inc.original_function_hash != patch.original_hash
+                {
+                    return Err(format!(
+                        "attempt {i}: verified node incoming patch does not match the attempt patch"
+                    ));
+                }
+                verified_created += 1;
+            }
+            "reused" => {
+                allowed.map_err(|e| format!("attempt {i}: reused patch is disallowed: {e}"))?;
+                let (patched, _) = patch::apply(parent, &patch)
+                    .map_err(|e| format!("attempt {i}: reused patch does not apply: {e}"))?;
+                let fp = program_fingerprint(&patched);
+                if a.program_fingerprint.as_deref() != Some(fp.as_str()) {
+                    return Err(format!("attempt {i}: reused result fingerprint mismatch"));
+                }
+                let reused = a.reused_node.unwrap();
+                if reused >= verified_created {
+                    return Err(format!(
+                        "attempt {i}: reused node {reused} was not verified before this attempt"
+                    ));
+                }
+                if artifact.nodes[reused].program_fingerprint != fp {
+                    return Err(format!("attempt {i}: reused node fingerprint mismatch"));
+                }
+            }
+            "budget-blocked" => {
+                allowed.map_err(|e| {
+                    format!("attempt {i}: budget-blocked patch is disallowed: {e}")
+                })?;
+                let (patched, _) = patch::apply(parent, &patch)
+                    .map_err(|e| format!("attempt {i}: budget-blocked patch does not apply: {e}"))?;
+                let fp = program_fingerprint(&patched);
+                if a.program_fingerprint.as_deref() != Some(fp.as_str()) {
+                    return Err(format!("attempt {i}: budget-blocked result fingerprint mismatch"));
+                }
+                if !validate::validate(&patched).valid {
+                    return Err(format!(
+                        "attempt {i}: budget-blocked candidate is not statically valid"
+                    ));
+                }
+                if artifact.nodes.iter().any(|n| n.program_fingerprint == fp) {
+                    return Err(format!(
+                        "attempt {i}: budget-blocked candidate was already verified as a node"
+                    ));
+                }
+                if verified_created < budget {
+                    return Err(format!(
+                        "attempt {i}: budget-blocked but the verification budget is not exhausted"
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+    if verified_created != artifact.nodes.len() {
+        return Err(format!(
+            "verified attempts account for {verified_created} nodes but {} are recorded",
+            artifact.nodes.len()
+        ));
+    }
+    Ok(())
+}
+
+/// G3: the terminal classification must be supported by recorded facts.
+fn validate_outcome_evidence(a: &SearchArtifact) -> Result<(), String> {
+    let cfg = &a.effective_config;
+    let has_unknown_node = a.nodes.iter().any(|n| n.report.outcome == Outcome::Unknown);
+    let budget_blocked = a.attempts.iter().filter(|x| x.result == "budget-blocked").count();
+    let max_depth = a.nodes.iter().map(|n| n.depth).max().unwrap_or(0);
+    let max_edits = a.nodes.iter().map(|n| n.total_edits).max().unwrap_or(0);
+    let exact = |want: &str| -> Result<(), String> {
+        if a.stop_reason != want {
+            Err(format!("outcome {:?} requires stop_reason '{want}', got '{}'", a.outcome, a.stop_reason))
+        } else {
+            Ok(())
+        }
+    };
+    match a.outcome {
+        RepairOutcome::Repaired => exact("solved")?,
+        RepairOutcome::AlreadySatisfied => exact("already-satisfied")?,
+        RepairOutcome::Invalid => exact("root-invalid")?,
+        RepairOutcome::Unsupported => exact("root-unsupported")?,
+        RepairOutcome::InvalidConfig => exact("verification-budget-zero")?,
+        RepairOutcome::AnalysisUnknown => {
+            if a.stop_reason == "root-unknown" {
+                if a.nodes.len() != 1 || a.nodes[0].report.outcome != Outcome::Unknown {
+                    return Err("root-unknown requires a single UNKNOWN root report".into());
+                }
+            } else if a.stop_reason == "analysis-unknown" {
+                if !a.saw_unknown || !has_unknown_node {
+                    return Err(
+                        "analysis_unknown requires saw_unknown and an UNKNOWN node/attempt fact"
+                            .into(),
+                    );
+                }
+            } else {
+                return Err(format!("analysis_unknown has stop_reason '{}'", a.stop_reason));
+            }
+        }
+        RepairOutcome::NoAcceptableCandidate => {
+            if a.stop_reason != "no-acceptable-candidate" {
+                return Err(format!(
+                    "no_acceptable_candidate has stop_reason '{}'",
+                    a.stop_reason
+                ));
+            }
+            if a.saw_unknown {
+                return Err("no_acceptable_candidate must not record saw_unknown".into());
+            }
+            if budget_blocked > 0 {
+                return Err("no_acceptable_candidate must not record a budget-blocked attempt".into());
+            }
+            if max_depth >= cfg.max_depth {
+                return Err("no_acceptable_candidate must not have depth truncation".into());
+            }
+            if max_edits >= cfg.max_total_edits {
+                return Err("no_acceptable_candidate must not have edit truncation".into());
+            }
+        }
+        RepairOutcome::BudgetExhausted => match a.stop_reason.as_str() {
+            "candidate-budget" => {
+                if a.counts.proposals < cfg.candidate_budget {
+                    return Err("candidate-budget stop without exhausting the candidate budget".into());
+                }
+            }
+            "verification-budget" => {
+                if budget_blocked == 0 {
+                    return Err("verification-budget stop without a budget-blocked attempt".into());
+                }
+                if a.counts.verification_calls < cfg.verification_budget {
+                    return Err("verification-budget stop without exhausting the verification budget".into());
+                }
+            }
+            "max-depth" => {
+                if max_depth < cfg.max_depth {
+                    return Err("max-depth stop without a node at the depth bound".into());
+                }
+            }
+            "max-total-edits" => {
+                if max_edits < cfg.max_total_edits {
+                    return Err("max-total-edits stop without a node at the edit bound".into());
+                }
+            }
+            "max-depth+max-total-edits" => {
+                if max_depth < cfg.max_depth || max_edits < cfg.max_total_edits {
+                    return Err("combined truncation stop without both bounds reached".into());
+                }
+            }
+            other => return Err(format!("budget_exhausted has unknown stop_reason '{other}'")),
+        },
+    }
+    Ok(())
+}
+
 /// Replay an artifact: rebuild every node by applying its incoming patch to its
 /// parent, validate fingerprints, and re-verify the final program. Returns an
 /// error string on any inconsistency (broken parent, bad patch base, bad input
 /// fingerprint), never a silent success.
-/// Compare the normative fields of two verification reports. The producing
-/// binary may differ, so `source.binary_fingerprint` is not compared; every
-/// field that determines the verdict is.
+/// Structural normalization of one diagnostic: the fields that carry semantic
+/// content (property, verdict, counterexample bindings, blocking facts,
+/// instances, CIR statements, completeness). Human-readable prose is excluded.
+fn diag_norm(d: &crate::explore::DiagnosticRecord) -> serde_json::Value {
+    serde_json::json!({
+        "property": d.property,
+        "outcome": d.outcome,
+        "complete": d.complete,
+        "counterexample": d.counterexample.iter().map(|s| serde_json::json!({
+            "module": s.origin.module.0,
+            "function": s.origin.function.0,
+            "sid": s.origin.sid,
+            "phase": s.origin.phase,
+            "thread": s.thread,
+            "frame": s.frame,
+        })).collect::<Vec<_>>(),
+        "blocked": d.blocked.iter().map(|b| serde_json::json!({
+            "thread": b.thread,
+            "kind": b.kind,
+            "resource": b.resource,
+            "resource_name": b.resource_name,
+            "holder": b.holder,
+            "waiting": b.waiting,
+        })).collect::<Vec<_>>(),
+        "instances": d.final_instances.iter().map(|i| serde_json::json!({
+            "thread": i.thread,
+            "frame": i.frame,
+            "function": i.function,
+            "sid": i.sid,
+            "status": i.status,
+        })).collect::<Vec<_>>(),
+        "cir_statements": d.cir_statements.iter().map(|c| serde_json::json!({
+            "module": c.module,
+            "function": c.function,
+            "sid": c.sid,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+/// Compare the normative fields of two verification reports, including costs,
+/// the analysis-started marker, and the structured diagnostic evidence. The
+/// producing binary may differ, so `source.binary_fingerprint` is not compared;
+/// every field that determines the verdict or the failure evidence is.
 fn reports_match(a: &VerificationReport, b: &VerificationReport, what: &str) -> Result<(), String> {
     let prop = |r: &VerificationReport| -> Vec<(String, Outcome)> {
         r.properties.iter().map(|p| (p.id.clone(), p.outcome)).collect()
-    };
-    let diag = |r: &VerificationReport| -> Vec<(String, Outcome)> {
-        r.diagnostics.iter().map(|d| (d.property.clone(), d.outcome)).collect()
     };
     if a.outcome != b.outcome {
         return Err(format!("{what}: outcome {:?} != recorded {:?}", a.outcome, b.outcome));
     }
     if a.complete != b.complete {
         return Err(format!("{what}: complete {} != recorded {}", a.complete, b.complete));
+    }
+    if a.analysis_started != b.analysis_started {
+        return Err(format!("{what}: analysis_started mismatch"));
+    }
+    if a.states_explored != b.states_explored {
+        return Err(format!(
+            "{what}: states_explored {} != recorded {}",
+            a.states_explored, b.states_explored
+        ));
+    }
+    if a.transitions_explored != b.transitions_explored {
+        return Err(format!(
+            "{what}: transitions_explored {} != recorded {}",
+            a.transitions_explored, b.transitions_explored
+        ));
     }
     if a.model_fingerprint != b.model_fingerprint {
         return Err(format!("{what}: model fingerprint mismatch"));
@@ -946,23 +1222,39 @@ fn reports_match(a: &VerificationReport, b: &VerificationReport, what: &str) -> 
             prop(b)
         ));
     }
-    if diag(a) != diag(b) {
-        return Err(format!("{what}: diagnostic summaries differ"));
+    let dn = |r: &VerificationReport| -> Vec<serde_json::Value> {
+        r.diagnostics.iter().map(diag_norm).collect()
+    };
+    if dn(a) != dn(b) {
+        return Err(format!("{what}: structured diagnostic evidence differs"));
     }
-    let codes = |v: &[crate::sem::outcome::Unsupported]| -> Vec<String> {
-        v.iter().map(|u| u.construct.clone()).collect()
+    let codes = |v: &[crate::sem::outcome::Unsupported]| -> Vec<(String, Option<String>)> {
+        v.iter().map(|u| (u.construct.clone(), u.location.clone())).collect()
     };
     if codes(&a.unsupported) != codes(&b.unsupported) {
         return Err(format!("{what}: unsupported construct set differs"));
     }
-    let icodes = |v: &[crate::sem::outcome::Invalid]| -> Vec<String> {
-        v.iter().map(|i| i.code.clone()).collect()
+    let icodes = |v: &[crate::sem::outcome::Invalid]| -> Vec<(String, Option<String>)> {
+        v.iter().map(|i| (i.code.clone(), i.location.clone())).collect()
     };
     if icodes(&a.invalid) != icodes(&b.invalid) {
         return Err(format!("{what}: invalid set differs"));
     }
-    if a.boundary_events.len() != b.boundary_events.len() {
-        return Err(format!("{what}: boundary event count differs"));
+    let be = |r: &VerificationReport| -> Vec<serde_json::Value> {
+        r.boundary_events
+            .iter()
+            .map(|b| {
+                serde_json::json!({
+                    "kind": format!("{:?}", b.kind),
+                    "thread": b.thread,
+                    "frame": b.frame,
+                    "function": b.function,
+                })
+            })
+            .collect()
+    };
+    if be(a) != be(b) {
+        return Err(format!("{what}: boundary event evidence differs"));
     }
     Ok(())
 }
@@ -1244,6 +1536,7 @@ pub fn replay_artifact(artifact_json: &str) -> Result<ReplayResult, String> {
 
     // Rebuild nodes in id order, re-checking permissions and fingerprints.
     let mut rebuilt: BTreeMap<usize, Program> = BTreeMap::new();
+    let mut fresh: BTreeMap<usize, VerificationReport> = BTreeMap::new();
     for node in &artifact.nodes {
         let program = match node.parent {
             None => artifact.input_program.clone(),
@@ -1276,7 +1569,21 @@ pub fn replay_artifact(artifact_json: &str) -> Result<ReplayResult, String> {
         };
         let report = verify_program(&program, &artifact.frozen_contract, EngineKind::Petri);
         reports_match(&report, &node.report, &format!("node {}", node.id))?;
+        fresh.insert(node.id, report);
         rebuilt.insert(node.id, program);
+    }
+
+    // G1: each attempt's patch must explain its recorded result.
+    validate_attempts(&artifact, &rebuilt)?;
+    // G3: the terminal classification must be supported by the recorded facts.
+    validate_outcome_evidence(&artifact)?;
+    // G2: the total cost must match the freshly re-verified per-node costs.
+    let fresh_states: usize = fresh.values().map(|r| r.states_explored).sum();
+    if fresh_states != artifact.counts.states_explored {
+        return Err(format!(
+            "counts.states_explored {} != freshly re-verified sum {}",
+            artifact.counts.states_explored, fresh_states
+        ));
     }
 
     // Replay the accepted patch chain from the root.

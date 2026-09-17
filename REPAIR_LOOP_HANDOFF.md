@@ -7,8 +7,8 @@ Baselines (corrected):
 - `29ee9ed` — 192 passed / 4 failed (the four DOT snapshots).
 - previous revision of this phase (`bbff35b`) — 208 passed / 0 failed after the
   DOT goldens were committed; E1–E7 of the export/budget/dedup review fixed.
-- **this revision** — E1–E8 plus the artifact/replay follow-up F1–F4:
-  **225 passed / 0 failed**, zero warnings.
+- **this revision** — E1–E8 plus the artifact/replay follow-ups F1–F4 and
+  G1–G3: **227 passed / 0 failed**, zero warnings.
 
 This is a development regression set and a reviewable implementation; it is
 **not** an independent evaluation corpus and makes no formal-proof or
@@ -148,6 +148,52 @@ Version rule: the producer's binary fingerprint is an identifier and need not
 match the replaying binary; the schema version must, and every normative field
 is compared against a fresh verification. This is internal-consistency
 checking, not cryptographic signing.
+
+## 2c. Artifact/replay follow-up (G1–G3)
+
+The follow-up review of the F1–F4 revision (14 residual cases) found the replay
+still did not bind every attempt to its patch, compared only a subset of the
+report, and accepted terminal classifications unsupported by the record.
+
+### G1 — each attempt's patch explains its recorded result (P1)
+`validate_attempts` reproduces every attempt from its parent program:
+`denied`/`apply-error`/`static-invalid` are re-derived (frozen-contract
+permission check, `patch::apply`, `validate::validate`); a `verified` attempt
+must produce exactly the node at its verification position with a matching
+incoming patch; a `reused` attempt must reference an earlier verified node with
+the same fingerprint; a `budget-blocked` attempt must be applicable, statically
+valid, not already a verified node, and only appear once the verification budget
+is spent. Verified attempts must account for every node, so fabricated nodes or
+misattributed patches fail. Bad attempt hashes, missing sids, and wrong targets
+are rejected.
+
+### G2 — real re-verification cost and diagnostics compared (P1)
+`reports_match` now also compares `analysis_started`, `states_explored`,
+`transitions_explored`, and the structured diagnostics (counterexample
+bindings, blocking facts, final instances, CIR statements) and boundary
+evidence, and the reported total cost must equal the fresh per-node sum. Zeroed
+or inflated counts, erased counterexamples, and erased blocking facts are
+rejected; consistently rewritten costs are caught by the fresh comparison.
+
+### G3 — terminal outcome supported by recorded facts (P1)
+`validate_outcome_evidence` applies the searcher's deterministic priority:
+`analysis_unknown` requires `saw_unknown` plus an UNKNOWN fact;
+`no_acceptable_candidate` must not conceal a budget-blocked attempt or a
+depth/edit truncation; each `budget_exhausted` stop reason must match its
+exhausted counter; and a budget-blocked attempt may not be relabelled `solved`.
+Relabelled outcomes (`budget_as_no_candidate`, `unfix_as_unknown`,
+`unfix_as_budget`, wrong stop reason) are rejected.
+
+### Evidence
+`tests/cli.rs::g1_g3_residual_tampering_is_rejected` mutates one field at a time
+across the 14 residual cases (attempt bad hash / missing sid / wrong target,
+false transitions, consistently zeroed states, false `analysis_started`, erased
+counterexample, erased blocking facts, budget-blocked patch bad hash,
+budget-as-no-candidate, budget-reason-solved, unfix-as-unknown, unfix-as-budget,
+unfix wrong stop reason) and requires a non-zero `replay` exit for each.
+`tests/cli.rs::g_positive_terminal_artifacts_replay` replays the clean
+`already_satisfied`, root-invalid, root-unsupported, no-acceptable-candidate,
+two-step repaired, and composite-with-intermediate-FAIL artifacts.
 
 ## 3. Architecture summary
 

@@ -677,11 +677,20 @@ attempt relationships, effective bounds equal to the frozen contract, derivable
 counts, budget coherence), then rebuilds every node by applying its incoming
 patch with the frozen contract's permission check and compares the **normative
 report** (outcome, completeness, model/contract fingerprints, assumptions,
-bounds, property verdicts, diagnostics, unsupported/invalid sets), then replays
-the accepted `patch_chain` from the input and requires the chain end to equal
-the accepted node, `accepted_program`, and `accepted_report`, and finally checks
-outcome compatibility. The producer's binary fingerprint is an identifier, not
-a required match; the schema version is. Inconsistencies are explicit errors.
+bounds, property verdicts, diagnostics, unsupported/invalid/boundary evidence),
+including the cost and analysis markers (`analysis_started`, `states_explored`,
+`transitions_explored`, structured counterexample/blocking evidence) with the
+total cost required to equal the fresh per-node sum. It then checks **attempt
+consistency** (each patch independently explains its recorded result, verified
+attempts map to their node in verification order, reused attempts point at
+earlier verified nodes, budget-blocked attempts are applicable, valid, and only
+appear once the budget is spent) and **outcome evidence** (the terminal
+outcome/stop_reason is supported by the recorded facts and cannot mask budget
+blocking or truncation), then replays the accepted `patch_chain` from the input
+and requires the chain end to equal the accepted node, `accepted_program`, and
+`accepted_report`, and finally checks outcome compatibility. The producer's
+binary fingerprint is an identifier, not a required match; the schema version
+is. Inconsistencies are explicit errors.
 Exhausting a strategy or budget only means "not found under this
 strategy/budget"; no repair-nonexistence or global-optimality claim is made.
 The development benchmark lives in `src/repair/benchmark.rs` and is exposed by

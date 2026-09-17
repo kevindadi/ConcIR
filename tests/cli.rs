@@ -331,3 +331,198 @@ fn f_positive_artifacts_replay() {
         );
     }
 }
+
+fn artifact_value(model: &str, contract: &str, cfg: &SearchConfig) -> serde_json::Value {
+    let p: Program = serde_json::from_str(&std::fs::read_to_string(model).unwrap()).unwrap();
+    let spec: ContractSpec = serde_json::from_str(contract).unwrap();
+    let report = run_search(&p, &spec, cfg);
+    serde_json::to_value(report.artifact_with_config(&p, &spec, cfg)).unwrap()
+}
+
+#[test]
+fn g1_g3_residual_tampering_is_rejected() {
+    let diag = SearchConfig {
+        strategy: RepairStrategy::Diagnostic,
+        ..SearchConfig::default()
+    };
+    let single = artifact_value(
+        "tests/repro_bench/single_cycle.json",
+        include_str!("repro_bench/single_cycle_contract.json"),
+        &diag,
+    );
+    let blocked_cfg = SearchConfig {
+        strategy: RepairStrategy::Composite,
+        verification_budget: 1,
+        ..SearchConfig::default()
+    };
+    let blocked = artifact_value(
+        "tests/repro_bench/two_cycles.json",
+        TWO_CYCLES_CONTRACT,
+        &blocked_cfg,
+    );
+    let unfix_cfg = SearchConfig {
+        strategy: RepairStrategy::Composite,
+        ..SearchConfig::default()
+    };
+    let unfix = artifact_value(
+        "tests/repro_bench/preserved_unfixable.json",
+        include_str!("repro_bench/preserved_unfixable_contract.json"),
+        &unfix_cfg,
+    );
+
+    let cases: Vec<(&str, serde_json::Value)> = vec![
+        ("attempt_bad_hash", {
+            let mut v = single.clone();
+            v["attempts"][0]["patch"]["original_hash"] = serde_json::json!("broken");
+            v
+        }),
+        ("attempt_missing_sid", {
+            let mut v = single.clone();
+            v["attempts"][0]["patch"]["changes"][0]["a"] = serde_json::json!("nonexistent_sid");
+            v
+        }),
+        ("attempt_wrong_target", {
+            let mut v = single.clone();
+            v["attempts"][0]["patch"]["function"] = serde_json::json!("nonexistent_function");
+            v
+        }),
+        ("false_transitions", {
+            let mut v = single.clone();
+            v["nodes"][0]["report"]["transitions_explored"] = serde_json::json!(0);
+            v
+        }),
+        ("zero_states_consistently", {
+            let mut v = single.clone();
+            for n in v["nodes"].as_array_mut().unwrap() {
+                n["report"]["states_explored"] = serde_json::json!(0);
+            }
+            v["counts"]["states_explored"] = serde_json::json!(0);
+            v["accepted_report"]["states_explored"] = serde_json::json!(0);
+            v
+        }),
+        ("false_analysis_started", {
+            let mut v = single.clone();
+            v["nodes"][0]["report"]["analysis_started"] = serde_json::json!(false);
+            v
+        }),
+        ("erase_counterexample", {
+            let mut v = single.clone();
+            v["nodes"][0]["report"]["diagnostics"][0]["counterexample"] = serde_json::json!([]);
+            v
+        }),
+        ("erase_blocking_facts", {
+            let mut v = single.clone();
+            v["nodes"][0]["report"]["diagnostics"][0]["blocked"] = serde_json::json!([]);
+            v
+        }),
+        ("blocked_patch_bad_hash", {
+            let mut v = blocked.clone();
+            v["attempts"][0]["patch"]["original_hash"] = serde_json::json!("broken");
+            v
+        }),
+        ("budget_as_no_candidate", {
+            let mut v = blocked.clone();
+            v["outcome"] = serde_json::json!("no_acceptable_candidate");
+            v
+        }),
+        ("budget_reason_solved", {
+            let mut v = blocked.clone();
+            v["stop_reason"] = serde_json::json!("solved");
+            v
+        }),
+        ("unfix_as_unknown", {
+            let mut v = unfix.clone();
+            v["outcome"] = serde_json::json!("analysis_unknown");
+            v
+        }),
+        ("unfix_as_budget", {
+            let mut v = unfix.clone();
+            v["outcome"] = serde_json::json!("budget_exhausted");
+            v
+        }),
+        ("unfix_wrong_stop_reason", {
+            let mut v = unfix.clone();
+            v["stop_reason"] = serde_json::json!("verification-budget");
+            v
+        }),
+    ];
+    for (name, v) in cases {
+        replay_expect_fail(&v, name);
+    }
+}
+
+#[test]
+fn g_positive_terminal_artifacts_replay() {
+    let diag = SearchConfig {
+        strategy: RepairStrategy::Diagnostic,
+        ..SearchConfig::default()
+    };
+    let comp = SearchConfig {
+        strategy: RepairStrategy::Composite,
+        ..SearchConfig::default()
+    };
+    let cases: Vec<(&str, serde_json::Value)> = vec![
+        (
+            "already_correct",
+            artifact_value(
+                "tests/repro_bench/already_correct.json",
+                include_str!("repro_bench/already_correct_contract.json"),
+                &diag,
+            ),
+        ),
+        (
+            "root_invalid",
+            artifact_value(
+                "tests/repro_round2/runtime_invalid_exit.json",
+                include_str!("repro_round2/runtime_invalid_exit_contract.json"),
+                &diag,
+            ),
+        ),
+        (
+            "root_unsupported",
+            artifact_value(
+                "tests/repro_round2/ignored_assumptions.json",
+                include_str!("repro_round2/ignored_assumptions_contract.json"),
+                &diag,
+            ),
+        ),
+        (
+            "no_acceptable",
+            artifact_value(
+                "tests/repro_bench/preserved_unfixable.json",
+                include_str!("repro_bench/preserved_unfixable_contract.json"),
+                &comp,
+            ),
+        ),
+        (
+            "two_step_repaired",
+            artifact_value(
+                "tests/repro_bench/two_cycles.json",
+                TWO_CYCLES_CONTRACT,
+                &diag,
+            ),
+        ),
+        (
+            "composite_with_fail_intermediate",
+            artifact_value(
+                "tests/repro_bench/two_cycles.json",
+                TWO_CYCLES_CONTRACT,
+                &comp,
+            ),
+        ),
+    ];
+    for (name, v) in cases {
+        let path = tmp(&format!("positive-{name}.json"));
+        std::fs::write(&path, serde_json::to_string(&v).unwrap()).unwrap();
+        let out = Command::new(bin())
+            .args(["replay", path.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert_eq!(
+            out.status.code().unwrap_or(-1),
+            0,
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}

@@ -164,19 +164,33 @@ stop reason, and a reproduce command.
    counters are coherent with the nodes.
 2. **Rebuild**: re-apply every `node.incoming` to its parent with the frozen
    contract's permission check, and compare the rebuilt fingerprints and the
-   full normative report (outcome, completeness, model/contract fingerprints,
-   assumptions, bounds, property verdicts, diagnostics, unsupported/invalid
-   sets).
-3. **Accepted result**: require an explicit `accepted_node`; replay
+   full normative report. The comparison covers the verdict fields (outcome,
+   completeness, model/contract fingerprints, assumptions, bounds, property
+   verdicts, unsupported/invalid/boundary evidence) **and** the failure
+   evidence and cost: `analysis_started`, `states_explored`,
+   `transitions_explored`, and the structured diagnostics (counterexample
+   bindings, blocking facts, final instances, CIR statements). The reported
+   total cost must equal the fresh sum of the per-node costs.
+3. **Attempt consistency**: each attempt's actual patch must explain its
+   recorded `result`. A `denied`/`apply-error`/`static-invalid` attempt is
+   independently reproduced (permission check, application, static validation);
+   a `verified` attempt must produce exactly the node recorded at its
+   verification position with a matching incoming patch; a `reused` attempt
+   must point at an earlier verified node with the same fingerprint; a
+   `budget-blocked` attempt must be an applicable, statically valid, not-yet-
+   verified candidate recorded only once the verification budget is spent.
+   Verified attempts must account for every node.
+4. **Outcome evidence**: the terminal `outcome`/`stop_reason` must be
+   supported by the recorded facts — `analysis_unknown` needs a `saw_unknown`
+   flag and an UNKNOWN root attempt; `no_acceptable_candidate` must not hide a
+   budget-blocked attempt or a depth/edit truncation; each
+   `budget_exhausted` stop reason must match the exhausted counter; and a
+   budget-blocked attempt may not be relabelled as `solved`.
+5. **Accepted result**: require an explicit `accepted_node`; replay
    `patch_chain` from `input_program` (permission check, parent/child
    fingerprints, edit count); require the chain end to equal the accepted
    node, `accepted_program`, and `accepted_report`; re-verify the accepted
    program and compare the normative report.
-4. **Outcome compatibility**: `repaired` requires the accepted result above;
-   `already_satisfied` requires one complete-PASS root and no accepted result;
-   `invalid`/`unsupported` require a matching root; `invalid_config` requires
-   zero nodes; `unknown`/`no_acceptable_candidate`/`budget_exhausted` require
-   no accepted result but must retain the root report.
 
 Any inconsistency is an explicit non-zero failure with a locatable reason.
 Version rule: the artifact's `source.binary_fingerprint` identifies the
