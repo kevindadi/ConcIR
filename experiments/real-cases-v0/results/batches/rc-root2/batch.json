@@ -1,0 +1,42 @@
+{
+  "batch_id": "rc-root2",
+  "cohort": {
+    "manifest_sha256": "d871935dce875a9d3099b86a4e83752b3c86728602a0f3837beb87b8f2a3e22e",
+    "manifest_path_identity": "experiments/real-cases-v0/manifest.json",
+    "generator_path_identity": "experiments/real-cases-v0/build_cases.py",
+    "generator_sha256": "264dc43dd86ebbbc337482fd78100f18ae819bcb52bf97b707f2867e5e675c17",
+    "code_fingerprint": "257bb425d74e69b4ba5de8ae9310b96128084ee899c2c4d1c74c9a3a3921fbaa",
+    "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+    "tool_sha256": "f16f43f59f292619a405ba92ce681e8905ea6c1297d60fa50a13882025cf566d",
+    "search_timeout": 60.0,
+    "replay_timeout": 30.0,
+    "suites": [
+      "matrix"
+    ],
+    "plan_run_keys": [
+      "46b9b4e3f8187e44a2bcd9f5",
+      "ade86b5f8f29b10e4af560b4",
+      "bb6e00066756168586623c58"
+    ],
+    "plan_run_fingerprints": [
+      "085a60d3e1e771d182fc6a24437f08414ea321b6e32a3647c25a40f63c372215",
+      "4eaf54f80af9fed53eaf62ea44f5a3a734f1fd6c62a7127ed1a1d68c0c20906b",
+      "cb4b64767d3ae5beae7bfb609e7987edf02a309dc4161bda5a0de1c316b609e7"
+    ]
+  },
+  "cohort_fingerprint": "25965f7dc8cec427f6b5eabb64b3f635e95b67ae9636d0da0ef728c209d5415b",
+  "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+  "code_fingerprint": "257bb425d74e69b4ba5de8ae9310b96128084ee899c2c4d1c74c9a3a3921fbaa",
+  "manifest": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/manifest.json",
+  "suites": [
+    "matrix"
+  ],
+  "planned": 3,
+  "total_budget_s": 120.0,
+  "search_timeout_s": 60.0,
+  "replay_timeout_s": 30.0,
+  "env_collection_ms": 116,
+  "env_outside_budget": true,
+  "results_dir": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/results/batches/rc-root2",
+  "total_budget_rule": "per-invocation recovery quota; not part of cohort identity"
+}

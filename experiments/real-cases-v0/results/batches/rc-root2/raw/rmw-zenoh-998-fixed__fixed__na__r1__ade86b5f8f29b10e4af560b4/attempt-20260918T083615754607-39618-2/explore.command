@@ -1,0 +1,1 @@
+/Users/kevin/local-repos/ConcIR/target/release/concir-backend explore /Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/rmw-zenoh-998/fixed.cir.json /Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/rmw-zenoh-998/contract.json petri

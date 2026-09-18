@@ -1,0 +1,48 @@
+{
+  "batch_id": "rc-abc2",
+  "cohort": {
+    "manifest_sha256": "d871935dce875a9d3099b86a4e83752b3c86728602a0f3837beb87b8f2a3e22e",
+    "manifest_path_identity": "experiments/real-cases-v0/manifest.json",
+    "generator_path_identity": "experiments/real-cases-v0/build_cases.py",
+    "generator_sha256": "264dc43dd86ebbbc337482fd78100f18ae819bcb52bf97b707f2867e5e675c17",
+    "code_fingerprint": "257bb425d74e69b4ba5de8ae9310b96128084ee899c2c4d1c74c9a3a3921fbaa",
+    "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+    "tool_sha256": "f16f43f59f292619a405ba92ce681e8905ea6c1297d60fa50a13882025cf566d",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "suites": [
+      "pilot"
+    ],
+    "plan_run_keys": [
+      "43cfe5fbfd73bcaae7ad333b",
+      "78ca765a5724a15d3d8c586f",
+      "8a8ed17b58ff96affc7ece22",
+      "c0bf0bd04903921db9ccca05",
+      "dc815dc1a297428c11696b5d",
+      "ff20224967282a952f008db5"
+    ],
+    "plan_run_fingerprints": [
+      "05c09ad7fa9f1319f7fad342dee46af623cc9f9c446da657a34d2ce42462db4f",
+      "09163d6455fb92090e9a8235b462fd930d4ab037ba4b0d14f3a0bf12c015c8b7",
+      "8ea57f28416d0eb8af1fb85417d5c4a91d8835c77921bfa871589fe38a43258c",
+      "b0a20f0024a63fedf40c79baa87c9c23195fef1881e7558a895178c28ff018a8",
+      "cf6df6f17e0168083afd8520ed4fbdc6c68d787bc50440d458fe23b9d654ca78",
+      "d102b067dd1773ebbe575b2ebbb54fd56c27bfd35b8a8690e80fbede4ab6d6a0"
+    ]
+  },
+  "cohort_fingerprint": "948ef945e17027a973508142f0efb0fad29b0259198849c70eedf715b851f7b8",
+  "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+  "code_fingerprint": "257bb425d74e69b4ba5de8ae9310b96128084ee899c2c4d1c74c9a3a3921fbaa",
+  "manifest": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/manifest.json",
+  "suites": [
+    "pilot"
+  ],
+  "planned": 6,
+  "total_budget_s": 120.0,
+  "search_timeout_s": 30.0,
+  "replay_timeout_s": 30.0,
+  "env_collection_ms": 112,
+  "env_outside_budget": true,
+  "results_dir": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/results/batches/rc-abc2",
+  "total_budget_rule": "per-invocation recovery quota; not part of cohort identity"
+}

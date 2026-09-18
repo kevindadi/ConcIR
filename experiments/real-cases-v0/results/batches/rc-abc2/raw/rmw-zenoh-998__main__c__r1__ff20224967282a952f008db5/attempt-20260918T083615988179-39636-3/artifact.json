@@ -1,0 +1,675 @@
+{
+  "schema_version": "concir-repair-artifact-v1",
+  "source": {
+    "crate_version": "0.1.0",
+    "binary_fingerprint": "763382a6a366685a"
+  },
+  "input_program": {
+    "program": "rmw_zenoh_998",
+    "version": "3.5.0",
+    "modules": [
+      {
+        "name": "main",
+        "provides": {
+          "resources": [
+            "wait_set_condition_mutex",
+            "subscription_mutex"
+          ],
+          "functions": [
+            "main",
+            "executor_wait",
+            "rx_callback"
+          ],
+          "types": []
+        },
+        "requires": {
+          "resources": [],
+          "functions": [],
+          "types": []
+        },
+        "resources": [
+          {
+            "name": "wait_set_condition_mutex",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "subscription_mutex",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          }
+        ],
+        "protection": [],
+        "functions": [
+          {
+            "name": "main",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "scope",
+                "funcs": [
+                  "executor_wait",
+                  "rx_callback"
+                ]
+              },
+              {
+                "sid": "s2",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "executor_wait",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "wait_set_condition_mutex"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "subscription_mutex"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "subscription_mutex"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "wait_set_condition_mutex"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "rx_callback",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "subscription_mutex"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "wait_set_condition_mutex"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "wait_set_condition_mutex"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "subscription_mutex"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "entry": "main::main"
+  },
+  "frozen_contract": {
+    "name": "rmw-zenoh-998",
+    "properties": [
+      {
+        "kind": "deadlock_free",
+        "id": "no-deadlock"
+      }
+    ],
+    "preserved": [
+      {
+        "kind": "reachable",
+        "description": "main::executor_wait completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "main::executor_wait"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "main::rx_callback completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "main::rx_callback"
+        }
+      }
+    ],
+    "assumptions": {
+      "sequential_consistency": true,
+      "no_spurious_wakeups": true
+    },
+    "bounds": {
+      "max_threads": 8,
+      "max_frames_per_thread": 8,
+      "max_states": 20000,
+      "max_depth": 64,
+      "max_boundary_events": 256
+    },
+    "allowed_scope": {
+      "functions": [],
+      "modules": [],
+      "allow_lock_reorder": true,
+      "allow_statement_delete": false
+    }
+  },
+  "effective_config": {
+    "strategy": "diagnostic",
+    "candidate_budget": 64,
+    "verification_budget": 64,
+    "max_depth": 4,
+    "max_total_edits": 4,
+    "bounds": {
+      "max_threads": 8,
+      "max_frames_per_thread": 8,
+      "max_states": 20000,
+      "max_depth": 64,
+      "max_boundary_events": 256
+    }
+  },
+  "nodes": [
+    {
+      "id": 0,
+      "parent": null,
+      "depth": 0,
+      "total_edits": 0,
+      "program_fingerprint": "f65d91877e8afeb1",
+      "incoming": null,
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 49,
+        "transitions_explored": 72,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "FAIL",
+            "detail": "a reachable state has no enabled step and unfinished threads"
+          },
+          {
+            "id": "preserved: main::executor_wait completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: main::rx_callback completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "no-deadlock",
+            "outcome": "FAIL",
+            "message": "reachable global deadlock",
+            "complete": true,
+            "counterexample": [
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 0,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 0,
+                "frame": 0
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              }
+            ],
+            "final_instances": [
+              {
+                "thread": 0,
+                "frame": 0,
+                "function": 0,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 1,
+                "frame": 1,
+                "function": 1,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 2,
+                "frame": 2,
+                "function": 2,
+                "sid": 1,
+                "status": "running"
+              }
+            ],
+            "blocked": [
+              {
+                "thread": 0,
+                "kind": "scope",
+                "resource": null,
+                "resource_name": null,
+                "holder": null,
+                "waiting": 0,
+                "detail": "waiting for scope members"
+              },
+              {
+                "thread": 1,
+                "kind": "lock",
+                "resource": 1,
+                "resource_name": "main::subscription_mutex",
+                "holder": 2,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 2,
+                "kind": "lock",
+                "resource": 0,
+                "resource_name": "main::wait_set_condition_mutex",
+                "holder": 1,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              }
+            ],
+            "cir_statements": [
+              {
+                "module": "main",
+                "function": "main",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "executor_wait",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "rx_callback",
+                "sid": "s2"
+              }
+            ],
+            "proven_facts": [
+              "reached a counterexample state after 5 step(s)",
+              "explored 49 reachable states"
+            ],
+            "repair_hints": [
+              "check lock acquisition order, channel capacity, and missing notify/join"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "f65d91877e8afeb1",
+        "contract_fingerprint": "3f2d4f517b13ebde",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 8,
+          "max_frames_per_thread": 8,
+          "max_states": 20000,
+          "max_depth": 64,
+          "max_boundary_events": 256
+        },
+        "analysis_started": true
+      },
+      "note": null
+    },
+    {
+      "id": 1,
+      "parent": 0,
+      "depth": 1,
+      "total_edits": 1,
+      "program_fingerprint": "221d3f059d88205d",
+      "incoming": {
+        "module": "main",
+        "function": "executor_wait",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent mutex acquisition involving a blocked resource"
+          }
+        ],
+        "original_function_hash": "4d6664b69f6c8ba1",
+        "parent_fingerprint": "f65d91877e8afeb1",
+        "program_fingerprint": "221d3f059d88205d"
+      },
+      "report": {
+        "outcome": "PASS",
+        "complete": true,
+        "states_explored": 43,
+        "transitions_explored": 63,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "PASS",
+            "detail": "no deadlock state reachable"
+          },
+          {
+            "id": "preserved: main::executor_wait completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: main::rx_callback completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          }
+        ],
+        "diagnostics": [],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "221d3f059d88205d",
+        "contract_fingerprint": "3f2d4f517b13ebde",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 8,
+          "max_frames_per_thread": 8,
+          "max_states": 20000,
+          "max_depth": 64,
+          "max_boundary_events": 256
+        },
+        "analysis_started": true
+      },
+      "note": "accepted"
+    }
+  ],
+  "attempts": [
+    {
+      "id": 0,
+      "parent": 0,
+      "patch": {
+        "id": "lockorder:main:executor_wait:s1-s2",
+        "module": "main",
+        "function": "executor_wait",
+        "original_hash": "4d6664b69f6c8ba1",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent mutex acquisition involving a blocked resource"
+          }
+        ]
+      },
+      "result": "verified",
+      "reused_node": null,
+      "program_fingerprint": "221d3f059d88205d",
+      "outcome": "PASS",
+      "reason": null
+    }
+  ],
+  "patch_chain": [
+    {
+      "module": "main",
+      "function": "executor_wait",
+      "changes": [
+        {
+          "kind": "swap_statements",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "provenance": [
+        {
+          "description": "heuristic: swap an adjacent mutex acquisition involving a blocked resource"
+        }
+      ],
+      "original_function_hash": "4d6664b69f6c8ba1",
+      "parent_fingerprint": "f65d91877e8afeb1",
+      "program_fingerprint": "221d3f059d88205d"
+    }
+  ],
+  "accepted_node": 1,
+  "accepted_program": {
+    "program": "rmw_zenoh_998",
+    "version": "3.5.0",
+    "modules": [
+      {
+        "name": "main",
+        "provides": {
+          "resources": [
+            "wait_set_condition_mutex",
+            "subscription_mutex"
+          ],
+          "functions": [
+            "main",
+            "executor_wait",
+            "rx_callback"
+          ],
+          "types": []
+        },
+        "requires": {
+          "resources": [],
+          "functions": [],
+          "types": []
+        },
+        "resources": [
+          {
+            "name": "wait_set_condition_mutex",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "subscription_mutex",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          }
+        ],
+        "protection": [],
+        "functions": [
+          {
+            "name": "main",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "scope",
+                "funcs": [
+                  "executor_wait",
+                  "rx_callback"
+                ]
+              },
+              {
+                "sid": "s2",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "executor_wait",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "subscription_mutex"
+              },
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "wait_set_condition_mutex"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "subscription_mutex"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "wait_set_condition_mutex"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "rx_callback",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "subscription_mutex"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "wait_set_condition_mutex"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "wait_set_condition_mutex"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "subscription_mutex"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "entry": "main::main"
+  },
+  "accepted_report": {
+    "outcome": "PASS",
+    "complete": true,
+    "states_explored": 43,
+    "transitions_explored": 63,
+    "properties": [
+      {
+        "id": "no-deadlock",
+        "outcome": "PASS",
+        "detail": "no deadlock state reachable"
+      },
+      {
+        "id": "preserved: main::executor_wait completes",
+        "outcome": "PASS",
+        "detail": "preserved reachability: completed(f1)"
+      },
+      {
+        "id": "preserved: main::rx_callback completes",
+        "outcome": "PASS",
+        "detail": "preserved reachability: completed(f2)"
+      }
+    ],
+    "diagnostics": [],
+    "boundary_events": [],
+    "unsupported": [],
+    "invalid": [],
+    "model_fingerprint": "221d3f059d88205d",
+    "contract_fingerprint": "3f2d4f517b13ebde",
+    "assumptions": {
+      "sequential_consistency": true,
+      "no_spurious_wakeups": true
+    },
+    "bounds": {
+      "max_threads": 8,
+      "max_frames_per_thread": 8,
+      "max_states": 20000,
+      "max_depth": 64,
+      "max_boundary_events": 256
+    },
+    "analysis_started": true
+  },
+  "outcome": "repaired",
+  "stop_reason": "solved",
+  "saw_unknown": false,
+  "truncation": null,
+  "counts": {
+    "proposals": 1,
+    "unique_candidate_programs": 2,
+    "verification_calls": 2,
+    "cache_hits": 0,
+    "states_explored": 92,
+    "nodes": 2
+  },
+  "reproduce": "concir-backend repair <program.json> <contract.json> --strategy c   # candidate_budget=64 verification_budget=64 max_depth=4 max_total_edits=4 bounds=AnalysisBounds { max_threads: 8, max_frames_per_thread: 8, max_states: 20000, max_depth: 64, max_boundary_events: 256 }"
+}

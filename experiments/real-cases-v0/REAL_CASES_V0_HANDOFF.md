@@ -95,7 +95,7 @@ runs.
 
 | case | A | B | C |
 | --- | --- | --- | --- |
-| `rmw-zenoh-998` | repaired v2 / 92 s | repaired v2 / 92 s | repaired v2 / 92 s |
+| `rmw-zenoh-998` | repaired, 2 verification calls, 92 states, 8 ms search | repaired, 2 calls, 92 states, 8 ms | repaired, 2 calls, 92 states, 9 ms |
 | `dashmap-369` | unsupported | unsupported | unsupported |
 
 * `rmw-zenoh-998`: a legal witness exists — one allowed adjacent `mutex_lock`

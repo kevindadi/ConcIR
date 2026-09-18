@@ -1,0 +1,113 @@
+[
+  {
+    "stage": "explore",
+    "suite": "matrix",
+    "case": "rmw-zenoh-998-buggy",
+    "family": "real_root",
+    "params": {
+      "variant": "buggy",
+      "bounds_variant": "buggy"
+    },
+    "model": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/rmw-zenoh-998/buggy.cir.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/rmw-zenoh-998/contract.json",
+    "config_name": "buggy",
+    "config": {},
+    "strategy": "",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/rmw-zenoh-998/buggy.cir.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/rmw-zenoh-998/contract.json",
+      "model_sha256": "77f6e181d701d23ecffac0c6a9c138e213905d16d36335e0d3544c30f5876fcb",
+      "model_norm_sha256": "4c3488b7fb6f4253e5508be7cb91f1b3a122460c748ddf94fe4091c5e570f24b",
+      "contract_sha256": "71e5dfb20bab944928c7a9ab28fd9e9fa3f0b7379293b0a2ba3a0fde2b4ee614",
+      "contract_norm_sha256": "48d233c7e544996fe1fbacb87520b8d88ffec908dba498af6039cdcf5de8ca4a",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "engine": "petri",
+    "batch_id": "rc-root2",
+    "search_timeout": 60.0,
+    "replay_timeout": 30.0,
+    "run_key": "bb6e00066756168586623c58",
+    "run_fingerprint": "085a60d3e1e771d182fc6a24437f08414ea321b6e32a3647c25a40f63c372215"
+  },
+  {
+    "stage": "explore",
+    "suite": "matrix",
+    "case": "rmw-zenoh-998-fixed",
+    "family": "real_root",
+    "params": {
+      "variant": "fixed_hypothesis",
+      "bounds_variant": "fixed"
+    },
+    "model": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/rmw-zenoh-998/fixed.cir.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/rmw-zenoh-998/contract.json",
+    "config_name": "fixed",
+    "config": {},
+    "strategy": "",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/rmw-zenoh-998/fixed.cir.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/rmw-zenoh-998/contract.json",
+      "model_sha256": "9588dffe5dd0bab94820ac670619c28dbadabe7460a00d61d15de08d1a9b9a84",
+      "model_norm_sha256": "4f66659243fe2009948306a51775d9967971f17d3cf8944659395dc426b67096",
+      "contract_sha256": "71e5dfb20bab944928c7a9ab28fd9e9fa3f0b7379293b0a2ba3a0fde2b4ee614",
+      "contract_norm_sha256": "48d233c7e544996fe1fbacb87520b8d88ffec908dba498af6039cdcf5de8ca4a",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "engine": "petri",
+    "batch_id": "rc-root2",
+    "search_timeout": 60.0,
+    "replay_timeout": 30.0,
+    "run_key": "ade86b5f8f29b10e4af560b4",
+    "run_fingerprint": "cb4b64767d3ae5beae7bfb609e7987edf02a309dc4161bda5a0de1c316b609e7"
+  },
+  {
+    "stage": "explore",
+    "suite": "matrix",
+    "case": "dashmap-369-buggy",
+    "family": "real_root",
+    "params": {
+      "variant": "buggy",
+      "bounds_variant": "buggy"
+    },
+    "model": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/dashmap-369/buggy.cir.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/dashmap-369/contract.json",
+    "config_name": "buggy",
+    "config": {},
+    "strategy": "",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/dashmap-369/buggy.cir.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/dashmap-369/contract.json",
+      "model_sha256": "84f94127f4cd8e3d480dab7c482cfa05acab3aeb769a29472ff64f3b4cc02395",
+      "model_norm_sha256": "bc84ad1f8b9485ea78486c01c092e6a435371cab655c6df863ba763a4c749976",
+      "contract_sha256": "607bcf87dd35cfa017fb3a87a130820b5a79002ba51b615d7c26bf4403b584a3",
+      "contract_norm_sha256": "d1542d1a0ebd6431ce7e21beb9207ee2c00e9dc547dacaf10e9f8a56ff21c5f5",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "engine": "petri",
+    "batch_id": "rc-root2",
+    "search_timeout": 60.0,
+    "replay_timeout": 30.0,
+    "run_key": "46b9b4e3f8187e44a2bcd9f5",
+    "run_fingerprint": "4eaf54f80af9fed53eaf62ea44f5a3a734f1fd6c62a7127ed1a1d68c0c20906b"
+  }
+]
