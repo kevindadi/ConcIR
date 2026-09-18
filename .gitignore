@@ -10,7 +10,14 @@ Cargo.lock
 *.snap.new
 *.pending-snap
 
-scripts/__pycache__
+# Python bytecode / caches (scripts and anywhere else)
+__pycache__/
+*.py[cod]
+
 **.exit
 **.stderr
 **.stdout
+
+# Local experiment trees (pilots, raw artifacts, real-case runs). Keep on disk,
+# do not track.
+experiments/

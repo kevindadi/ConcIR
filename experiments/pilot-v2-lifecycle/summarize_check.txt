@@ -1,3 +1,0 @@
-PASS summarize_reads_valid_index_only records=1
-PASS summarize_flags_missing_evidence rc=1
-PASS summarize_rejects_invalid_references rc=1

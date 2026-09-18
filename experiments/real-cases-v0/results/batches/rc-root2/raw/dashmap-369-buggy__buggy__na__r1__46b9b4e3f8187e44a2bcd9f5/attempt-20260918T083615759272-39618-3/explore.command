@@ -1,1 +1,0 @@
-/Users/kevin/local-repos/ConcIR/target/release/concir-backend explore /Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/dashmap-369/buggy.cir.json /Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/cases/dashmap-369/contract.json petri

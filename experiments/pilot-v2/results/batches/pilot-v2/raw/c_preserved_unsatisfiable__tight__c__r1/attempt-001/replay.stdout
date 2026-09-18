@@ -1,8 +1,0 @@
-{
-  "nodes": 3,
-  "input_outcome": "FAIL",
-  "accepted_ok": null,
-  "accepted_node": null,
-  "chain_len": 0,
-  "outcome": "budget_exhausted"
-}
