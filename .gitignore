@@ -17,7 +17,3 @@ __pycache__/
 **.exit
 **.stderr
 **.stdout
-
-# Local experiment trees (pilots, raw artifacts, real-case runs). Keep on disk,
-# do not track.
-experiments/

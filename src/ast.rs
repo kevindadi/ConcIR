@@ -321,7 +321,7 @@ impl fmt::Display for BaseType {
                 let parts: Vec<String> = fields.iter().map(|(k, v)| format!("{k}: {v}")).collect();
                 write!(f, "Struct{{{}}}", parts.join(", "))
             }
-            BaseType::Complex(ComplexBaseType::Array(ref def)) => {
+            BaseType::Complex(ComplexBaseType::Array(def)) => {
                 write!(f, "Array<{}, {}>", def.elem, def.len)
             }
             BaseType::Complex(ComplexBaseType::BoundedInt { lo, hi }) => {
@@ -764,7 +764,7 @@ impl Stmt {
             }
             _ => match next {
                 Some(n) => vec![n.sid.as_str()],
-                None => vec![],
+                _ => vec![],
             },
         }
     }

@@ -394,7 +394,7 @@ fn check_switch_variables(program: &Program, diags: &mut Vec<Diagnostic>) {
                 );
             }
         }
-        if let BaseType::Complex(ComplexBaseType::Enum(ref variants)) = bt {
+        if let BaseType::Complex(ComplexBaseType::Enum(variants)) = bt {
             for label in cases.keys() {
                 if !variants.contains(label) {
                     diags.push(

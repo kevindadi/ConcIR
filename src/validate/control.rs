@@ -153,7 +153,7 @@ fn check_switch_exhaustive(
 ) {
     for (si, stmt) in f.body.iter().enumerate() {
         if let Some((var, cases, _)) = stmt.switch() {
-            if let Some(BaseType::Complex(ComplexBaseType::Enum(ref variants))) = env.ty(var) {
+            if let Some(BaseType::Complex(ComplexBaseType::Enum(variants))) = env.ty(var) {
                 let covered: HashSet<&str> = cases.keys().map(String::as_str).collect();
 
                 let missing: Vec<&str> = variants
