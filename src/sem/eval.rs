@@ -65,18 +65,14 @@ pub trait ValueStore {
 pub fn eval(expr: &LExpr, store: &dyn ValueStore, at: &str) -> BackendResult<Value> {
     match expr {
         LExpr::Lit(l) => Ok(lit_value(l)),
-        LExpr::Slot(SlotRef::Discard) => Err(BackendError::invalid(
-            "E931",
-            "\"_\" is not an r-value",
-        )),
+        LExpr::Slot(SlotRef::Discard) => {
+            Err(BackendError::invalid("E931", "\"_\" is not an r-value"))
+        }
         LExpr::Slot(SlotRef::Local(slot)) => store.get_slot(*slot).cloned().ok_or_else(|| {
             BackendError::invalid("E900", format!("uninitialized frame slot {slot} at {at}"))
         }),
         LExpr::Slot(SlotRef::Shared(r)) => store.get_shared(*r).cloned().ok_or_else(|| {
-            BackendError::invalid(
-                "E900",
-                format!("shared resource {r} has no value at {at}"),
-            )
+            BackendError::invalid("E900", format!("shared resource {r} has no value at {at}"))
         }),
         LExpr::Field { base, field } => {
             let v = eval(base, store, at)?;
@@ -100,7 +96,10 @@ pub fn eval(expr: &LExpr, store: &dyn ValueStore, at: &str) -> BackendResult<Val
                 Value::Float(f) => Ok(Value::Float(-f)),
                 other => Err(BackendError::invalid(
                     "E932",
-                    format!("unary '-' requires Int or Float, found {}", other.canonical()),
+                    format!(
+                        "unary '-' requires Int or Float, found {}",
+                        other.canonical()
+                    ),
                 )),
             }
         }
@@ -143,13 +142,19 @@ fn eval_bin(op: BinOp, l: Value, r: Value, at: &str) -> BackendResult<Value> {
                 BinOp::Mul => a.checked_mul(b),
                 BinOp::Div => {
                     if b == 0 {
-                        return Err(BackendError::invalid("E902", format!("division by zero at {at}")));
+                        return Err(BackendError::invalid(
+                            "E902",
+                            format!("division by zero at {at}"),
+                        ));
                     }
                     a.checked_div(b)
                 }
                 BinOp::Mod => {
                     if b == 0 {
-                        return Err(BackendError::invalid("E902", format!("modulo by zero at {at}")));
+                        return Err(BackendError::invalid(
+                            "E902",
+                            format!("modulo by zero at {at}"),
+                        ));
                     }
                     a.checked_rem(b)
                 }
