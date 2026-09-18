@@ -1,4 +1,6 @@
 pub mod ast;
+pub mod codegen;
+pub mod conform;
 pub mod diagnostic;
 pub mod env;
 pub mod explore;

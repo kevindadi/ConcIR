@@ -342,7 +342,46 @@ contains the development-benchmark cases. See `CODE_REVIEW_ROUND2.md` …
 `CODE_REVIEW_ROUND5.md` and `REPAIR_LOOP_HANDOFF.md`.
 
 Toolchain used for the recorded results: `rustc 1.100.0-nightly`, on macOS.
+The crate pins its toolchain with a root `rust-toolchain.toml`; the 2026-09-18
+verification ran on the active nightly `rustc 1.100.0-nightly (a69a63265
+2026-09-03)` / `miri 0.1.0 (a69a63265c 2026-09-03)`, edition 2024, with `cargo
+test --offline --all-targets --no-fail-fast` reporting **229 passed / 0 failed**.
 The four historical DOT snapshot failures are fixed by committing the four
 `tests/snapshots/*.snap` goldens and adjusting `.gitignore` to ignore only
 pending snapshots (`*.snap.new`, `*.pending-snap`).
 
+
+## Code generation and trace conformance (`codegen` / `conform`)
+
+`codegen` turns a supported CIR program into a standard-library-only Rust cargo
+project whose concurrency statements are annotated with `cir_trace::ev(tag, sid)`
+and `// @cir <sid>` comments, plus a `codegen.json` map (sid -> file/line, holes,
+thread tags):
+
+```bash
+concir-backend codegen <program.json> --out <dir>
+```
+
+Scope: a single module; `Mutex`, `Condvar`, `Semaphore`, and `Var`/`Atomic`
+resources; the control-flow and synchronization statements. Channels, `RwLock`,
+cross-module programs and composite values are `UNSUPPORTED`. Expressions that
+cannot be translated become `// HOLE(id) expected: T` with a compilable
+placeholder; a body-less ("nobody") function becomes a hole body. Events are
+emitted **after** the completing step for lock / acquire / condvar-wait /
+channel (the statement may block), and **when reached** for
+unlock / notify / release / scope / spawn / join.
+
+The emitted `cir_trace` runtime appends `(tag, sid)` to a global buffer and writes
+JSONL to `$CIR_TRACE_OUT` at process exit. `conform` replays a trace against the
+reference interpreter and checks that every observed concurrency statement is a
+step the model could take at that point:
+
+```bash
+CIR_TRACE_OUT=trace.jsonl <dir>/target/debug/cir_generated
+concir-backend conform <program.json> trace.jsonl
+```
+
+Output: `{"status":"conformant"|"violation"|"unknown_sid", "events":n,
+"event_index":k, "expected":[...], "got":sid, "coverage":{"sids_seen":m,
+"sids_total":M}}`. A conformant trace proves every observed execution is a model
+execution; it is not a correctness proof.

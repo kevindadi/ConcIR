@@ -177,6 +177,75 @@ fn main() {
         usage();
     }
     match args[1].as_str() {
+        "codegen" => {
+            let path = args.get(2).unwrap_or_else(|| usage());
+            let out = flag_value(&args, "--out")
+                .or_else(|| args.get(3).cloned())
+                .unwrap_or_else(|| usage());
+            let program = parse_program(path);
+            let sem = match program::lower(&program) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("cannot lower program: {e}");
+                    process::exit(EXIT_INVALID);
+                }
+            };
+            match concir::codegen::generate(&sem) {
+                Ok(generated) => {
+                    if let Err(e) =
+                        concir::codegen::write_project(std::path::Path::new(&out), &generated)
+                    {
+                        eprintln!("cannot write codegen output: {e}");
+                        process::exit(EXIT_USAGE);
+                    }
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&generated.map).expect("serialize")
+                    );
+                }
+                Err(e) => {
+                    eprintln!("codegen unsupported: {e}");
+                    process::exit(EXIT_UNSUPPORTED);
+                }
+            }
+        }
+        "conform" => {
+            let path = args.get(2).unwrap_or_else(|| usage());
+            let trace_path = args.get(3).unwrap_or_else(|| usage());
+            let program = parse_program(path);
+            let sem = match program::lower(&program) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("cannot lower program: {e}");
+                    process::exit(EXIT_INVALID);
+                }
+            };
+            let mut events: Vec<(String, String)> = Vec::new();
+            for line in read(trace_path).lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                let v: serde_json::Value = match serde_json::from_str(line) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("bad trace line: {e}");
+                        process::exit(EXIT_USAGE);
+                    }
+                };
+                let t = v.get("t").and_then(|x| x.as_str()).unwrap_or("");
+                let sid = v.get("sid").and_then(|x| x.as_str()).unwrap_or("");
+                events.push((t.to_string(), sid.to_string()));
+            }
+            let result = concir::conform::conform(&sem, &events);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&result).expect("serialize")
+            );
+            if result.status != "conformant" {
+                process::exit(EXIT_FAIL);
+            }
+        }
         "check" => {
             let path = args.get(2).unwrap_or_else(|| usage());
             let program = parse_program(path);

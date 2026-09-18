@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize, Serializer};
 
 use crate::fqn;
 
-// ──────────────────── Top-level ────────────────────
-
 fn default_version() -> String {
     "3.5.0".to_string()
 }
