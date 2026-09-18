@@ -1,16 +1,16 @@
-target/**
+**/target
 Cargo.lock
 
-.vscode
 .cursor
-.claude
 .agents
-.opencode
-.codex
-/.github/skills/
 
 .DS_Store
 # Insta pending snapshots are transient; committed goldens in
 # tests/snapshots/*.snap are tracked.
 *.snap.new
 *.pending-snap
+
+scripts/__pycache__
+**.exit
+**.stderr
+**.stdout

@@ -11,6 +11,7 @@
 
 pub mod benchmark;
 pub mod candidates;
+pub mod external;
 pub mod patch;
 pub mod search;
 

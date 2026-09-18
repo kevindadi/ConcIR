@@ -1323,7 +1323,7 @@ fn diag_norm(d: &crate::explore::DiagnosticRecord) -> serde_json::Value {
 /// the analysis-started marker, and the structured diagnostic evidence. The
 /// producing binary may differ, so `source.binary_fingerprint` is not compared;
 /// every field that determines the verdict or the failure evidence is.
-fn reports_match(a: &VerificationReport, b: &VerificationReport, what: &str) -> Result<(), String> {
+pub(crate) fn reports_match(a: &VerificationReport, b: &VerificationReport, what: &str) -> Result<(), String> {
     let prop = |r: &VerificationReport| -> Vec<(String, Outcome)> {
         r.properties
             .iter()

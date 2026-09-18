@@ -31,6 +31,7 @@ use concir::explore::{verify_program, EngineKind};
 use concir::interp::Interpreter;
 use concir::repair::benchmark::{check_benchmark, run_benchmark};
 use concir::repair::candidates::FileCandidateProvider;
+use concir::repair::external::{build_context, evaluate_patch, replay_external_patch, ARTIFACT_SCHEMA as EXTERNAL_ARTIFACT_SCHEMA};
 use concir::repair::search::{replay_artifact, run_search, RepairStrategy, SearchConfig};
 use concir::repair::{run_repair, RepairOutcome};
 use concir::sem::outcome::{AnalysisBounds, Outcome};
@@ -54,7 +55,9 @@ fn usage() -> ! {
          concir-backend repair  <program.json> <contract.json> --strategy a|b|c [flags]\n  \
          concir-backend replay  <artifact.json>\n  \
          concir-backend bench   [--artifact out.json]\n  \
-         concir-backend support <program.json>\n\n\
+         concir-backend support <program.json>\n  \
+         concir-backend repair-context <program.json> <contract.json> [--artifact out.json]\n  \
+         concir-backend evaluate-patch <context.json> <candidate.json> [--artifact out.json]\n\n\
          flags for --strategy: --candidate-budget N --verification-budget N\n  \
          --max-depth N --max-total-edits N --artifact out.json\n\n\
          exit codes: 0 pass/repaired, 1 fail, 2 usage, 3 unknown, 4 invalid, 5 unsupported"
@@ -142,6 +145,29 @@ fn parse_usize_arg(s: Option<&String>, flag: &str) -> usize {
             eprintln!("{flag} requires a non-negative integer");
             process::exit(EXIT_USAGE);
         }
+    }
+}
+
+fn flag_value(args: &[String], name: &str) -> Option<String> {
+    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1).cloned())
+}
+
+fn write_if_requested(args: &[String], json: &str) {
+    if let Some(path) = flag_value(args, "--artifact") {
+        if let Err(e) = fs::write(&path, json) {
+            eprintln!("error writing artifact '{path}': {e}");
+            process::exit(EXIT_USAGE);
+        }
+    }
+}
+
+fn eval_exit(reason: &Option<concir::repair::external::RejectReason>) -> i32 {
+    match reason.as_ref().map(|r| r.code.as_str()) {
+        None => 0,
+        Some("verification_unknown") => EXIT_UNKNOWN,
+        Some("unsupported") | Some("verification_unsupported") => EXIT_UNSUPPORTED,
+        Some("verification_fail") => EXIT_FAIL,
+        _ => EXIT_INVALID,
     }
 }
 
@@ -326,7 +352,15 @@ fn main() {
         "replay" => {
             let path = args.get(2).unwrap_or_else(|| usage());
             let text = read(path);
-            match replay_artifact(&text) {
+            let schema = serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v.get("schema_version").and_then(|s| s.as_str()).map(String::from));
+            let replayed = if schema.as_deref() == Some(EXTERNAL_ARTIFACT_SCHEMA) {
+                replay_external_patch(&text)
+            } else {
+                replay_artifact(&text)
+            };
+            match replayed {
                 Ok(result) => {
                     println!(
                         "{}",
@@ -336,6 +370,37 @@ fn main() {
                 Err(e) => {
                     eprintln!("artifact replay failed: {e}");
                     process::exit(EXIT_INVALID);
+                }
+            }
+        }
+        "repair-context" => {
+            let model = args.get(2).unwrap_or_else(|| usage());
+            let contract = args.get(3).unwrap_or_else(|| usage());
+            let program = parse_program(model);
+            let spec = parse_contract(Some(contract));
+            let ctx = build_context(&program, &spec);
+            let json = serde_json::to_string_pretty(&ctx).expect("serialize");
+            write_if_requested(&args, &json);
+            println!("{json}");
+        }
+        "evaluate-patch" => {
+            let context_path = args.get(2).unwrap_or_else(|| usage());
+            let candidate_path = args.get(3).unwrap_or_else(|| usage());
+            let context_text = read(context_path);
+            let candidate_text = read(candidate_path);
+            match evaluate_patch(&context_text, &candidate_text) {
+                Ok(artifact) => {
+                    let json = serde_json::to_string_pretty(&artifact).expect("serialize");
+                    write_if_requested(&args, &json);
+                    println!("{json}");
+                    let code = eval_exit(&artifact.reject_reason);
+                    if code != 0 {
+                        process::exit(code);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("evaluate-patch failed: {e}");
+                    process::exit(EXIT_USAGE);
                 }
             }
         }
