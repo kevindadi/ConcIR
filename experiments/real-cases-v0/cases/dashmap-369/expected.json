@@ -1,0 +1,10 @@
+{
+  "defect_representable": true,
+  "root_verification_expected": "UNSUPPORTED (RwLock lowering unsupported in v1)",
+  "verification_completable": false,
+  "current_patch_space_fixable_expected": false,
+  "upstream_fix": "drop the Ref guard before mutating another key (not representable in the current patch/verification space)",
+  "ground_truth_source": "https://github.com/xacrimon/dashmap/issues/369",
+  "model_sha256": "84f94127f4cd8e3d480dab7c482cfa05acab3aeb769a29472ff64f3b4cc02395",
+  "contract_sha256": "607bcf87dd35cfa017fb3a87a130820b5a79002ba51b615d7c26bf4403b584a3"
+}

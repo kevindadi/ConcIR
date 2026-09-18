@@ -1,0 +1,10 @@
+{
+  "defect_representable": true,
+  "root_verification_expected": "FAIL (upstream gdb ABBA proof)",
+  "verification_completable": true,
+  "current_patch_space_fixable_expected": true,
+  "upstream_fix": "release subscription mutex_ before acquiring the wait set condition_mutex (not an adjacent lock swap)",
+  "ground_truth_source": "https://github.com/ros2/rmw_zenoh/issues/998",
+  "model_sha256": "77f6e181d701d23ecffac0c6a9c138e213905d16d36335e0d3544c30f5876fcb",
+  "contract_sha256": "71e5dfb20bab944928c7a9ab28fd9e9fa3f0b7379293b0a2ba3a0fde2b4ee614"
+}

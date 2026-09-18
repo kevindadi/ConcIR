@@ -1,0 +1,69 @@
+{
+  "outcome": "UNKNOWN",
+  "complete": false,
+  "states_explored": 20001,
+  "transitions_explored": 67922,
+  "properties": [
+    {
+      "id": "no-deadlock",
+      "outcome": "UNKNOWN",
+      "detail": "no deadlock found, but the search was incomplete"
+    },
+    {
+      "id": "preserved: main::u1ab completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f1)"
+    },
+    {
+      "id": "preserved: main::u1ba completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f2)"
+    },
+    {
+      "id": "preserved: main::u2ab completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f3)"
+    },
+    {
+      "id": "preserved: main::u2ba completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f4)"
+    },
+    {
+      "id": "preserved: main::u3ab completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f5)"
+    },
+    {
+      "id": "preserved: main::u3ba completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f6)"
+    }
+  ],
+  "diagnostics": [],
+  "boundary_events": [
+    {
+      "kind": "state_limit",
+      "thread": null,
+      "frame": null,
+      "function": null,
+      "detail": "state limit 20000 reached"
+    }
+  ],
+  "unsupported": [],
+  "invalid": [],
+  "model_fingerprint": "0758e5f1fb57eda8",
+  "contract_fingerprint": "7a1f26de55d6427b",
+  "assumptions": {
+    "sequential_consistency": true,
+    "no_spurious_wakeups": true
+  },
+  "bounds": {
+    "max_threads": 16,
+    "max_frames_per_thread": 16,
+    "max_states": 20000,
+    "max_depth": 128,
+    "max_boundary_events": 512
+  },
+  "analysis_started": true
+}

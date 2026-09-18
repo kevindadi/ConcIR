@@ -1,0 +1,914 @@
+[
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "already_correct",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/already_correct.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/already_correct_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "a",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/already_correct.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/already_correct_contract.json",
+      "model_sha256": "63c2c0c459dedd1504f29310d782afa36b26ba58040e55fb376ee8eff409a392",
+      "model_norm_sha256": "71e2ca08924689938d34f13b612be692eddda878ff064c17e037cdc5b4f1c816",
+      "contract_sha256": "5bdfd94df3f343d43168df84191f4578f2c8115231068cca32b385acb7e4c90c",
+      "contract_norm_sha256": "58a97a8f62068169111ae6836a8a43d6aeb99fa5bc943956fe036508bdad1f8f",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "d45184b353105ed237f832f7",
+    "run_fingerprint": "239c02c9e37d67f4486d8b133e46e744712b64da9ed63eb184bfffefeb89defb"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "already_correct",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/already_correct.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/already_correct_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "b",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/already_correct.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/already_correct_contract.json",
+      "model_sha256": "63c2c0c459dedd1504f29310d782afa36b26ba58040e55fb376ee8eff409a392",
+      "model_norm_sha256": "71e2ca08924689938d34f13b612be692eddda878ff064c17e037cdc5b4f1c816",
+      "contract_sha256": "5bdfd94df3f343d43168df84191f4578f2c8115231068cca32b385acb7e4c90c",
+      "contract_norm_sha256": "58a97a8f62068169111ae6836a8a43d6aeb99fa5bc943956fe036508bdad1f8f",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "1143e060cf2711ff0c7b7727",
+    "run_fingerprint": "c5cf3690e24e21a824c19ef6bedfda0e4a30ef71f83e9f0aefe9fcb4869a7550"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "already_correct",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/already_correct.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/already_correct_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "c",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/already_correct.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/already_correct_contract.json",
+      "model_sha256": "63c2c0c459dedd1504f29310d782afa36b26ba58040e55fb376ee8eff409a392",
+      "model_norm_sha256": "71e2ca08924689938d34f13b612be692eddda878ff064c17e037cdc5b4f1c816",
+      "contract_sha256": "5bdfd94df3f343d43168df84191f4578f2c8115231068cca32b385acb7e4c90c",
+      "contract_norm_sha256": "58a97a8f62068169111ae6836a8a43d6aeb99fa5bc943956fe036508bdad1f8f",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "ca6393adbf24640c92e994bf",
+    "run_fingerprint": "5fb27b06f33a7ae16d159de6af8ac6a9834db0068b9bcec7cb5a72ed556f8321"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "single_cycle",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "a",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle_contract.json",
+      "model_sha256": "9674ddc7261cc7116ba6a06b2bc0a9b0272339dfbdeb1bf886a05382d5205141",
+      "model_norm_sha256": "4d5a0ef6bf656912a9149a90db8fe42f75a3e93fc633f33f95d7e0cf2d35e259",
+      "contract_sha256": "5bdfd94df3f343d43168df84191f4578f2c8115231068cca32b385acb7e4c90c",
+      "contract_norm_sha256": "58a97a8f62068169111ae6836a8a43d6aeb99fa5bc943956fe036508bdad1f8f",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "ce0f2c5c7a2de764c0fc926a",
+    "run_fingerprint": "fc210618ff7e5ca2694fdd19d9718c8156ab8258c2bc73f6f20e5d2cf890f640"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "single_cycle",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "b",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle_contract.json",
+      "model_sha256": "9674ddc7261cc7116ba6a06b2bc0a9b0272339dfbdeb1bf886a05382d5205141",
+      "model_norm_sha256": "4d5a0ef6bf656912a9149a90db8fe42f75a3e93fc633f33f95d7e0cf2d35e259",
+      "contract_sha256": "5bdfd94df3f343d43168df84191f4578f2c8115231068cca32b385acb7e4c90c",
+      "contract_norm_sha256": "58a97a8f62068169111ae6836a8a43d6aeb99fa5bc943956fe036508bdad1f8f",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "8ebd4177b62317a750d4b5af",
+    "run_fingerprint": "58c4db442436ceb0511cf3b326ba7d1f4583a3405a91d6f30fadd03b4ea8d5e0"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "single_cycle",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "c",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle_contract.json",
+      "model_sha256": "9674ddc7261cc7116ba6a06b2bc0a9b0272339dfbdeb1bf886a05382d5205141",
+      "model_norm_sha256": "4d5a0ef6bf656912a9149a90db8fe42f75a3e93fc633f33f95d7e0cf2d35e259",
+      "contract_sha256": "5bdfd94df3f343d43168df84191f4578f2c8115231068cca32b385acb7e4c90c",
+      "contract_norm_sha256": "58a97a8f62068169111ae6836a8a43d6aeb99fa5bc943956fe036508bdad1f8f",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "100e1989e6dd6fe5359d5015",
+    "run_fingerprint": "9c945bd38469bd218c3c02ae988bc53f3ea7911e7c06fac6e9bc1e6b84dbfc80"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "two_cycles",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "a",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles_contract.json",
+      "model_sha256": "9d43e80c423b713db3df0261337c698f9ff59312f25f3160bd700a6a698694ed",
+      "model_norm_sha256": "d62603617cf7c33471f09815e20874a9dc7e9adbb393a31a9b63fc5881ed4334",
+      "contract_sha256": "54be59bd1274fbec6add210ea8c748c528b8e07951434cd3d4c7cd549879689b",
+      "contract_norm_sha256": "c0f75175f355c2d940030f9b6fe873b268867731e2f512c29606af190ea04810",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "9b8281a4ec3c2318fc7a84fe",
+    "run_fingerprint": "f6fbd5a0f99fd306ca5f5bc42c4a789bd7bde80365c2b3c24c6a0e18331ffb8c"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "two_cycles",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "b",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles_contract.json",
+      "model_sha256": "9d43e80c423b713db3df0261337c698f9ff59312f25f3160bd700a6a698694ed",
+      "model_norm_sha256": "d62603617cf7c33471f09815e20874a9dc7e9adbb393a31a9b63fc5881ed4334",
+      "contract_sha256": "54be59bd1274fbec6add210ea8c748c528b8e07951434cd3d4c7cd549879689b",
+      "contract_norm_sha256": "c0f75175f355c2d940030f9b6fe873b268867731e2f512c29606af190ea04810",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "f686818cb283eff1330d0c21",
+    "run_fingerprint": "543bc3ec96f44b411aeb6ef5bb1661e70813b85ee0e49d5397aa6212b4b397e7"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "two_cycles",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "c",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles_contract.json",
+      "model_sha256": "9d43e80c423b713db3df0261337c698f9ff59312f25f3160bd700a6a698694ed",
+      "model_norm_sha256": "d62603617cf7c33471f09815e20874a9dc7e9adbb393a31a9b63fc5881ed4334",
+      "contract_sha256": "54be59bd1274fbec6add210ea8c748c528b8e07951434cd3d4c7cd549879689b",
+      "contract_norm_sha256": "c0f75175f355c2d940030f9b6fe873b268867731e2f512c29606af190ea04810",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "4d82862fdcd830aa64475119",
+    "run_fingerprint": "929f3f322659ba1d662063e603f1b4cee7e8ef1e06a04f780ddbccb3ce1b3014"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "cross_module_two_cycles",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/cross_module_two_cycles.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/cross_module_two_cycles_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "a",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/cross_module_two_cycles.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/cross_module_two_cycles_contract.json",
+      "model_sha256": "97561e857d868faf4b20349f5823a541e890acc371f99eca20a8c27eff29d3ad",
+      "model_norm_sha256": "e76a59674cde69ad52c88da8563173a9457d2c96e64ea99b92f538d5117496f8",
+      "contract_sha256": "d11bab83c507d8c633a685a2c6f36a910dcea197ffb2791238ad54f50f42cbd4",
+      "contract_norm_sha256": "79dbf9ed560e2fd15e5ca82a290f900f55c5122ca93d8c7ec5cecb3a1f984167",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "c18f36d4c743e1ed0c71a65f",
+    "run_fingerprint": "c636f133d08ba088e77ecd9033a60062cdbe8dbb28d14f207dabafaf3306c19a"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "cross_module_two_cycles",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/cross_module_two_cycles.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/cross_module_two_cycles_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "b",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/cross_module_two_cycles.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/cross_module_two_cycles_contract.json",
+      "model_sha256": "97561e857d868faf4b20349f5823a541e890acc371f99eca20a8c27eff29d3ad",
+      "model_norm_sha256": "e76a59674cde69ad52c88da8563173a9457d2c96e64ea99b92f538d5117496f8",
+      "contract_sha256": "d11bab83c507d8c633a685a2c6f36a910dcea197ffb2791238ad54f50f42cbd4",
+      "contract_norm_sha256": "79dbf9ed560e2fd15e5ca82a290f900f55c5122ca93d8c7ec5cecb3a1f984167",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "66ad497813eb8dad80364727",
+    "run_fingerprint": "71b878b7c935f27b9bb300c1c5f85e22fff759f1264e1cd1035307a54d85ae8c"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "cross_module_two_cycles",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/cross_module_two_cycles.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/cross_module_two_cycles_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "c",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/cross_module_two_cycles.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/cross_module_two_cycles_contract.json",
+      "model_sha256": "97561e857d868faf4b20349f5823a541e890acc371f99eca20a8c27eff29d3ad",
+      "model_norm_sha256": "e76a59674cde69ad52c88da8563173a9457d2c96e64ea99b92f538d5117496f8",
+      "contract_sha256": "d11bab83c507d8c633a685a2c6f36a910dcea197ffb2791238ad54f50f42cbd4",
+      "contract_norm_sha256": "79dbf9ed560e2fd15e5ca82a290f900f55c5122ca93d8c7ec5cecb3a1f984167",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "0c099f4517be5364f1e63918",
+    "run_fingerprint": "a7dc8e91b019e02c1ba7e0ccf299a35d8d18523d53a240dbd381c9ea95b35784"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "forbidden_scope",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/forbidden_scope_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "a",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/forbidden_scope_contract.json",
+      "model_sha256": "9674ddc7261cc7116ba6a06b2bc0a9b0272339dfbdeb1bf886a05382d5205141",
+      "model_norm_sha256": "4d5a0ef6bf656912a9149a90db8fe42f75a3e93fc633f33f95d7e0cf2d35e259",
+      "contract_sha256": "3a14840a37947790899efbdcc6056f3e21e3193b21810d151cd666d97c5e2696",
+      "contract_norm_sha256": "42573ffc94a5953205520d0fe9aaa8b750e7bd2b124632618ba258611316763e",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "221035d6960ef746a1de1705",
+    "run_fingerprint": "d1255b3d8fbf14bc00501c0126c7cb876908f017cb7ff40980e99a0cdf860686"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "forbidden_scope",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/forbidden_scope_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "b",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/forbidden_scope_contract.json",
+      "model_sha256": "9674ddc7261cc7116ba6a06b2bc0a9b0272339dfbdeb1bf886a05382d5205141",
+      "model_norm_sha256": "4d5a0ef6bf656912a9149a90db8fe42f75a3e93fc633f33f95d7e0cf2d35e259",
+      "contract_sha256": "3a14840a37947790899efbdcc6056f3e21e3193b21810d151cd666d97c5e2696",
+      "contract_norm_sha256": "42573ffc94a5953205520d0fe9aaa8b750e7bd2b124632618ba258611316763e",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "07cecdf59120c39e21acdbd9",
+    "run_fingerprint": "ff328363f5ca1942ac5a0a6e0ec543de1508b072a1cf7b99175bfe16e7249fe9"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "forbidden_scope",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/forbidden_scope_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "c",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/single_cycle.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/forbidden_scope_contract.json",
+      "model_sha256": "9674ddc7261cc7116ba6a06b2bc0a9b0272339dfbdeb1bf886a05382d5205141",
+      "model_norm_sha256": "4d5a0ef6bf656912a9149a90db8fe42f75a3e93fc633f33f95d7e0cf2d35e259",
+      "contract_sha256": "3a14840a37947790899efbdcc6056f3e21e3193b21810d151cd666d97c5e2696",
+      "contract_norm_sha256": "42573ffc94a5953205520d0fe9aaa8b750e7bd2b124632618ba258611316763e",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "c235c54ac5ae94291fe8f410",
+    "run_fingerprint": "ddddc2f0588cf2e123a2eab6e804b18e949256076014514afd9eb61b95fed384"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "preserved_unfixable",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/preserved_unfixable.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/preserved_unfixable_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "a",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/preserved_unfixable.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/preserved_unfixable_contract.json",
+      "model_sha256": "35b577c051612868d253932bc7f99c580418d7e454a714bb62f04f69afec6dad",
+      "model_norm_sha256": "f18b4eef2f5240817695af70055a9b5bfdad1ec1039979163d135f463640fddd",
+      "contract_sha256": "8293c14b02541480e75be45492271b968f201008b20cbf7fa357b0b876a84889",
+      "contract_norm_sha256": "aa3c157f14be1cade2ad63b11800a69b051ddba91425d03324d6e75f91305755",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "5bd2d1385d978b8694d1a289",
+    "run_fingerprint": "08c32e9ec845e06de024930a79a064be56864040bfe0ced4ff8c5055b885033c"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "preserved_unfixable",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/preserved_unfixable.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/preserved_unfixable_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "b",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/preserved_unfixable.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/preserved_unfixable_contract.json",
+      "model_sha256": "35b577c051612868d253932bc7f99c580418d7e454a714bb62f04f69afec6dad",
+      "model_norm_sha256": "f18b4eef2f5240817695af70055a9b5bfdad1ec1039979163d135f463640fddd",
+      "contract_sha256": "8293c14b02541480e75be45492271b968f201008b20cbf7fa357b0b876a84889",
+      "contract_norm_sha256": "aa3c157f14be1cade2ad63b11800a69b051ddba91425d03324d6e75f91305755",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "01b5dfac2832ca46cf38b108",
+    "run_fingerprint": "3f393c0357dc5fc33e7a1d7233eff2bbb38ed694d1cff9cec1cc5465b6ad3d3d"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "preserved_unfixable",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/preserved_unfixable.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/preserved_unfixable_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "c",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/preserved_unfixable.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/preserved_unfixable_contract.json",
+      "model_sha256": "35b577c051612868d253932bc7f99c580418d7e454a714bb62f04f69afec6dad",
+      "model_norm_sha256": "f18b4eef2f5240817695af70055a9b5bfdad1ec1039979163d135f463640fddd",
+      "contract_sha256": "8293c14b02541480e75be45492271b968f201008b20cbf7fa357b0b876a84889",
+      "contract_norm_sha256": "aa3c157f14be1cade2ad63b11800a69b051ddba91425d03324d6e75f91305755",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "2fcc0eb4fb34b24c73ecf30e",
+    "run_fingerprint": "4f6233c1799dfbba37603597d218670d7c41db66f153b7f5a54e1b5b1143b992"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "no_lock_candidate",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/channel_deadlock.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/channel_deadlock_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "a",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/channel_deadlock.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/channel_deadlock_contract.json",
+      "model_sha256": "9ccc4d4e0dac86e35637ca75f8cfaf8e08b27f6c67512b8346fc7bd9a72cfdf8",
+      "model_norm_sha256": "6deadab00ad91dc1ba46a6344dc4bc4c8508fc01519bc97c095fb226fd994c6b",
+      "contract_sha256": "0e2cf45274ebf9175ae37b498cb62227063c8ebc9391185d843ea6eeac90d054",
+      "contract_norm_sha256": "8a5f7eee23373ef1795603be70a344b0b4aa41f7f765c2cbc4d2709b614e2bc4",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "055817ca645959cd5e4e8a9f",
+    "run_fingerprint": "45911fcfbf302ca9410f4cb5ec6a45c9df70b663ad37da2f685e2d5d17b1a8df"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "no_lock_candidate",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/channel_deadlock.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/channel_deadlock_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "b",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/channel_deadlock.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/channel_deadlock_contract.json",
+      "model_sha256": "9ccc4d4e0dac86e35637ca75f8cfaf8e08b27f6c67512b8346fc7bd9a72cfdf8",
+      "model_norm_sha256": "6deadab00ad91dc1ba46a6344dc4bc4c8508fc01519bc97c095fb226fd994c6b",
+      "contract_sha256": "0e2cf45274ebf9175ae37b498cb62227063c8ebc9391185d843ea6eeac90d054",
+      "contract_norm_sha256": "8a5f7eee23373ef1795603be70a344b0b4aa41f7f765c2cbc4d2709b614e2bc4",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "50ef25c2466befbccc03b7da",
+    "run_fingerprint": "6ff6b34e7e225a167f3b790c046ea33024db3d209605114cacbd301908891039"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "no_lock_candidate",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/channel_deadlock.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/channel_deadlock_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "c",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/channel_deadlock.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/channel_deadlock_contract.json",
+      "model_sha256": "9ccc4d4e0dac86e35637ca75f8cfaf8e08b27f6c67512b8346fc7bd9a72cfdf8",
+      "model_norm_sha256": "6deadab00ad91dc1ba46a6344dc4bc4c8508fc01519bc97c095fb226fd994c6b",
+      "contract_sha256": "0e2cf45274ebf9175ae37b498cb62227063c8ebc9391185d843ea6eeac90d054",
+      "contract_norm_sha256": "8a5f7eee23373ef1795603be70a344b0b4aa41f7f765c2cbc4d2709b614e2bc4",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "77cbd7ea4c149b5721d61b3b",
+    "run_fingerprint": "89b07dabe385733fbe359cd59c6b5809dc24b119208b094587cd8aaf25f27cc1"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "budget_truncated",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 1,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "a",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles_contract.json",
+      "model_sha256": "9d43e80c423b713db3df0261337c698f9ff59312f25f3160bd700a6a698694ed",
+      "model_norm_sha256": "d62603617cf7c33471f09815e20874a9dc7e9adbb393a31a9b63fc5881ed4334",
+      "contract_sha256": "54be59bd1274fbec6add210ea8c748c528b8e07951434cd3d4c7cd549879689b",
+      "contract_norm_sha256": "c0f75175f355c2d940030f9b6fe873b268867731e2f512c29606af190ea04810",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "514a5ac7e3f4ea6124cf0834",
+    "run_fingerprint": "06346876f9438cfe7df89554ac408cdcdac0def934a43c3729b55e5b5d7135d4"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "budget_truncated",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 1,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "b",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles_contract.json",
+      "model_sha256": "9d43e80c423b713db3df0261337c698f9ff59312f25f3160bd700a6a698694ed",
+      "model_norm_sha256": "d62603617cf7c33471f09815e20874a9dc7e9adbb393a31a9b63fc5881ed4334",
+      "contract_sha256": "54be59bd1274fbec6add210ea8c748c528b8e07951434cd3d4c7cd549879689b",
+      "contract_norm_sha256": "c0f75175f355c2d940030f9b6fe873b268867731e2f512c29606af190ea04810",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "9f9d531bd830260b60aa42fe",
+    "run_fingerprint": "bc07efa0c70abd7bd861c4dbe743f2848af12805d000e2f4df59cf365465b5cb"
+  },
+  {
+    "stage": "repair",
+    "suite": "smoke",
+    "case": "budget_truncated",
+    "family": "smoke_dev",
+    "params": {},
+    "model": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles_contract.json",
+    "config_name": "smoke",
+    "config": {
+      "candidate_budget": 1,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "c",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/tests/repro_bench/two_cycles_contract.json",
+      "model_sha256": "9d43e80c423b713db3df0261337c698f9ff59312f25f3160bd700a6a698694ed",
+      "model_norm_sha256": "d62603617cf7c33471f09815e20874a9dc7e9adbb393a31a9b63fc5881ed4334",
+      "contract_sha256": "54be59bd1274fbec6add210ea8c748c528b8e07951434cd3d4c7cd549879689b",
+      "contract_norm_sha256": "c0f75175f355c2d940030f9b6fe873b268867731e2f512c29606af190ea04810",
+      "contract_bounds": {
+        "max_threads": 8,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_depth": 64,
+        "max_boundary_events": 256
+      }
+    },
+    "batch_id": "smoke-lifecycle",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "6ceea984684f55df8124e749",
+    "run_fingerprint": "4a097dfb58c849bc1a0b26897b78969a6fc915f610843ebfc294b71376022e62"
+  }
+]

@@ -1,0 +1,274 @@
+{
+  "schema_version": "concir-repair-artifact-v1",
+  "source": {
+    "crate_version": "0.1.0",
+    "binary_fingerprint": "763382a6a366685a"
+  },
+  "input_program": {
+    "program": "c_already_correct_interf",
+    "version": "3.5.0",
+    "modules": [
+      {
+        "name": "main",
+        "provides": {
+          "resources": [
+            "i1",
+            "j1",
+            "i2",
+            "j2"
+          ],
+          "functions": [
+            "main",
+            "i1",
+            "i2"
+          ],
+          "types": []
+        },
+        "requires": {
+          "resources": [],
+          "functions": [],
+          "types": []
+        },
+        "resources": [
+          {
+            "name": "i1",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "j1",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "i2",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "j2",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          }
+        ],
+        "protection": [],
+        "functions": [
+          {
+            "name": "main",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "scope",
+                "funcs": [
+                  "i1",
+                  "i2"
+                ]
+              },
+              {
+                "sid": "s2",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "i1",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "i1"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "j1"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "j1"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "i1"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "i2",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "i2"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "j2"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "j2"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "i2"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "entry": "main::main"
+  },
+  "frozen_contract": {
+    "name": "c_already_correct_interf",
+    "properties": [
+      {
+        "kind": "deadlock_free",
+        "id": "no-deadlock"
+      }
+    ],
+    "preserved": [
+      {
+        "kind": "reachable",
+        "description": "i1 completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "i1"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "i2 completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "i2"
+        }
+      }
+    ],
+    "assumptions": {
+      "sequential_consistency": true,
+      "no_spurious_wakeups": true
+    },
+    "bounds": {
+      "max_threads": 16,
+      "max_frames_per_thread": 16,
+      "max_states": 200000,
+      "max_depth": 128,
+      "max_boundary_events": 512
+    },
+    "allowed_scope": {
+      "functions": [],
+      "modules": [],
+      "allow_lock_reorder": true,
+      "allow_statement_delete": false
+    }
+  },
+  "effective_config": {
+    "strategy": "diagnostic",
+    "candidate_budget": 64,
+    "verification_budget": 64,
+    "max_depth": 4,
+    "max_total_edits": 4,
+    "bounds": {
+      "max_threads": 16,
+      "max_frames_per_thread": 16,
+      "max_states": 200000,
+      "max_depth": 128,
+      "max_boundary_events": 512
+    }
+  },
+  "nodes": [
+    {
+      "id": 0,
+      "parent": null,
+      "depth": 0,
+      "total_edits": 0,
+      "program_fingerprint": "e330cbedf27e5c43",
+      "incoming": null,
+      "report": {
+        "outcome": "PASS",
+        "complete": true,
+        "states_explored": 38,
+        "transitions_explored": 62,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "PASS",
+            "detail": "no deadlock state reachable"
+          },
+          {
+            "id": "preserved: i1 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: i2 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          }
+        ],
+        "diagnostics": [],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "e330cbedf27e5c43",
+        "contract_fingerprint": "818efde4fa9e2164",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 16,
+          "max_frames_per_thread": 16,
+          "max_states": 200000,
+          "max_depth": 128,
+          "max_boundary_events": 512
+        },
+        "analysis_started": true
+      },
+      "note": null
+    }
+  ],
+  "attempts": [],
+  "patch_chain": [],
+  "accepted_node": null,
+  "accepted_program": null,
+  "accepted_report": null,
+  "outcome": "already_satisfied",
+  "stop_reason": "already-satisfied",
+  "saw_unknown": false,
+  "truncation": null,
+  "counts": {
+    "proposals": 0,
+    "unique_candidate_programs": 1,
+    "verification_calls": 1,
+    "cache_hits": 0,
+    "states_explored": 38,
+    "nodes": 1
+  },
+  "reproduce": "concir-backend repair <program.json> <contract.json> --strategy c   # candidate_budget=64 verification_budget=64 max_depth=4 max_total_edits=4 bounds=AnalysisBounds { max_threads: 16, max_frames_per_thread: 16, max_states: 200000, max_depth: 128, max_boundary_events: 512 }"
+}

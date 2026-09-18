@@ -1,0 +1,358 @@
+[
+  {
+    "case": "p1_same",
+    "witness_kind": "legal",
+    "legal": true,
+    "swaps": [
+      {
+        "module": "main",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "chain_len": 1,
+    "permissions_ok": true,
+    "final_outcome": "PASS",
+    "final_states": 43,
+    "error": null
+  },
+  {
+    "case": "p1_cross_shared",
+    "witness_kind": "legal",
+    "legal": true,
+    "swaps": [
+      {
+        "module": "other",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "chain_len": 1,
+    "permissions_ok": true,
+    "final_outcome": "PASS",
+    "final_states": 43,
+    "error": null
+  },
+  {
+    "case": "p1_interf",
+    "witness_kind": "legal",
+    "legal": true,
+    "swaps": [
+      {
+        "module": "main",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "chain_len": 1,
+    "permissions_ok": true,
+    "final_outcome": "PASS",
+    "final_states": 248,
+    "error": null
+  },
+  {
+    "case": "p2_same",
+    "witness_kind": "legal",
+    "legal": true,
+    "swaps": [
+      {
+        "module": "main",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      },
+      {
+        "module": "main",
+        "function": "u2ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "chain_len": 2,
+    "permissions_ok": true,
+    "final_outcome": "PASS",
+    "final_states": 1683,
+    "error": null
+  },
+  {
+    "case": "p2_cross_independent",
+    "witness_kind": "legal",
+    "legal": true,
+    "swaps": [
+      {
+        "module": "main",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      },
+      {
+        "module": "other",
+        "function": "u2ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "chain_len": 2,
+    "permissions_ok": true,
+    "final_outcome": "PASS",
+    "final_states": 1683,
+    "error": null
+  },
+  {
+    "case": "p2_cross_shared",
+    "witness_kind": "legal",
+    "legal": true,
+    "swaps": [
+      {
+        "module": "other",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      },
+      {
+        "module": "other",
+        "function": "u2ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "chain_len": 2,
+    "permissions_ok": true,
+    "final_outcome": "PASS",
+    "final_states": 1683,
+    "error": null
+  },
+  {
+    "case": "p2_interf",
+    "witness_kind": "legal",
+    "legal": true,
+    "swaps": [
+      {
+        "module": "main",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      },
+      {
+        "module": "main",
+        "function": "u2ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "chain_len": 2,
+    "permissions_ok": true,
+    "final_outcome": "PASS",
+    "final_states": 10088,
+    "error": null
+  },
+  {
+    "case": "c_already_correct",
+    "witness_kind": "none",
+    "legal": false,
+    "swaps": [],
+    "witness_expected": "PASS"
+  },
+  {
+    "case": "c_scope_restricted",
+    "witness_kind": "auxiliary",
+    "legal": false,
+    "swaps": [
+      {
+        "module": "main",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "aux_petri": {
+      "outcome": "PASS",
+      "states": 43,
+      "wall_ms": 3
+    },
+    "aux_interp": {
+      "outcome": "PASS",
+      "states": 43,
+      "wall_ms": 2
+    },
+    "witness_expected": "PASS"
+  },
+  {
+    "case": "c_lock_reorder_forbidden",
+    "witness_kind": "auxiliary",
+    "legal": false,
+    "swaps": [
+      {
+        "module": "main",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "aux_petri": {
+      "outcome": "PASS",
+      "states": 43,
+      "wall_ms": 3
+    },
+    "aux_interp": {
+      "outcome": "PASS",
+      "states": 43,
+      "wall_ms": 3
+    },
+    "witness_expected": "PASS"
+  },
+  {
+    "case": "c_preserved_unsatisfiable",
+    "witness_kind": "none",
+    "legal": false,
+    "swaps": [
+      {
+        "module": "main",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "witness_expected": "FAIL"
+  },
+  {
+    "case": "c_bounds_unknown",
+    "witness_kind": "legal",
+    "legal": true,
+    "swaps": [
+      {
+        "module": "main",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      },
+      {
+        "module": "main",
+        "function": "u2ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "chain_len": 2,
+    "permissions_ok": true,
+    "final_outcome": "UNKNOWN",
+    "final_states": 50,
+    "error": null,
+    "expanded": {
+      "outcome": "PASS",
+      "states": 1683,
+      "wall_ms": 43
+    }
+  },
+  {
+    "case": "e_name_order",
+    "witness_kind": "legal",
+    "legal": true,
+    "swaps": [
+      {
+        "module": "main",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      },
+      {
+        "module": "main",
+        "function": "u2ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "chain_len": 2,
+    "permissions_ok": true,
+    "final_outcome": "PASS",
+    "final_states": 1683,
+    "error": null
+  },
+  {
+    "case": "e_module_order",
+    "witness_kind": "legal",
+    "legal": true,
+    "swaps": [
+      {
+        "module": "main",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      },
+      {
+        "module": "other",
+        "function": "u2ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "chain_len": 2,
+    "permissions_ok": true,
+    "final_outcome": "PASS",
+    "final_states": 1683,
+    "error": null
+  },
+  {
+    "case": "p3_same",
+    "witness_kind": "legal",
+    "legal": true,
+    "swaps": [
+      {
+        "module": "main",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      },
+      {
+        "module": "main",
+        "function": "u2ba",
+        "a": "s1",
+        "b": "s2"
+      },
+      {
+        "module": "main",
+        "function": "u3ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "chain_len": 3,
+    "permissions_ok": true,
+    "final_outcome": "PASS",
+    "final_states": 68923,
+    "error": null
+  },
+  {
+    "case": "p3_cross_independent",
+    "witness_kind": "legal",
+    "legal": true,
+    "swaps": [
+      {
+        "module": "main",
+        "function": "u1ba",
+        "a": "s1",
+        "b": "s2"
+      },
+      {
+        "module": "other",
+        "function": "u2ba",
+        "a": "s1",
+        "b": "s2"
+      },
+      {
+        "module": "other",
+        "function": "u3ba",
+        "a": "s1",
+        "b": "s2"
+      }
+    ],
+    "chain_len": 3,
+    "permissions_ok": true,
+    "final_outcome": "PASS",
+    "final_states": 68923,
+    "error": null
+  }
+]

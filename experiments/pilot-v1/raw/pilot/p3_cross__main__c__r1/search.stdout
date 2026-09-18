@@ -1,0 +1,503 @@
+{
+  "schema_version": "concir-repair-artifact-v1",
+  "source": {
+    "crate_version": "0.1.0",
+    "binary_fingerprint": "763382a6a366685a"
+  },
+  "input_program": {
+    "program": "p3_cross",
+    "version": "3.5.0",
+    "modules": [
+      {
+        "name": "main",
+        "provides": {
+          "resources": [
+            "a",
+            "b",
+            "e",
+            "f"
+          ],
+          "functions": [
+            "main",
+            "u1ab",
+            "u1ba",
+            "u3ab",
+            "u3ba"
+          ],
+          "types": []
+        },
+        "requires": {
+          "resources": [],
+          "functions": [
+            "other::u2ab",
+            "other::u2ba"
+          ],
+          "types": []
+        },
+        "resources": [
+          {
+            "name": "a",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "b",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "e",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "f",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          }
+        ],
+        "protection": [],
+        "functions": [
+          {
+            "name": "main",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "scope",
+                "funcs": [
+                  "u1ab",
+                  "u1ba",
+                  "u3ab",
+                  "u3ba",
+                  "other::u2ab",
+                  "other::u2ba"
+                ]
+              },
+              {
+                "sid": "s2",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "u1ab",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "a"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "b"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "b"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "a"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "u1ba",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "b"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "a"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "a"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "b"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "u3ab",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "e"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "f"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "f"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "e"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "u3ba",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "f"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "e"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "e"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "f"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "other",
+        "provides": {
+          "resources": [
+            "c",
+            "d"
+          ],
+          "functions": [
+            "u2ab",
+            "u2ba"
+          ],
+          "types": []
+        },
+        "requires": {
+          "resources": [],
+          "functions": [],
+          "types": []
+        },
+        "resources": [
+          {
+            "name": "c",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "d",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          }
+        ],
+        "protection": [],
+        "functions": [
+          {
+            "name": "u2ab",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "c"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "d"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "d"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "c"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "u2ba",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "d"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "c"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "c"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "d"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "entry": "main::main"
+  },
+  "frozen_contract": {
+    "name": "p3_cross",
+    "properties": [
+      {
+        "kind": "deadlock_free",
+        "id": "no-deadlock"
+      }
+    ],
+    "preserved": [
+      {
+        "kind": "reachable",
+        "description": "u1ab completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "u1ab"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "u1ba completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "u1ba"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "u3ab completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "u3ab"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "u3ba completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "u3ba"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "other::u2ab completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "other::u2ab"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "other::u2ba completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "other::u2ba"
+        }
+      }
+    ],
+    "assumptions": {
+      "sequential_consistency": true,
+      "no_spurious_wakeups": true
+    },
+    "bounds": {
+      "max_threads": 16,
+      "max_frames_per_thread": 16,
+      "max_states": 20000,
+      "max_depth": 128,
+      "max_boundary_events": 512
+    },
+    "allowed_scope": {
+      "functions": [],
+      "modules": [],
+      "allow_lock_reorder": true,
+      "allow_statement_delete": false
+    }
+  },
+  "effective_config": {
+    "strategy": "diagnostic",
+    "candidate_budget": 64,
+    "verification_budget": 64,
+    "max_depth": 4,
+    "max_total_edits": 4,
+    "bounds": {
+      "max_threads": 16,
+      "max_frames_per_thread": 16,
+      "max_states": 20000,
+      "max_depth": 128,
+      "max_boundary_events": 512
+    }
+  },
+  "nodes": [
+    {
+      "id": 0,
+      "parent": null,
+      "depth": 0,
+      "total_edits": 0,
+      "program_fingerprint": "bebe8cb50ccbd226",
+      "incoming": null,
+      "report": {
+        "outcome": "UNKNOWN",
+        "complete": false,
+        "states_explored": 20001,
+        "transitions_explored": 67922,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "UNKNOWN",
+            "detail": "no deadlock found, but the search was incomplete"
+          },
+          {
+            "id": "preserved: u1ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: u1ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: u3ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f3)"
+          },
+          {
+            "id": "preserved: u3ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f4)"
+          },
+          {
+            "id": "preserved: other::u2ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f5)"
+          },
+          {
+            "id": "preserved: other::u2ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f6)"
+          }
+        ],
+        "diagnostics": [],
+        "boundary_events": [
+          {
+            "kind": "state_limit",
+            "thread": null,
+            "frame": null,
+            "function": null,
+            "detail": "state limit 20000 reached"
+          }
+        ],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "bebe8cb50ccbd226",
+        "contract_fingerprint": "a8ca204f8e255f8e",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 16,
+          "max_frames_per_thread": 16,
+          "max_states": 20000,
+          "max_depth": 128,
+          "max_boundary_events": 512
+        },
+        "analysis_started": true
+      },
+      "note": null
+    }
+  ],
+  "attempts": [],
+  "patch_chain": [],
+  "accepted_node": null,
+  "accepted_program": null,
+  "accepted_report": null,
+  "outcome": "analysis_unknown",
+  "stop_reason": "root-unknown",
+  "saw_unknown": true,
+  "truncation": null,
+  "counts": {
+    "proposals": 0,
+    "unique_candidate_programs": 1,
+    "verification_calls": 1,
+    "cache_hits": 0,
+    "states_explored": 20001,
+    "nodes": 1
+  },
+  "reproduce": "concir-backend repair <program.json> <contract.json> --strategy c   # candidate_budget=64 verification_budget=64 max_depth=4 max_total_edits=4 bounds=AnalysisBounds { max_threads: 16, max_frames_per_thread: 16, max_states: 20000, max_depth: 128, max_boundary_events: 512 }"
+}

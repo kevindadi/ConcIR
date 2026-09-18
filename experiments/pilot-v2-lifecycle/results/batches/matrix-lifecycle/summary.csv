@@ -1,0 +1,13 @@
+stage,suite,case,family,config_name,strategy,repeat,raw_outcome,final_classification,evidence_status,stop_reason,truncation,saw_unknown,root_outcome,report_complete,proposals,unique_programs,verification_calls,cache_hits,states_explored,transitions_explored,nodes,patch_len,accepted_chain_len,exit_code,wall_ms,wall_ms_basis,search_wall_ms,replay_exit,replay_wall_ms,replay_ok,artifact_sha256,artifact_path,attempt_id,reused_from
+explore,matrix,p1_interf,interference,ms100000,,1,FAIL,FAIL,complete,,,,,True,,,,,284,657,,,,1,7,search,7,,,,,,20260918T045148383500-53167-11,
+explore,matrix,p1_interf,interference,ms20000,,1,FAIL,FAIL,complete,,,,,True,,,,,284,657,,,,1,7,search,7,,,,,,20260918T045148374561-53167-10,
+explore,matrix,p1_interf,interference,ms200000,,1,FAIL,FAIL,complete,,,,,True,,,,,284,657,,,,1,7,search,7,,,,,,20260918T045148392469-53167-12,
+explore,matrix,p1_same,one_defect,ms100000,,1,FAIL,FAIL,complete,,,,,True,,,,,49,72,,,,1,2,search,2,,,,,,20260918T045138610143-53167-2,
+explore,matrix,p1_same,one_defect,ms20000,,1,FAIL,FAIL,complete,,,,,True,,,,,49,72,,,,1,2,search,2,,,,,,20260918T045138606405-53167-1,
+explore,matrix,p1_same,one_defect,ms200000,,1,FAIL,FAIL,complete,,,,,True,,,,,49,72,,,,1,3,search,3,,,,,,20260918T045138613844-53167-3,
+explore,matrix,p2_same,two_defects,ms100000,,1,FAIL,FAIL,complete,,,,,True,,,,,2211,6582,,,,1,54,search,54,,,,,,20260918T045138677422-53167-5,
+explore,matrix,p2_same,two_defects,ms20000,,1,FAIL,FAIL,complete,,,,,True,,,,,2211,6582,,,,1,57,search,57,,,,,,20260918T045138618725-53167-4,
+explore,matrix,p2_same,two_defects,ms200000,,1,FAIL,FAIL,complete,,,,,True,,,,,2211,6582,,,,1,54,search,54,,,,,,20260918T045138733382-53167-6,
+explore,matrix,p3_same,three_defects,ms100000,,1,FAIL,FAIL,complete,,,,,False,,,,,100000,439834,,,,1,4381,search,4381,,,,,,20260918T045139485947-53167-8,
+explore,matrix,p3_same,three_defects,ms20000,,1,UNKNOWN,UNKNOWN,complete,,,,,False,,,,,20001,67922,,,,3,695,search,695,,,,,,20260918T045138789286-53167-7,
+explore,matrix,p3_same,three_defects,ms200000,,1,FAIL,FAIL,complete,,,,,True,,,,,103825,463892,,,,1,4502,search,4502,,,,,,20260918T045143869098-53167-9,

@@ -1,0 +1,18 @@
+{
+  "id": "dashmap-369",
+  "source_kind": "upstream issue with minimal reproducer",
+  "language": "Rust (per-shard RwLock)",
+  "repository": "https://github.com/xacrimon/dashmap",
+  "issue": "https://github.com/xacrimon/dashmap/issues/369",
+  "buggy_ref": "dashmap 6.1.0 (issue reports version 6.1.0; no commit pinned)",
+  "buggy_lines": [
+    "get() returns a Ref holding a shard read lock",
+    "insert() takes a different shard's write lock"
+  ],
+  "fixed_ref": null,
+  "fixed_note": "Issue closed with no linked PR/commit exposed; the suggested fix is to drop the Ref before mutating another key.",
+  "license": "MIT",
+  "snippet_path": "sources/dashmap-369.md",
+  "retrieved_utc": "2026-09-18",
+  "snippet_sha256": "b919d9d4606cf398888520852dac5d44e3ddd2302f18643427cd0ccb41b9a70b"
+}

@@ -1,0 +1,38 @@
+{
+  "batch_id": null,
+  "cohort_fingerprint": null,
+  "records": 4,
+  "complete": 4,
+  "not_complete": 0,
+  "errors": [],
+  "nondeterministic": [],
+  "wall_stats": [],
+  "paired": {
+    "pairs": 1,
+    "both_repaired": 1,
+    "c_le_b_ver": 1,
+    "c_lt_b_ver": 0,
+    "sum_b_ver": 2,
+    "sum_c_ver": 2,
+    "sum_b_states": 10,
+    "sum_c_states": 10,
+    "sum_b_wall_ms": 2,
+    "sum_c_wall_ms": 2,
+    "success_differs": [],
+    "note": "pairs include repeats/configs of the same model, not independent programs"
+  },
+  "by_suite": {
+    "pilot": {
+      "repaired": 4
+    }
+  },
+  "status_by_suite": {
+    "pilot": {
+      "complete": 4
+    }
+  },
+  "matrix": [],
+  "witness": [],
+  "meta": {},
+  "environment": {}
+}

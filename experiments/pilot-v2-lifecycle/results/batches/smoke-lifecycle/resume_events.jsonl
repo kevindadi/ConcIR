@@ -1,0 +1,26 @@
+{"at_utc": "2026-09-18T04:51:03.926450+00:00", "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6", "code_fingerprint": "9a6eb384a5e744c0ea86d66101d7c841c99350d7d80c2b4d5dd7ee4de66c9fd6", "pid": 52671, "plan_count": 24, "replay_timeout_s": 30.0, "resuming": false, "search_timeout_s": 30.0, "total_budget_s": 300.0}
+{"at_utc": "2026-09-18T04:51:14.619977+00:00", "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6", "code_fingerprint": "9a6eb384a5e744c0ea86d66101d7c841c99350d7d80c2b4d5dd7ee4de66c9fd6", "pid": 52915, "plan_count": 24, "replay_timeout_s": 30.0, "resuming": true, "search_timeout_s": 30.0, "total_budget_s": 300.0}
+{"at_utc": "2026-09-18T04:51:14.620612+00:00", "classification": "already_satisfied", "reused_attempt_id": "20260918T045103926621-52671-1", "reused_run_key": "d45184b353105ed237f832f7"}
+{"at_utc": "2026-09-18T04:51:14.620805+00:00", "classification": "already_satisfied", "reused_attempt_id": "20260918T045103941126-52671-2", "reused_run_key": "1143e060cf2711ff0c7b7727"}
+{"at_utc": "2026-09-18T04:51:14.621113+00:00", "classification": "already_satisfied", "reused_attempt_id": "20260918T045103954341-52671-3", "reused_run_key": "ca6393adbf24640c92e994bf"}
+{"at_utc": "2026-09-18T04:51:14.621404+00:00", "classification": "repaired", "reused_attempt_id": "20260918T045103967871-52671-4", "reused_run_key": "ce0f2c5c7a2de764c0fc926a"}
+{"at_utc": "2026-09-18T04:51:14.621661+00:00", "classification": "repaired", "reused_attempt_id": "20260918T045103983230-52671-5", "reused_run_key": "8ebd4177b62317a750d4b5af"}
+{"at_utc": "2026-09-18T04:51:14.621838+00:00", "classification": "repaired", "reused_attempt_id": "20260918T045103998528-52671-6", "reused_run_key": "100e1989e6dd6fe5359d5015"}
+{"at_utc": "2026-09-18T04:51:14.622106+00:00", "classification": "no_acceptable_candidate", "reused_attempt_id": "20260918T045104013158-52671-7", "reused_run_key": "9b8281a4ec3c2318fc7a84fe"}
+{"at_utc": "2026-09-18T04:51:14.622443+00:00", "classification": "repaired", "reused_attempt_id": "20260918T045104516519-52671-8", "reused_run_key": "f686818cb283eff1330d0c21"}
+{"at_utc": "2026-09-18T04:51:14.622658+00:00", "classification": "repaired", "reused_attempt_id": "20260918T045105237370-52671-9", "reused_run_key": "4d82862fdcd830aa64475119"}
+{"at_utc": "2026-09-18T04:51:14.622950+00:00", "classification": "no_acceptable_candidate", "reused_attempt_id": "20260918T045105847212-52671-10", "reused_run_key": "c18f36d4c743e1ed0c71a65f"}
+{"at_utc": "2026-09-18T04:51:14.623190+00:00", "classification": "repaired", "reused_attempt_id": "20260918T045106350120-52671-11", "reused_run_key": "66ad497813eb8dad80364727"}
+{"at_utc": "2026-09-18T04:51:14.623349+00:00", "classification": "repaired", "reused_attempt_id": "20260918T045107043536-52671-12", "reused_run_key": "0c099f4517be5364f1e63918"}
+{"at_utc": "2026-09-18T04:51:14.623520+00:00", "classification": "no_acceptable_candidate", "reused_attempt_id": "20260918T045107665033-52671-13", "reused_run_key": "221035d6960ef746a1de1705"}
+{"at_utc": "2026-09-18T04:51:14.623665+00:00", "classification": "no_acceptable_candidate", "reused_attempt_id": "20260918T045107679134-52671-14", "reused_run_key": "07cecdf59120c39e21acdbd9"}
+{"at_utc": "2026-09-18T04:51:14.623947+00:00", "classification": "no_acceptable_candidate", "reused_attempt_id": "20260918T045107692309-52671-15", "reused_run_key": "c235c54ac5ae94291fe8f410"}
+{"at_utc": "2026-09-18T04:51:14.624165+00:00", "classification": "no_acceptable_candidate", "reused_attempt_id": "20260918T045107705292-52671-16", "reused_run_key": "5bd2d1385d978b8694d1a289"}
+{"at_utc": "2026-09-18T04:51:14.624309+00:00", "classification": "no_acceptable_candidate", "reused_attempt_id": "20260918T045107720550-52671-17", "reused_run_key": "01b5dfac2832ca46cf38b108"}
+{"at_utc": "2026-09-18T04:51:14.624502+00:00", "classification": "no_acceptable_candidate", "reused_attempt_id": "20260918T045107737256-52671-18", "reused_run_key": "2fcc0eb4fb34b24c73ecf30e"}
+{"at_utc": "2026-09-18T04:51:14.624629+00:00", "classification": "no_acceptable_candidate", "reused_attempt_id": "20260918T045107753729-52671-19", "reused_run_key": "055817ca645959cd5e4e8a9f"}
+{"at_utc": "2026-09-18T04:51:14.624842+00:00", "classification": "no_acceptable_candidate", "reused_attempt_id": "20260918T045107765985-52671-20", "reused_run_key": "50ef25c2466befbccc03b7da"}
+{"at_utc": "2026-09-18T04:51:14.625057+00:00", "classification": "no_acceptable_candidate", "reused_attempt_id": "20260918T045107778812-52671-21", "reused_run_key": "77cbd7ea4c149b5721d61b3b"}
+{"at_utc": "2026-09-18T04:51:14.625249+00:00", "classification": "budget_exhausted", "reused_attempt_id": "20260918T045107791149-52671-22", "reused_run_key": "514a5ac7e3f4ea6124cf0834"}
+{"at_utc": "2026-09-18T04:51:14.625490+00:00", "classification": "budget_exhausted", "reused_attempt_id": "20260918T045108044527-52671-23", "reused_run_key": "9f9d531bd830260b60aa42fe"}
+{"at_utc": "2026-09-18T04:51:14.625698+00:00", "classification": "budget_exhausted", "reused_attempt_id": "20260918T045108296415-52671-24", "reused_run_key": "6ceea984684f55df8124e749"}

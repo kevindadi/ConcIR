@@ -1,0 +1,103 @@
+{
+  "schema": "concir-real-candidates-v1",
+  "retrieved_utc": "2026-09-18",
+  "selection_policy": "real upstream concurrency defects only; source and (if present) fixed revision must be verifiable; candidates are not re-labelled from synthetic models",
+  "candidates": [
+    {
+      "id": "rmw-zenoh-998",
+      "repository": "https://github.com/ros2/rmw_zenoh",
+      "issue": "https://github.com/ros2/rmw_zenoh/issues/998",
+      "language": "C++ (std::mutex), ROS 2 RMW binding over Zenoh",
+      "defect": "two-mutex ABBA: wait_set condition_mutex <-> subscription mutex_",
+      "buggy_ref": "rolling @ e95c62d (v0.11.0); package 0.2.9-1noble",
+      "fixed_ref": null,
+      "fixed_note": "issue closed with no linked PR/commit exposed; suggested fix is release-before-acquire",
+      "license": "Apache-2.0",
+      "verdict": "included",
+      "model": "cases/rmw-zenoh-998/buggy.cir.json",
+      "reason": "explicit two std::mutex in opposite order; maps to CIR sync Mutex; deadlock_free + completion preserved"
+    },
+    {
+      "id": "dashmap-369",
+      "repository": "https://github.com/xacrimon/dashmap",
+      "issue": "https://github.com/xacrimon/dashmap/issues/369",
+      "language": "Rust (per-shard RwLock)",
+      "defect": "cross-shard ABBA: read(shard A)->write(shard B) vs read(shard B)->write(shard A)",
+      "buggy_ref": "dashmap 6.1.0 (no commit pinned by reporter)",
+      "fixed_ref": null,
+      "fixed_note": "issue closed with no linked PR/commit exposed; suggested fix is drop the Ref before mutating",
+      "license": "MIT",
+      "verdict": "included_as_support_boundary",
+      "model": "cases/dashmap-369/buggy.cir.json",
+      "reason": "faithful RwLock model is CIR-syntax valid but CIR v1 lowering marks RwLock unsupported; kept to document the boundary, not rewritten as Mutex"
+    },
+    {
+      "id": "dashmap-195",
+      "repository": "https://github.com/xacrimon/dashmap",
+      "issue": "https://github.com/xacrimon/dashmap/issues/195",
+      "language": "Rust (per-shard RwLock, parking_lot)",
+      "defect": "reader holds multiple Refs while a writer mutates; deadlock after the 5.x parking_lot switch",
+      "buggy_ref": "first bad commit after 45058dbebaf056c5ab69c2440b2e44397928f2ce",
+      "fixed_ref": "pull/202 (issue closed by PR #202; exact merge SHA not captured at retrieval)",
+      "license": "MIT",
+      "verdict": "excluded",
+      "reason": "unbounded shard/hash structure and RwLock; no faithful bounded CIR model; RwLock unsupported in CIR v1"
+    },
+    {
+      "id": "rust-121949",
+      "repository": "https://github.com/rust-lang/rust",
+      "issue": "https://github.com/rust-lang/rust/issues/121949",
+      "language": "Rust standard library (OS SRWLOCK on Windows)",
+      "defect": "RwLock can deadlock with read locks holding/waiting; OS lock-implementation bug",
+      "buggy_ref": "before 3314d5ce4c209e840c2e4b2c4442f6e031ae0989",
+      "fixed_ref": "3314d5ce4c209e840c2e4b2c4442f6e031ae0989 (PR #121956)",
+      "license": "MIT/Apache-2.0",
+      "verdict": "excluded",
+      "reason": "single OS-level lock, not a program lock-order ABBA; RwLock unsupported in CIR v1; fix is in the platform lock, not application code"
+    },
+    {
+      "id": "rust-analyzer-22891",
+      "repository": "https://github.com/rust-lang/rust-analyzer",
+      "issue": "https://github.com/rust-lang/rust-analyzer/issues/22891",
+      "language": "Rust",
+      "defect": "permanent stall with cargo.buildScripts + proc-macro + custom targetDir; blocking cargo invocation, not a lock-order cycle",
+      "buggy_ref": "reported 2026-07; open",
+      "fixed_ref": null,
+      "license": "MIT/Apache-2.0",
+      "verdict": "excluded",
+      "reason": "not a two-lock order inversion; no fixed revision; not representable in CIR"
+    },
+    {
+      "id": "dhat-rs-25",
+      "repository": "https://github.com/nnethercote/dhat-rs",
+      "issue": "https://github.com/nnethercote/dhat-rs/issues/25",
+      "language": "Rust (parking_lot inside a global allocator)",
+      "defect": "parking_lot Mutex allocates, so an allocator lock can re-enter the global allocator and deadlock",
+      "buggy_ref": "dhat 0.3.1",
+      "fixed_ref": "pull/24 (switch to mintex)",
+      "license": "MIT/Apache-2.0",
+      "verdict": "excluded",
+      "reason": "allocator reentrancy, not a lock-order ABBA across threads; no lock pair to model"
+    },
+    {
+      "id": "futures-rs-1170",
+      "repository": "https://github.com/rust-lang/futures-rs",
+      "issue": "https://github.com/rust-lang/futures-rs/issues/1170",
+      "language": "Rust (Tokio runtime)",
+      "defect": "Runtime::block_on never returns although the future completed",
+      "buggy_ref": "tokio-threadpool 0.1.x (2018)",
+      "fixed_ref": null,
+      "license": "MIT/Apache-2.0",
+      "verdict": "excluded",
+      "reason": "async runtime wakeup bug, not a mutex lock-order inversion; not representable in CIR"
+    }
+  ],
+  "summary": {
+    "investigated": 7,
+    "upstream_projects": ["ros2/rmw_zenoh", "xacrimon/dashmap", "rust-lang/rust", "rust-lang/rust-analyzer", "nnethercote/dhat-rs", "rust-lang/futures-rs"],
+    "included": ["rmw-zenoh-998", "dashmap-369"],
+    "supported_by_cir": ["rmw-zenoh-998"],
+    "excluded": 5,
+    "note": "Only rmw-zenoh-998 is both a real two-mutex ABBA and supported by the current CIR (Mutex) subset. dashmap-369 is a faithful RwLock model kept as a documented support boundary. The other candidates are not lock-order inversions or not representable."
+  }
+}

@@ -1,0 +1,330 @@
+{
+  "program": "p3_interf",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "a",
+          "b",
+          "c",
+          "d",
+          "e",
+          "f",
+          "i1",
+          "j1"
+        ],
+        "functions": [
+          "main",
+          "u1ab",
+          "u1ba",
+          "u2ab",
+          "u2ba",
+          "u3ab",
+          "u3ba",
+          "i1"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "a",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "b",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "c",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "d",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "e",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "f",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "i1",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "j1",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "u1ab",
+                "u1ba",
+                "u2ab",
+                "u2ba",
+                "u3ab",
+                "u3ba",
+                "i1"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "u1ab",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "a"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "b"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "b"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "a"
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "u1ba",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "b"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "a"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "a"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "b"
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "u2ab",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "c"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "d"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "d"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "c"
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "u2ba",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "d"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "c"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "c"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "d"
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "u3ab",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "e"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "f"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "f"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "e"
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "u3ba",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "f"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "e"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "e"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "f"
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "i1",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "i1"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "j1"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "j1"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "i1"
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

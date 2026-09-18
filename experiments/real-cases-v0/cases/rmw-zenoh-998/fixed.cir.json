@@ -1,0 +1,123 @@
+{
+  "program": "rmw_zenoh_998_fixed",
+  "version": "3.5.0",
+  "entry": "main::main",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "wait_set_condition_mutex",
+          "subscription_mutex"
+        ],
+        "functions": [
+          "main",
+          "executor_wait",
+          "rx_callback"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "wait_set_condition_mutex",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "subscription_mutex",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "executor_wait",
+                "rx_callback"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "executor_wait",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "wait_set_condition_mutex"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "subscription_mutex"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "subscription_mutex"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "wait_set_condition_mutex"
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "rx_callback",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "wait_set_condition_mutex"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "subscription_mutex"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "subscription_mutex"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "wait_set_condition_mutex"
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

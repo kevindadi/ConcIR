@@ -1,0 +1,670 @@
+{
+  "schema_version": "concir-repair-artifact-v1",
+  "source": {
+    "crate_version": "0.1.0",
+    "binary_fingerprint": "763382a6a366685a"
+  },
+  "input_program": {
+    "program": "preserved_unfixable",
+    "version": "3.5.0",
+    "modules": [
+      {
+        "name": "main",
+        "provides": {
+          "resources": [
+            "a",
+            "b"
+          ],
+          "functions": [
+            "main",
+            "t1",
+            "t2",
+            "ghost"
+          ],
+          "types": []
+        },
+        "requires": {
+          "resources": [],
+          "functions": [],
+          "types": []
+        },
+        "resources": [
+          {
+            "name": "a",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "b",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          }
+        ],
+        "protection": [],
+        "functions": [
+          {
+            "name": "main",
+            "kind": "normal",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "scope",
+                "funcs": [
+                  "t1",
+                  "t2"
+                ]
+              },
+              {
+                "sid": "s2",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "t1",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "a"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "b"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "b"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "a"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "t2",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "b"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "a"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "a"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "b"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "ghost",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "return"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "entry": "main::main"
+  },
+  "frozen_contract": {
+    "name": "preserved-unfixable",
+    "properties": [
+      {
+        "kind": "deadlock_free",
+        "id": "no-deadlock"
+      }
+    ],
+    "preserved": [
+      {
+        "kind": "reachable",
+        "description": "t1 completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "main::t1"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "t2 completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "main::t2"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "ghost completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "main::ghost"
+        }
+      }
+    ],
+    "assumptions": {
+      "sequential_consistency": true,
+      "no_spurious_wakeups": true
+    },
+    "bounds": {
+      "max_threads": 8,
+      "max_frames_per_thread": 8,
+      "max_states": 20000,
+      "max_depth": 64,
+      "max_boundary_events": 256
+    },
+    "allowed_scope": {
+      "functions": [],
+      "modules": [],
+      "allow_lock_reorder": true,
+      "allow_statement_delete": false
+    }
+  },
+  "effective_config": {
+    "strategy": "single",
+    "candidate_budget": 64,
+    "verification_budget": 64,
+    "max_depth": 4,
+    "max_total_edits": 4,
+    "bounds": {
+      "max_threads": 8,
+      "max_frames_per_thread": 8,
+      "max_states": 20000,
+      "max_depth": 64,
+      "max_boundary_events": 256
+    }
+  },
+  "nodes": [
+    {
+      "id": 0,
+      "parent": null,
+      "depth": 0,
+      "total_edits": 0,
+      "program_fingerprint": "3846e855927db5e2",
+      "incoming": null,
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 49,
+        "transitions_explored": 72,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "FAIL",
+            "detail": "a reachable state has no enabled step and unfinished threads"
+          },
+          {
+            "id": "preserved: t1 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: t2 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: ghost completes",
+            "outcome": "FAIL",
+            "detail": "preserved reachability: completed(f3)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "no-deadlock",
+            "outcome": "FAIL",
+            "message": "reachable global deadlock",
+            "complete": true,
+            "counterexample": [
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 0,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 0,
+                "frame": 0
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              }
+            ],
+            "final_instances": [
+              {
+                "thread": 0,
+                "frame": 0,
+                "function": 0,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 1,
+                "frame": 1,
+                "function": 1,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 2,
+                "frame": 2,
+                "function": 2,
+                "sid": 1,
+                "status": "running"
+              }
+            ],
+            "blocked": [
+              {
+                "thread": 0,
+                "kind": "scope",
+                "resource": null,
+                "resource_name": null,
+                "holder": null,
+                "waiting": 0,
+                "detail": "waiting for scope members"
+              },
+              {
+                "thread": 1,
+                "kind": "lock",
+                "resource": 1,
+                "resource_name": "main::b",
+                "holder": 2,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 2,
+                "kind": "lock",
+                "resource": 0,
+                "resource_name": "main::a",
+                "holder": 1,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              }
+            ],
+            "cir_statements": [
+              {
+                "module": "main",
+                "function": "main",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "t1",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "t2",
+                "sid": "s2"
+              }
+            ],
+            "proven_facts": [
+              "reached a counterexample state after 5 step(s)",
+              "explored 49 reachable states"
+            ],
+            "repair_hints": [
+              "check lock acquisition order, channel capacity, and missing notify/join"
+            ]
+          },
+          {
+            "property": "preserved: ghost completes",
+            "outcome": "FAIL",
+            "message": "required behaviour 'ghost completes' is no longer reachable",
+            "complete": true,
+            "counterexample": [],
+            "final_instances": [],
+            "blocked": [],
+            "cir_statements": [],
+            "proven_facts": [
+              "explored 49 reachable states"
+            ],
+            "repair_hints": [
+              "restore the statement/thread that established this behaviour"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "3846e855927db5e2",
+        "contract_fingerprint": "17a228b4bc333366",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 8,
+          "max_frames_per_thread": 8,
+          "max_states": 20000,
+          "max_depth": 64,
+          "max_boundary_events": 256
+        },
+        "analysis_started": true
+      },
+      "note": null
+    },
+    {
+      "id": 1,
+      "parent": 0,
+      "depth": 1,
+      "total_edits": 1,
+      "program_fingerprint": "8abad8a5be55335e",
+      "incoming": {
+        "module": "main",
+        "function": "t1",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "unify lock acquisition order for adjacent mutex locks"
+          }
+        ],
+        "original_function_hash": "46b3c1dc641b149b",
+        "parent_fingerprint": "3846e855927db5e2",
+        "program_fingerprint": "8abad8a5be55335e"
+      },
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 43,
+        "transitions_explored": 63,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "PASS",
+            "detail": "no deadlock state reachable"
+          },
+          {
+            "id": "preserved: t1 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: t2 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: ghost completes",
+            "outcome": "FAIL",
+            "detail": "preserved reachability: completed(f3)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "preserved: ghost completes",
+            "outcome": "FAIL",
+            "message": "required behaviour 'ghost completes' is no longer reachable",
+            "complete": true,
+            "counterexample": [],
+            "final_instances": [],
+            "blocked": [],
+            "cir_statements": [],
+            "proven_facts": [
+              "explored 43 reachable states"
+            ],
+            "repair_hints": [
+              "restore the statement/thread that established this behaviour"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "8abad8a5be55335e",
+        "contract_fingerprint": "17a228b4bc333366",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 8,
+          "max_frames_per_thread": 8,
+          "max_states": 20000,
+          "max_depth": 64,
+          "max_boundary_events": 256
+        },
+        "analysis_started": true
+      },
+      "note": null
+    },
+    {
+      "id": 2,
+      "parent": 0,
+      "depth": 1,
+      "total_edits": 1,
+      "program_fingerprint": "79dc291c189e0972",
+      "incoming": {
+        "module": "main",
+        "function": "t2",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "unify lock acquisition order for adjacent mutex locks"
+          }
+        ],
+        "original_function_hash": "1ce2e11f961c57c0",
+        "parent_fingerprint": "3846e855927db5e2",
+        "program_fingerprint": "79dc291c189e0972"
+      },
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 43,
+        "transitions_explored": 63,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "PASS",
+            "detail": "no deadlock state reachable"
+          },
+          {
+            "id": "preserved: t1 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: t2 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: ghost completes",
+            "outcome": "FAIL",
+            "detail": "preserved reachability: completed(f3)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "preserved: ghost completes",
+            "outcome": "FAIL",
+            "message": "required behaviour 'ghost completes' is no longer reachable",
+            "complete": true,
+            "counterexample": [],
+            "final_instances": [],
+            "blocked": [],
+            "cir_statements": [],
+            "proven_facts": [
+              "explored 43 reachable states"
+            ],
+            "repair_hints": [
+              "restore the statement/thread that established this behaviour"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "79dc291c189e0972",
+        "contract_fingerprint": "17a228b4bc333366",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 8,
+          "max_frames_per_thread": 8,
+          "max_states": 20000,
+          "max_depth": 64,
+          "max_boundary_events": 256
+        },
+        "analysis_started": true
+      },
+      "note": null
+    }
+  ],
+  "attempts": [
+    {
+      "id": 0,
+      "parent": 0,
+      "patch": {
+        "id": "lockorder:main:t1:s1-s2",
+        "module": "main",
+        "function": "t1",
+        "original_hash": "46b3c1dc641b149b",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "unify lock acquisition order for adjacent mutex locks"
+          }
+        ]
+      },
+      "result": "verified",
+      "reused_node": null,
+      "program_fingerprint": "8abad8a5be55335e",
+      "outcome": "FAIL",
+      "reason": null
+    },
+    {
+      "id": 1,
+      "parent": 0,
+      "patch": {
+        "id": "lockorder:main:t2:s1-s2",
+        "module": "main",
+        "function": "t2",
+        "original_hash": "1ce2e11f961c57c0",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "unify lock acquisition order for adjacent mutex locks"
+          }
+        ]
+      },
+      "result": "verified",
+      "reused_node": null,
+      "program_fingerprint": "79dc291c189e0972",
+      "outcome": "FAIL",
+      "reason": null
+    }
+  ],
+  "patch_chain": [],
+  "accepted_node": null,
+  "accepted_program": null,
+  "accepted_report": null,
+  "outcome": "no_acceptable_candidate",
+  "stop_reason": "no-acceptable-candidate",
+  "saw_unknown": false,
+  "truncation": null,
+  "counts": {
+    "proposals": 2,
+    "unique_candidate_programs": 3,
+    "verification_calls": 3,
+    "cache_hits": 0,
+    "states_explored": 135,
+    "nodes": 3
+  },
+  "reproduce": "concir-backend repair <program.json> <contract.json> --strategy a   # candidate_budget=64 verification_budget=64 max_depth=4 max_total_edits=4 bounds=AnalysisBounds { max_threads: 8, max_frames_per_thread: 8, max_states: 20000, max_depth: 64, max_boundary_events: 256 }"
+}

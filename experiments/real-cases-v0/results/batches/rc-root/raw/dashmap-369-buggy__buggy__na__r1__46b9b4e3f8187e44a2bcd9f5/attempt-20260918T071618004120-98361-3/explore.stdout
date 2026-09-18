@@ -1,0 +1,66 @@
+{
+  "outcome": "UNSUPPORTED",
+  "complete": false,
+  "states_explored": 0,
+  "transitions_explored": 0,
+  "properties": [],
+  "diagnostics": [],
+  "boundary_events": [],
+  "unsupported": [
+    {
+      "construct": "rwlock",
+      "location": "main::t0.s1",
+      "detail": "RwLock operations are not supported in v1"
+    },
+    {
+      "construct": "rwlock",
+      "location": "main::t0.s2",
+      "detail": "RwLock operations are not supported in v1"
+    },
+    {
+      "construct": "rwlock",
+      "location": "main::t0.s3",
+      "detail": "RwLock operations are not supported in v1"
+    },
+    {
+      "construct": "rwlock",
+      "location": "main::t0.s4",
+      "detail": "RwLock operations are not supported in v1"
+    },
+    {
+      "construct": "rwlock",
+      "location": "main::t1.s1",
+      "detail": "RwLock operations are not supported in v1"
+    },
+    {
+      "construct": "rwlock",
+      "location": "main::t1.s2",
+      "detail": "RwLock operations are not supported in v1"
+    },
+    {
+      "construct": "rwlock",
+      "location": "main::t1.s3",
+      "detail": "RwLock operations are not supported in v1"
+    },
+    {
+      "construct": "rwlock",
+      "location": "main::t1.s4",
+      "detail": "RwLock operations are not supported in v1"
+    }
+  ],
+  "invalid": [],
+  "model_fingerprint": "9a9c94b99fc8ed60",
+  "contract_fingerprint": "0842e2b085234ded",
+  "assumptions": {
+    "sequential_consistency": true,
+    "no_spurious_wakeups": true
+  },
+  "bounds": {
+    "max_threads": 8,
+    "max_frames_per_thread": 8,
+    "max_states": 20000,
+    "max_depth": 64,
+    "max_boundary_events": 256
+  },
+  "analysis_started": false
+}

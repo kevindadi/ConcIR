@@ -1,0 +1,59 @@
+{
+  "batch_id": "behavior-deadline",
+  "cohort": {
+    "manifest_sha256": "36bc07264cdb6d9406388e409b58c964c883e3823f4fad7e5c1ddb0578bf4f51",
+    "manifest_path_identity": "experiments/pilot-v2-lifecycle/lifecycle-52203/external-behavior/behavior/tiny_manifest.json",
+    "generator_sha256": null,
+    "code_fingerprint": "7e6d73bf741734c69523026dc6cd7b69b444b8597118dbb009a4b68c3d7cbd50",
+    "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+    "tool_sha256": "f16f43f59f292619a405ba92ce681e8905ea6c1297d60fa50a13882025cf566d",
+    "search_timeout": 2.0,
+    "replay_timeout": 2.0,
+    "suites": [
+      "pilot"
+    ],
+    "plan_run_keys": [
+      "3abd97c7476138054213797b",
+      "4477985ce831f0dc2d1210ad",
+      "47bf4a540daa3054137e1eb9",
+      "53debc296e6c6487277b9bc1",
+      "6e263e74f0f1999aba420d7a",
+      "71bf79a3ba915c9e0a363ab3",
+      "85cfa9379040d6e1b50358cc",
+      "b275efafbd9ded01ba5f01e2",
+      "ccd66a16d2626c33279433b7",
+      "cdef9a04c328019e9ca22843",
+      "e900ffd1ee4c8b4903d06a3d",
+      "f7e5490d259759d996b7afde"
+    ],
+    "plan_run_fingerprints": [
+      "1cf213cb37c0e251dc035ec61c81a0306a769582acc29999bb74bd5b2b82e804",
+      "30bfd7314000e8b788a6584e7ed61c7a7545dc63e998a44e46be3e2b5814d8ae",
+      "3310572db371267913643b963b1e47241452a3c44372d1fe3e8f5235f3c52848",
+      "3827ef022a9f2c123ab08f4128c6f33f2a2754ed0a0b7f4699a2740d58476f45",
+      "3f60294a2ed1ecee76b7ba0eea459ea6249170a827c540af8f6705ecd984fd5a",
+      "72181c829c60c54a4a0206526bd01aba52aeafe05a2f9d92ab2b3128875c6b85",
+      "75b5ea204a3c1eaecdbcd1d97b2d5bafe8e503da6ecf669671eb6e2593444ae5",
+      "7d06ecf3dda055a0dbafb57b060624edc3670c4fe6491e6d54789e5b7adf2468",
+      "8b6e4b668288661c8fcf7978d7b809c05fd643b94d45087c3047e22da91012d2",
+      "981d841a3335c67535ec13d28b87cb855ae5967b183d74ba025e26588b651f73",
+      "a2eca9939f19150cc36c590d7b6a7ab5beadc76d4f191ce79b303584318a9cf9",
+      "cffc2b3cb71941413c9c3ae43067db0d3c280708fafb8a6081b5e3c3e945465e"
+    ]
+  },
+  "cohort_fingerprint": "ed30ef35f9320e41371411d64f459319afa7b8c52596c402c070722e3a70a3f7",
+  "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+  "code_fingerprint": "7e6d73bf741734c69523026dc6cd7b69b444b8597118dbb009a4b68c3d7cbd50",
+  "manifest": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2-lifecycle/lifecycle-52203/external-behavior/behavior/tiny_manifest.json",
+  "suites": [
+    "pilot"
+  ],
+  "planned": 12,
+  "total_budget_s": 0.05,
+  "search_timeout_s": 2,
+  "replay_timeout_s": 2,
+  "env_collection_ms": 80,
+  "env_outside_budget": true,
+  "results_dir": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2-lifecycle/lifecycle-52203/external-behavior/behavior/results/batches/behavior-deadline",
+  "total_budget_rule": "per-invocation recovery quota; not part of cohort identity"
+}

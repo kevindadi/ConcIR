@@ -1,0 +1,99 @@
+{
+  "schema": "concir-pilot-manifest-v2",
+  "note": "real-cases-v0 feasibility run; ground truth from upstream issues",
+  "search_configs": {
+    "main": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "tight": {
+      "candidate_budget": 8,
+      "verification_budget": 4,
+      "max_depth": 1,
+      "max_total_edits": 1
+    }
+  },
+  "cases": [
+    {
+      "case": "rmw-zenoh-998",
+      "family": "real_std_mutex_abba",
+      "model": "cases/rmw-zenoh-998/buggy.cir.json",
+      "contract": "cases/rmw-zenoh-998/contract.json",
+      "params": {
+        "source": "ros2/rmw_zenoh#998",
+        "language": "C++/std::mutex"
+      },
+      "repeat_policy": {
+        "main": 1,
+        "tight": 0
+      }
+    },
+    {
+      "case": "dashmap-369",
+      "family": "real_rwlock_abba_unsupported",
+      "model": "cases/dashmap-369/buggy.cir.json",
+      "contract": "cases/dashmap-369/contract.json",
+      "params": {
+        "source": "xacrimon/dashmap#369",
+        "language": "Rust/RwLock"
+      },
+      "repeat_policy": {
+        "main": 1,
+        "tight": 0
+      }
+    }
+  ],
+  "matrix_cases": [
+    {
+      "case": "rmw-zenoh-998-buggy",
+      "family": "real_root",
+      "model": "cases/rmw-zenoh-998/buggy.cir.json",
+      "params": {
+        "variant": "buggy"
+      },
+      "variants": [
+        {
+          "label": "buggy",
+          "contract": "cases/rmw-zenoh-998/contract.json",
+          "engine": "petri",
+          "max_states": 20000
+        }
+      ]
+    },
+    {
+      "case": "rmw-zenoh-998-fixed",
+      "family": "real_root",
+      "model": "cases/rmw-zenoh-998/fixed.cir.json",
+      "params": {
+        "variant": "fixed_hypothesis"
+      },
+      "variants": [
+        {
+          "label": "fixed",
+          "contract": "cases/rmw-zenoh-998/contract.json",
+          "engine": "petri",
+          "max_states": 20000
+        }
+      ]
+    },
+    {
+      "case": "dashmap-369-buggy",
+      "family": "real_root",
+      "model": "cases/dashmap-369/buggy.cir.json",
+      "params": {
+        "variant": "buggy"
+      },
+      "variants": [
+        {
+          "label": "buggy",
+          "contract": "cases/dashmap-369/contract.json",
+          "engine": "petri",
+          "max_states": 20000
+        }
+      ]
+    }
+  ],
+  "smoke_cases": []
+}

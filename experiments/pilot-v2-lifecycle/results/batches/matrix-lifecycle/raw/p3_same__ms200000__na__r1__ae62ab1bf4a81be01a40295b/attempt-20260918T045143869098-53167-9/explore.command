@@ -1,0 +1,1 @@
+/Users/kevin/local-repos/ConcIR/target/release/concir-backend explore /Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p3_same.json /Users/kevin/local-repos/ConcIR/experiments/pilot-v2/matrix_contracts/p3_same_ms200000_contract.json petri

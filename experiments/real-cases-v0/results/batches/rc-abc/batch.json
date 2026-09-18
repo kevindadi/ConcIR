@@ -1,0 +1,47 @@
+{
+  "batch_id": "rc-abc",
+  "cohort": {
+    "manifest_sha256": "01feca987644a2bd44a1e09238fb4c154bbc1f36cb36ba5e7ac346be7cee24dc",
+    "manifest_path_identity": "experiments/real-cases-v0/manifest.json",
+    "generator_sha256": null,
+    "code_fingerprint": "fc1c304bf4b0933e3e0c203c09fb0f24e47016451607193355eb1ab060ad0296",
+    "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+    "tool_sha256": "f16f43f59f292619a405ba92ce681e8905ea6c1297d60fa50a13882025cf566d",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "suites": [
+      "pilot"
+    ],
+    "plan_run_keys": [
+      "43cfe5fbfd73bcaae7ad333b",
+      "78ca765a5724a15d3d8c586f",
+      "8a8ed17b58ff96affc7ece22",
+      "c0bf0bd04903921db9ccca05",
+      "dc815dc1a297428c11696b5d",
+      "ff20224967282a952f008db5"
+    ],
+    "plan_run_fingerprints": [
+      "114f1481d6be1b32571b244b2512960bb8c22531258dc8cdf06a013fa183dff9",
+      "44485c6f74eb18a7f39b3e2013f6f8e74f0069604eb214716d3783f5b3caa202",
+      "9cf28a0d90dc32b1046d37eccb119d88f915ff1cc5567103d6877ed5b7956f53",
+      "aa6c925be5cac2b314ec1d040c863b04beb3df565ff0dbbfd3f680d0d4bd98a8",
+      "b0da399df2a8cb64fe2a0186e35635d4e46d866b2ceea47e50a339679a90ee1d",
+      "b52001560fdc0316f3746cb75ff5e73b209a4655b2fdbbc1aed62e838201d379"
+    ]
+  },
+  "cohort_fingerprint": "42fd4d102918fcb8f6d5a4d961e63a3b4cc0b5169435fd41e203bcfb5536cc2d",
+  "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+  "code_fingerprint": "fc1c304bf4b0933e3e0c203c09fb0f24e47016451607193355eb1ab060ad0296",
+  "manifest": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/manifest.json",
+  "suites": [
+    "pilot"
+  ],
+  "planned": 6,
+  "total_budget_s": 300.0,
+  "search_timeout_s": 30.0,
+  "replay_timeout_s": 30.0,
+  "env_collection_ms": 71,
+  "env_outside_budget": true,
+  "results_dir": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/results/batches/rc-abc",
+  "total_budget_rule": "per-invocation recovery quota; not part of cohort identity"
+}

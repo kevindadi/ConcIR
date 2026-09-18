@@ -1,0 +1,1095 @@
+{
+  "schema": "concir-pilot-manifest-v2",
+  "note": "Generated development pre-experiment; not a held-out test set.",
+  "generator": "experiments/pilot-v2/generate_cases.py",
+  "bounds_policy": {
+    "unified_main": {
+      "max_threads": 16,
+      "max_frames_per_thread": 16,
+      "max_states": 200000,
+      "max_depth": 128,
+      "max_boundary_events": 512
+    },
+    "unknown_control": {
+      "max_threads": 16,
+      "max_frames_per_thread": 16,
+      "max_states": 50,
+      "max_depth": 128,
+      "max_boundary_events": 512
+    },
+    "matrix_max_states": [
+      20000,
+      100000,
+      200000
+    ],
+    "note": "Pilot cases share max_states=200000; three-defect cases are no longer given a smaller analysis bound. Root sensitivity is measured by the separate matrix batch."
+  },
+  "search_configs": {
+    "main": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "tight": {
+      "candidate_budget": 8,
+      "verification_budget": 4,
+      "max_depth": 1,
+      "max_total_edits": 1
+    }
+  },
+  "case_count": 16,
+  "cases": [
+    {
+      "case": "p1_same",
+      "family": "one_defect",
+      "model": "cases/p1_same.json",
+      "contract": "cases/p1_same_contract.json",
+      "witness": {
+        "kind": "legal",
+        "swaps": [
+          {
+            "module": "main",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "expanded_contract": "witness/p1_same_witness_expanded_contract.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 1,
+        "interference_pairs": 0,
+        "cross": "none",
+        "order": "base"
+      },
+      "defect_units": 1,
+      "edit_lower_bound": 1,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": true,
+      "expected_witness_len": 1,
+      "minimal_patch_len": 1,
+      "minimal_patch_basis": "disjoint-pair lower bound matched by the verified witness upper bound",
+      "expectation": "constructed: one lock-order cycle in module main",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main"
+        ],
+        "cross_resources": []
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "p1_cross_shared",
+      "family": "one_defect",
+      "model": "cases/p1_cross_shared.json",
+      "contract": "cases/p1_cross_shared_contract.json",
+      "witness": {
+        "kind": "legal",
+        "swaps": [
+          {
+            "module": "other",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "expanded_contract": "witness/p1_cross_shared_witness_expanded_contract.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 1,
+        "interference_pairs": 0,
+        "cross": "shared",
+        "order": "base"
+      },
+      "defect_units": 1,
+      "edit_lower_bound": 1,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": true,
+      "expected_witness_len": 1,
+      "minimal_patch_len": 1,
+      "minimal_patch_basis": "disjoint-pair lower bound matched by the verified witness upper bound",
+      "expectation": "constructed: one shared-lock deadlock whose two sides live in different modules",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main",
+          "other"
+        ],
+        "cross_resources": [
+          "main::a",
+          "other::b"
+        ]
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "p1_interf",
+      "family": "interference",
+      "model": "cases/p1_interf.json",
+      "contract": "cases/p1_interf_contract.json",
+      "witness": {
+        "kind": "legal",
+        "swaps": [
+          {
+            "module": "main",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "expanded_contract": "witness/p1_interf_witness_expanded_contract.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 1,
+        "interference_pairs": 1,
+        "cross": "none",
+        "order": "base"
+      },
+      "defect_units": 1,
+      "edit_lower_bound": 1,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": true,
+      "expected_witness_len": 1,
+      "minimal_patch_len": 1,
+      "minimal_patch_basis": "disjoint-pair lower bound matched by the verified witness upper bound",
+      "expectation": "one defect plus one reachable benign lock pair (extra candidate)",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main"
+        ],
+        "benign_funcs": [
+          "i1"
+        ]
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "p2_same",
+      "family": "two_defects",
+      "model": "cases/p2_same.json",
+      "contract": "cases/p2_same_contract.json",
+      "witness": {
+        "kind": "legal",
+        "swaps": [
+          {
+            "module": "main",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          },
+          {
+            "module": "main",
+            "function": "u2ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "expanded_contract": "witness/p2_same_witness_expanded_contract.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 2,
+        "interference_pairs": 0,
+        "cross": "none",
+        "order": "base"
+      },
+      "defect_units": 2,
+      "edit_lower_bound": 2,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": true,
+      "expected_witness_len": 2,
+      "minimal_patch_len": 2,
+      "minimal_patch_basis": "disjoint-pair lower bound matched by the verified witness upper bound",
+      "expectation": "constructed: two independent cycles in main",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main"
+        ]
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "p2_cross_independent",
+      "family": "two_defects",
+      "model": "cases/p2_cross_independent.json",
+      "contract": "cases/p2_cross_independent_contract.json",
+      "witness": {
+        "kind": "legal",
+        "swaps": [
+          {
+            "module": "main",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          },
+          {
+            "module": "other",
+            "function": "u2ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "expanded_contract": "witness/p2_cross_independent_witness_expanded_contract.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 2,
+        "interference_pairs": 0,
+        "cross": "independent",
+        "order": "base"
+      },
+      "defect_units": 2,
+      "edit_lower_bound": 2,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": true,
+      "expected_witness_len": 2,
+      "minimal_patch_len": 2,
+      "minimal_patch_basis": "disjoint-pair lower bound matched by the verified witness upper bound",
+      "expectation": "two independent local deadlocks, one per module (not shared locks)",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main",
+          "other"
+        ],
+        "cross_resources": []
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "p2_cross_shared",
+      "family": "two_defects",
+      "model": "cases/p2_cross_shared.json",
+      "contract": "cases/p2_cross_shared_contract.json",
+      "witness": {
+        "kind": "legal",
+        "swaps": [
+          {
+            "module": "other",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          },
+          {
+            "module": "other",
+            "function": "u2ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "expanded_contract": "witness/p2_cross_shared_witness_expanded_contract.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 2,
+        "interference_pairs": 0,
+        "cross": "shared",
+        "order": "base"
+      },
+      "defect_units": 2,
+      "edit_lower_bound": 2,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": true,
+      "expected_witness_len": 2,
+      "minimal_patch_len": 2,
+      "minimal_patch_basis": "disjoint-pair lower bound matched by the verified witness upper bound",
+      "expectation": "two shared-lock deadlocks, each spanning main and other",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main",
+          "other"
+        ],
+        "cross_resources": [
+          "main::a",
+          "other::b",
+          "main::c",
+          "other::d"
+        ]
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "p2_interf",
+      "family": "interference",
+      "model": "cases/p2_interf.json",
+      "contract": "cases/p2_interf_contract.json",
+      "witness": {
+        "kind": "legal",
+        "swaps": [
+          {
+            "module": "main",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          },
+          {
+            "module": "main",
+            "function": "u2ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "expanded_contract": "witness/p2_interf_witness_expanded_contract.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 2,
+        "interference_pairs": 1,
+        "cross": "none",
+        "order": "base"
+      },
+      "defect_units": 2,
+      "edit_lower_bound": 2,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": true,
+      "expected_witness_len": 2,
+      "minimal_patch_len": 2,
+      "minimal_patch_basis": "disjoint-pair lower bound matched by the verified witness upper bound",
+      "expectation": "two defects plus one reachable benign lock pair",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main"
+        ],
+        "benign_funcs": [
+          "i1"
+        ]
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "c_already_correct",
+      "family": "controls",
+      "model": "cases/c_already_correct.json",
+      "contract": "cases/c_already_correct_contract.json",
+      "witness": {
+        "kind": "none",
+        "swaps": [],
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 0,
+        "interference_pairs": 1,
+        "cross": "none",
+        "order": "base"
+      },
+      "defect_units": 0,
+      "edit_lower_bound": 0,
+      "edit_lower_bound_basis": "no constructed defect",
+      "allowed_edit_space_fixable": null,
+      "expected_witness_len": null,
+      "minimal_patch_len": null,
+      "minimal_patch_basis": "not established for this control",
+      "expectation": "already correct: one consistently ordered lock pair",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main"
+        ]
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": false,
+        "already_correct": true,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "c_scope_restricted",
+      "family": "controls",
+      "model": "cases/c_scope_restricted.json",
+      "contract": "cases/c_scope_restricted_contract.json",
+      "witness": {
+        "kind": "auxiliary",
+        "swaps": [
+          {
+            "module": "main",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "auxiliary_program": "witness/c_scope_restricted_auxiliary.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 1,
+        "interference_pairs": 0,
+        "cross": "none",
+        "order": "base"
+      },
+      "defect_units": 1,
+      "edit_lower_bound": 1,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": false,
+      "expected_witness_len": null,
+      "minimal_patch_len": null,
+      "minimal_patch_basis": "not established for this control",
+      "expectation": "defect exists but the edit scope forbids every worker function",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main"
+        ],
+        "editable_workers": []
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": true,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "c_lock_reorder_forbidden",
+      "family": "controls",
+      "model": "cases/c_lock_reorder_forbidden.json",
+      "contract": "cases/c_lock_reorder_forbidden_contract.json",
+      "witness": {
+        "kind": "auxiliary",
+        "swaps": [
+          {
+            "module": "main",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "auxiliary_program": "witness/c_lock_reorder_forbidden_auxiliary.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 1,
+        "interference_pairs": 0,
+        "cross": "none",
+        "order": "base"
+      },
+      "defect_units": 1,
+      "edit_lower_bound": 1,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": false,
+      "expected_witness_len": null,
+      "minimal_patch_len": null,
+      "minimal_patch_basis": "not established for this control",
+      "expectation": "defect exists but the contract forbids lock reordering",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main"
+        ],
+        "editable_workers": []
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": true,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "c_preserved_unsatisfiable",
+      "family": "controls",
+      "model": "cases/c_preserved_unsatisfiable.json",
+      "contract": "cases/c_preserved_unsatisfiable_contract.json",
+      "witness": {
+        "kind": "none",
+        "swaps": [
+          {
+            "module": "main",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "expected": "FAIL"
+      },
+      "params": {
+        "defect_units": 1,
+        "interference_pairs": 0,
+        "cross": "none",
+        "order": "base"
+      },
+      "defect_units": 1,
+      "edit_lower_bound": 1,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": false,
+      "expected_witness_len": null,
+      "minimal_patch_len": null,
+      "minimal_patch_basis": "not established for this control",
+      "expectation": "cycle is fixable by a swap, but preserved 'ghost completes' is unreachable",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main"
+        ],
+        "unspawned": [
+          "ghost"
+        ]
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": true,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "c_bounds_unknown",
+      "family": "controls",
+      "model": "cases/c_bounds_unknown.json",
+      "contract": "cases/c_bounds_unknown_contract.json",
+      "witness": {
+        "kind": "legal",
+        "swaps": [
+          {
+            "module": "main",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          },
+          {
+            "module": "main",
+            "function": "u2ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "expanded_contract": "witness/c_bounds_unknown_witness_expanded_contract.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 2,
+        "interference_pairs": 0,
+        "cross": "none",
+        "order": "base"
+      },
+      "defect_units": 2,
+      "edit_lower_bound": 2,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": null,
+      "expected_witness_len": 2,
+      "minimal_patch_len": null,
+      "minimal_patch_basis": "not established for this control",
+      "expectation": "two defects but the frozen analysis bound is too small: must stay UNKNOWN",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main"
+        ]
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": true
+      }
+    },
+    {
+      "case": "e_name_order",
+      "family": "enumerate_order",
+      "model": "cases/e_name_order.json",
+      "contract": "cases/e_name_order_contract.json",
+      "witness": {
+        "kind": "legal",
+        "swaps": [
+          {
+            "module": "main",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          },
+          {
+            "module": "main",
+            "function": "u2ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "expanded_contract": "witness/e_name_order_witness_expanded_contract.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 2,
+        "interference_pairs": 0,
+        "cross": "none",
+        "order": "workers_reversed"
+      },
+      "defect_units": 2,
+      "edit_lower_bound": 2,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": true,
+      "expected_witness_len": 2,
+      "minimal_patch_len": 2,
+      "minimal_patch_basis": "disjoint-pair lower bound matched by the verified witness upper bound",
+      "expectation": "same construction as p2_same with worker declaration/order reversed",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main"
+        ],
+        "order": "workers_reversed"
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "e_module_order",
+      "family": "enumerate_order",
+      "model": "cases/e_module_order.json",
+      "contract": "cases/e_module_order_contract.json",
+      "witness": {
+        "kind": "legal",
+        "swaps": [
+          {
+            "module": "main",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          },
+          {
+            "module": "other",
+            "function": "u2ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "expanded_contract": "witness/e_module_order_witness_expanded_contract.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 2,
+        "interference_pairs": 0,
+        "cross": "independent",
+        "order": "modules_main_last"
+      },
+      "defect_units": 2,
+      "edit_lower_bound": 2,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": true,
+      "expected_witness_len": 2,
+      "minimal_patch_len": 2,
+      "minimal_patch_basis": "disjoint-pair lower bound matched by the verified witness upper bound",
+      "expectation": "same construction as p2_cross_independent with the module order permuted",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main",
+          "other"
+        ],
+        "module_order_starts_with": "other"
+      },
+      "repeat_policy": {
+        "main": 3,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "p3_same",
+      "family": "three_defects",
+      "model": "cases/p3_same.json",
+      "contract": "cases/p3_same_contract.json",
+      "witness": {
+        "kind": "legal",
+        "swaps": [
+          {
+            "module": "main",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          },
+          {
+            "module": "main",
+            "function": "u2ba",
+            "a": "s1",
+            "b": "s2"
+          },
+          {
+            "module": "main",
+            "function": "u3ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "expanded_contract": "witness/p3_same_witness_expanded_contract.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 3,
+        "interference_pairs": 0,
+        "cross": "none",
+        "order": "base"
+      },
+      "defect_units": 3,
+      "edit_lower_bound": 3,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": true,
+      "expected_witness_len": 3,
+      "minimal_patch_len": 3,
+      "minimal_patch_basis": "disjoint-pair lower bound matched by the verified witness upper bound",
+      "expectation": "constructed: three independent cycles in main (unified 200k bound)",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main"
+        ]
+      },
+      "repeat_policy": {
+        "main": 1,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    },
+    {
+      "case": "p3_cross_independent",
+      "family": "three_defects",
+      "model": "cases/p3_cross_independent.json",
+      "contract": "cases/p3_cross_independent_contract.json",
+      "witness": {
+        "kind": "legal",
+        "swaps": [
+          {
+            "module": "main",
+            "function": "u1ba",
+            "a": "s1",
+            "b": "s2"
+          },
+          {
+            "module": "other",
+            "function": "u2ba",
+            "a": "s1",
+            "b": "s2"
+          },
+          {
+            "module": "other",
+            "function": "u3ba",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "expanded_contract": "witness/p3_cross_independent_witness_expanded_contract.json",
+        "expected": "PASS"
+      },
+      "params": {
+        "defect_units": 3,
+        "interference_pairs": 0,
+        "cross": "independent",
+        "order": "base"
+      },
+      "defect_units": 3,
+      "edit_lower_bound": 3,
+      "edit_lower_bound_basis": "argument: k disjoint lock pairs, each needs >= 1 adjacent lock swap",
+      "allowed_edit_space_fixable": true,
+      "expected_witness_len": 3,
+      "minimal_patch_len": 3,
+      "minimal_patch_basis": "disjoint-pair lower bound matched by the verified witness upper bound",
+      "expectation": "three independent local deadlocks across two modules",
+      "structure_facts": {
+        "modules_with_workers": [
+          "main",
+          "other"
+        ],
+        "cross_resources": []
+      },
+      "repeat_policy": {
+        "main": 1,
+        "tight": 1
+      },
+      "independent_expectation": {
+        "defect_constructed": true,
+        "already_correct": false,
+        "fix_out_of_scope": false,
+        "preserved_unsatisfiable": false,
+        "bounded_analysis": false
+      }
+    }
+  ],
+  "matrix_cases": [
+    {
+      "case": "p1_same",
+      "model": "cases/p1_same.json",
+      "family": "one_defect",
+      "params": {
+        "defect_units": 1,
+        "interference_pairs": 0,
+        "cross": "none",
+        "order": "base"
+      },
+      "variants": [
+        {
+          "label": "ms20000",
+          "contract": "matrix_contracts/p1_same_ms20000_contract.json",
+          "engine": "petri",
+          "max_states": 20000
+        },
+        {
+          "label": "ms100000",
+          "contract": "matrix_contracts/p1_same_ms100000_contract.json",
+          "engine": "petri",
+          "max_states": 100000
+        },
+        {
+          "label": "ms200000",
+          "contract": "matrix_contracts/p1_same_ms200000_contract.json",
+          "engine": "petri",
+          "max_states": 200000
+        }
+      ]
+    },
+    {
+      "case": "p2_same",
+      "model": "cases/p2_same.json",
+      "family": "two_defects",
+      "params": {
+        "defect_units": 2,
+        "interference_pairs": 0,
+        "cross": "none",
+        "order": "base"
+      },
+      "variants": [
+        {
+          "label": "ms20000",
+          "contract": "matrix_contracts/p2_same_ms20000_contract.json",
+          "engine": "petri",
+          "max_states": 20000
+        },
+        {
+          "label": "ms100000",
+          "contract": "matrix_contracts/p2_same_ms100000_contract.json",
+          "engine": "petri",
+          "max_states": 100000
+        },
+        {
+          "label": "ms200000",
+          "contract": "matrix_contracts/p2_same_ms200000_contract.json",
+          "engine": "petri",
+          "max_states": 200000
+        }
+      ]
+    },
+    {
+      "case": "p3_same",
+      "model": "cases/p3_same.json",
+      "family": "three_defects",
+      "params": {
+        "defect_units": 3,
+        "interference_pairs": 0,
+        "cross": "none",
+        "order": "base"
+      },
+      "variants": [
+        {
+          "label": "ms20000",
+          "contract": "matrix_contracts/p3_same_ms20000_contract.json",
+          "engine": "petri",
+          "max_states": 20000
+        },
+        {
+          "label": "ms100000",
+          "contract": "matrix_contracts/p3_same_ms100000_contract.json",
+          "engine": "petri",
+          "max_states": 100000
+        },
+        {
+          "label": "ms200000",
+          "contract": "matrix_contracts/p3_same_ms200000_contract.json",
+          "engine": "petri",
+          "max_states": 200000
+        }
+      ]
+    },
+    {
+      "case": "p1_interf",
+      "model": "cases/p1_interf.json",
+      "family": "interference",
+      "params": {
+        "defect_units": 1,
+        "interference_pairs": 1,
+        "cross": "none",
+        "order": "base"
+      },
+      "variants": [
+        {
+          "label": "ms20000",
+          "contract": "matrix_contracts/p1_interf_ms20000_contract.json",
+          "engine": "petri",
+          "max_states": 20000
+        },
+        {
+          "label": "ms100000",
+          "contract": "matrix_contracts/p1_interf_ms100000_contract.json",
+          "engine": "petri",
+          "max_states": 100000
+        },
+        {
+          "label": "ms200000",
+          "contract": "matrix_contracts/p1_interf_ms200000_contract.json",
+          "engine": "petri",
+          "max_states": 200000
+        }
+      ]
+    }
+  ],
+  "smoke_cases": [
+    {
+      "case": "already_correct",
+      "family": "smoke_dev",
+      "model": "../../tests/repro_bench/already_correct.json",
+      "contract": "../../tests/repro_bench/already_correct_contract.json"
+    },
+    {
+      "case": "single_cycle",
+      "family": "smoke_dev",
+      "model": "../../tests/repro_bench/single_cycle.json",
+      "contract": "../../tests/repro_bench/single_cycle_contract.json"
+    },
+    {
+      "case": "two_cycles",
+      "family": "smoke_dev",
+      "model": "../../tests/repro_bench/two_cycles.json",
+      "contract": "../../tests/repro_bench/two_cycles_contract.json"
+    },
+    {
+      "case": "cross_module_two_cycles",
+      "family": "smoke_dev",
+      "model": "../../tests/repro_bench/cross_module_two_cycles.json",
+      "contract": "../../tests/repro_bench/cross_module_two_cycles_contract.json"
+    },
+    {
+      "case": "forbidden_scope",
+      "family": "smoke_dev",
+      "model": "../../tests/repro_bench/single_cycle.json",
+      "contract": "../../tests/repro_bench/forbidden_scope_contract.json"
+    },
+    {
+      "case": "preserved_unfixable",
+      "family": "smoke_dev",
+      "model": "../../tests/repro_bench/preserved_unfixable.json",
+      "contract": "../../tests/repro_bench/preserved_unfixable_contract.json"
+    },
+    {
+      "case": "no_lock_candidate",
+      "family": "smoke_dev",
+      "model": "../../tests/repro_bench/channel_deadlock.json",
+      "contract": "../../tests/repro_bench/channel_deadlock_contract.json"
+    },
+    {
+      "case": "budget_truncated",
+      "family": "smoke_dev",
+      "model": "../../tests/repro_bench/two_cycles.json",
+      "contract": "../../tests/repro_bench/two_cycles_contract.json",
+      "config_override": {
+        "candidate_budget": 1
+      }
+    }
+  ]
+}

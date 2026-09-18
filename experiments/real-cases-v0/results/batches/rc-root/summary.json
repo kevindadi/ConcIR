@@ -1,0 +1,186 @@
+{
+  "batch_id": "rc-root",
+  "cohort_fingerprint": "a9ce5f0f8a678cc82a6b95514cbf271e952f132def96bc6c28395834365330a4",
+  "records": 3,
+  "complete": 3,
+  "not_complete": 0,
+  "errors": [],
+  "nondeterministic": [],
+  "wall_stats": [],
+  "paired": {
+    "planned_pairs": 0,
+    "index_pairs": 0,
+    "attempted_pairs": 0,
+    "both_complete": 0,
+    "both_repaired": 0,
+    "one_side_not_executed": 0,
+    "one_side_invalid": 0,
+    "success_differs_count": 0,
+    "outcome_differences": [],
+    "cost_subset_pairs": 0,
+    "cost_field": "search_wall_ms",
+    "c_le_b_ver": 0,
+    "c_lt_b_ver": 0,
+    "sum_b_ver": 0,
+    "sum_c_ver": 0,
+    "sum_b_states": 0,
+    "sum_c_states": 0,
+    "sum_b_search_wall_ms": 0,
+    "sum_c_search_wall_ms": 0,
+    "note": "pairs include repeats/configs of the same model, not independent programs; timeout/UNKNOWN/failure outcomes are kept"
+  },
+  "by_suite": {
+    "matrix": {
+      "UNSUPPORTED": 1,
+      "PASS": 1,
+      "FAIL": 1
+    }
+  },
+  "status_by_suite": {
+    "matrix": {
+      "complete": 3
+    }
+  },
+  "matrix": [
+    {
+      "case": "dashmap-369-buggy",
+      "bounds_variant": "buggy",
+      "bounds": {
+        "max_boundary_events": 256,
+        "max_depth": 64,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_threads": 8
+      },
+      "outcome": "UNSUPPORTED",
+      "evidence_status": "complete",
+      "report_complete": false,
+      "states": 0,
+      "transitions": 0,
+      "search_wall_ms": 2
+    },
+    {
+      "case": "rmw-zenoh-998-fixed",
+      "bounds_variant": "fixed",
+      "bounds": {
+        "max_boundary_events": 256,
+        "max_depth": 64,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_threads": 8
+      },
+      "outcome": "PASS",
+      "evidence_status": "complete",
+      "report_complete": true,
+      "states": 39,
+      "transitions": 56,
+      "search_wall_ms": 3
+    },
+    {
+      "case": "rmw-zenoh-998-buggy",
+      "bounds_variant": "buggy",
+      "bounds": {
+        "max_boundary_events": 256,
+        "max_depth": 64,
+        "max_frames_per_thread": 8,
+        "max_states": 20000,
+        "max_threads": 8
+      },
+      "outcome": "FAIL",
+      "evidence_status": "complete",
+      "report_complete": true,
+      "states": 49,
+      "transitions": 72,
+      "search_wall_ms": 4
+    }
+  ],
+  "witness": [],
+  "meta": {
+    "batch_id": "rc-root",
+    "cohort": {
+      "manifest_sha256": "01feca987644a2bd44a1e09238fb4c154bbc1f36cb36ba5e7ac346be7cee24dc",
+      "manifest_path_identity": "experiments/real-cases-v0/manifest.json",
+      "generator_sha256": null,
+      "code_fingerprint": "fc1c304bf4b0933e3e0c203c09fb0f24e47016451607193355eb1ab060ad0296",
+      "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+      "tool_sha256": "f16f43f59f292619a405ba92ce681e8905ea6c1297d60fa50a13882025cf566d",
+      "search_timeout": 60.0,
+      "replay_timeout": 30.0,
+      "suites": [
+        "matrix"
+      ],
+      "plan_run_keys": [
+        "46b9b4e3f8187e44a2bcd9f5",
+        "ade86b5f8f29b10e4af560b4",
+        "bb6e00066756168586623c58"
+      ],
+      "plan_run_fingerprints": [
+        "117c4ca4d098700099849ca50185eb8b72f50d33049896e39b7eaf93975a69c8",
+        "811a2c3505d2a2abcc4123819ba8d34b23482ba4b0b58a09ab94a8c401e1ad54",
+        "93824fa849cf9edde1fcdc9dff47e983b57f069bbf3d331cf6d85e3034339f4b"
+      ]
+    },
+    "cohort_fingerprint": "a9ce5f0f8a678cc82a6b95514cbf271e952f132def96bc6c28395834365330a4",
+    "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+    "code_fingerprint": "fc1c304bf4b0933e3e0c203c09fb0f24e47016451607193355eb1ab060ad0296",
+    "manifest": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/manifest.json",
+    "suites": [
+      "matrix"
+    ],
+    "planned": 3,
+    "total_budget_s": 300.0,
+    "search_timeout_s": 60.0,
+    "replay_timeout_s": 30.0,
+    "env_collection_ms": 102,
+    "env_outside_budget": true,
+    "results_dir": "/Users/kevin/local-repos/ConcIR/experiments/real-cases-v0/results/batches/rc-root",
+    "total_budget_rule": "per-invocation recovery quota; not part of cohort identity"
+  },
+  "environment": {
+    "recorded_at_utc": "2026-09-18T07:16:17.889317+00:00",
+    "git": {
+      "commit": "e8480c4a54840e68d7cf3a62c5075e4fc02e6966",
+      "dirty": true,
+      "status_porcelain": "?? examples/pilot_tool.rs\n?? experiments/\n?? scripts/",
+      "tracked_diff_sha256": "",
+      "staged_diff_sha256": ""
+    },
+    "code": {
+      "files": {
+        "scripts/run_pilot.py": {
+          "sha256": "c7fc6ff3f2b0894064eb6c39b170a9100e7b27108ebb9b56f37502f05bde49c6",
+          "bytes": 94867
+        },
+        "scripts/pilot_analyze.py": {
+          "sha256": "423dc5abab2d033a8b586cca34cb46a8ad60ffae8fa89503a2d45ec1998a5cc2",
+          "bytes": 25326
+        },
+        "experiments/real-cases-v0/generate_cases.py": {
+          "sha256": null,
+          "bytes": null
+        },
+        "experiments/real-cases-v0/manifest.json": {
+          "sha256": "01feca987644a2bd44a1e09238fb4c154bbc1f36cb36ba5e7ac346be7cee24dc",
+          "bytes": 2353
+        },
+        "examples/pilot_tool.rs": {
+          "sha256": "fb40d6c0ab1580d6ec5270ca11f2fe78df82c66f2667fe2d6a56fe017eca3098",
+          "bytes": 7957
+        }
+      },
+      "fingerprint": "fc1c304bf4b0933e3e0c203c09fb0f24e47016451607193355eb1ab060ad0296"
+    },
+    "binary_path": "/Users/kevin/local-repos/ConcIR/target/release/concir-backend",
+    "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+    "tool_path": "/Users/kevin/local-repos/ConcIR/target/release/examples/pilot_tool",
+    "tool_sha256": "f16f43f59f292619a405ba92ce681e8905ea6c1297d60fa50a13882025cf566d",
+    "rustc": "rustc 1.100.0-nightly (a69a63265 2026-09-03)",
+    "cargo": "cargo 1.100.0-nightly (b2e9d5f9d 2026-09-02)",
+    "python": "3.14.0",
+    "uname": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "cpu_count": 12,
+    "env_collection_ms": 102,
+    "env_outside_budget": true
+  }
+}

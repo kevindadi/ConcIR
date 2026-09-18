@@ -1,0 +1,131 @@
+[
+  {
+    "stage": "repair",
+    "suite": "pilot",
+    "case": "p1_same",
+    "family": "one_defect",
+    "params": {
+      "defect_units": 1,
+      "interference_pairs": 0,
+      "cross": "none",
+      "order": "base"
+    },
+    "model": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p1_same.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p1_same_contract.json",
+    "config_name": "main",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "a",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p1_same.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p1_same_contract.json",
+      "model_sha256": "054b9ec666a0113a5b6e02ece54cbe0e9f31212471f5b8d93d4e36c326fd8747",
+      "model_norm_sha256": "ddb87a659ffdcbe15217535dccf54def0ba6d7b5ede67882ce0a930e558e9c14",
+      "contract_sha256": "9e07b8fa813096dc57e02d722317f29a9c0b7a84c74248c9e3b3fba77db2ab3d",
+      "contract_norm_sha256": "02c76fe25e7632c785c45db7ee91acb0dfeeb971c866d59346ec575e30b3d95c",
+      "contract_bounds": {
+        "max_threads": 16,
+        "max_frames_per_thread": 16,
+        "max_states": 200000,
+        "max_depth": 128,
+        "max_boundary_events": 512
+      }
+    },
+    "batch_id": "b5",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "98b94f3770b587e2acfc0ade",
+    "run_fingerprint": "4cbcf59d627ea945af86f5c713e850d439e43b7e118f1d0d4ba1cfb5c9205f63"
+  },
+  {
+    "stage": "repair",
+    "suite": "pilot",
+    "case": "p1_same",
+    "family": "one_defect",
+    "params": {
+      "defect_units": 1,
+      "interference_pairs": 0,
+      "cross": "none",
+      "order": "base"
+    },
+    "model": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p1_same.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p1_same_contract.json",
+    "config_name": "main",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "b",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p1_same.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p1_same_contract.json",
+      "model_sha256": "054b9ec666a0113a5b6e02ece54cbe0e9f31212471f5b8d93d4e36c326fd8747",
+      "model_norm_sha256": "ddb87a659ffdcbe15217535dccf54def0ba6d7b5ede67882ce0a930e558e9c14",
+      "contract_sha256": "9e07b8fa813096dc57e02d722317f29a9c0b7a84c74248c9e3b3fba77db2ab3d",
+      "contract_norm_sha256": "02c76fe25e7632c785c45db7ee91acb0dfeeb971c866d59346ec575e30b3d95c",
+      "contract_bounds": {
+        "max_threads": 16,
+        "max_frames_per_thread": 16,
+        "max_states": 200000,
+        "max_depth": 128,
+        "max_boundary_events": 512
+      }
+    },
+    "batch_id": "b5",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "db560d4732f587dc6d83fa10",
+    "run_fingerprint": "0ad789766f8b032080a6afda95739832d6fa0696701b5cb505afba1ab7f6ddf1"
+  },
+  {
+    "stage": "repair",
+    "suite": "pilot",
+    "case": "p1_same",
+    "family": "one_defect",
+    "params": {
+      "defect_units": 1,
+      "interference_pairs": 0,
+      "cross": "none",
+      "order": "base"
+    },
+    "model": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p1_same.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p1_same_contract.json",
+    "config_name": "main",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "c",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p1_same.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p1_same_contract.json",
+      "model_sha256": "054b9ec666a0113a5b6e02ece54cbe0e9f31212471f5b8d93d4e36c326fd8747",
+      "model_norm_sha256": "ddb87a659ffdcbe15217535dccf54def0ba6d7b5ede67882ce0a930e558e9c14",
+      "contract_sha256": "9e07b8fa813096dc57e02d722317f29a9c0b7a84c74248c9e3b3fba77db2ab3d",
+      "contract_norm_sha256": "02c76fe25e7632c785c45db7ee91acb0dfeeb971c866d59346ec575e30b3d95c",
+      "contract_bounds": {
+        "max_threads": 16,
+        "max_frames_per_thread": 16,
+        "max_states": 200000,
+        "max_depth": 128,
+        "max_boundary_events": 512
+      }
+    },
+    "batch_id": "b5",
+    "search_timeout": 30.0,
+    "replay_timeout": 30.0,
+    "run_key": "542ac6b182c665d68e0571db",
+    "run_fingerprint": "5ced009f5c173c415d46d69efe6694c24c24be5f80fb6d32fb4cfe59d66e93e0"
+  }
+]

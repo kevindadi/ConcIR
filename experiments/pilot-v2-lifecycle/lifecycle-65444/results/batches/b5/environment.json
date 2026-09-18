@@ -1,0 +1,47 @@
+{
+  "recorded_at_utc": "2026-09-18T04:54:22.732870+00:00",
+  "git": {
+    "commit": "e8480c4a54840e68d7cf3a62c5075e4fc02e6966",
+    "dirty": true,
+    "status_porcelain": "?? examples/pilot_tool.rs\n?? experiments/\n?? scripts/",
+    "tracked_diff_sha256": "",
+    "staged_diff_sha256": ""
+  },
+  "code": {
+    "files": {
+      "scripts/run_pilot.py": {
+        "sha256": "23de1cec77bda62d93d1c895fd81204f63de55474a28122f79e6155d39f28421",
+        "bytes": 85149
+      },
+      "scripts/pilot_analyze.py": {
+        "sha256": "dd017bb3847b2ee04435e82df07dbb0b47a35fcfda91c45999694e019c3363fa",
+        "bytes": 17539
+      },
+      "experiments/pilot-v2-lifecycle/lifecycle-65444/generate_cases.py": {
+        "sha256": null,
+        "bytes": null
+      },
+      "experiments/pilot-v2-lifecycle/lifecycle-65444/mini_manifest.json": {
+        "sha256": "4f466c9307a4f58a106191e2e8bd3ecebd7920365e6bfd78ebc16df881637a0e",
+        "bytes": 1396
+      },
+      "examples/pilot_tool.rs": {
+        "sha256": "fb40d6c0ab1580d6ec5270ca11f2fe78df82c66f2667fe2d6a56fe017eca3098",
+        "bytes": 7957
+      }
+    },
+    "fingerprint": "c2905bfdf373881456bc610e8d79b44f2839578d9bca2716aa9b2e0184f96cd3"
+  },
+  "binary_path": "/Users/kevin/local-repos/ConcIR/target/release/concir-backend",
+  "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+  "tool_path": "/Users/kevin/local-repos/ConcIR/target/release/examples/pilot_tool",
+  "tool_sha256": "f16f43f59f292619a405ba92ce681e8905ea6c1297d60fa50a13882025cf566d",
+  "rustc": "rustc 1.100.0-nightly (a69a63265 2026-09-03)",
+  "cargo": "cargo 1.100.0-nightly (b2e9d5f9d 2026-09-02)",
+  "python": "3.14.0",
+  "uname": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "cpu_count": 12,
+  "env_collection_ms": 65,
+  "env_outside_budget": true
+}

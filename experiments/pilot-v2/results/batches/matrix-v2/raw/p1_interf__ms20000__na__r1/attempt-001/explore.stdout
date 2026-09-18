@@ -1,0 +1,243 @@
+{
+  "outcome": "FAIL",
+  "complete": true,
+  "states_explored": 284,
+  "transitions_explored": 657,
+  "properties": [
+    {
+      "id": "no-deadlock",
+      "outcome": "FAIL",
+      "detail": "a reachable state has no enabled step and unfinished threads"
+    },
+    {
+      "id": "preserved: main::u1ab completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f1)"
+    },
+    {
+      "id": "preserved: main::u1ba completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f2)"
+    },
+    {
+      "id": "preserved: main::i1 completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f3)"
+    }
+  ],
+  "diagnostics": [
+    {
+      "property": "no-deadlock",
+      "outcome": "FAIL",
+      "message": "reachable global deadlock",
+      "complete": true,
+      "counterexample": [
+        {
+          "origin": {
+            "module": 0,
+            "function": 0,
+            "sid": 0,
+            "phase": "statement"
+          },
+          "thread": 0,
+          "frame": 0
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 1,
+            "sid": 0,
+            "phase": "statement"
+          },
+          "thread": 1,
+          "frame": 1
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 2,
+            "sid": 0,
+            "phase": "statement"
+          },
+          "thread": 2,
+          "frame": 2
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 1,
+            "sid": 1,
+            "phase": "statement"
+          },
+          "thread": 1,
+          "frame": 1
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 2,
+            "sid": 1,
+            "phase": "statement"
+          },
+          "thread": 2,
+          "frame": 2
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 3,
+            "sid": 0,
+            "phase": "statement"
+          },
+          "thread": 3,
+          "frame": 3
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 3,
+            "sid": 1,
+            "phase": "statement"
+          },
+          "thread": 3,
+          "frame": 3
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 3,
+            "sid": 2,
+            "phase": "statement"
+          },
+          "thread": 3,
+          "frame": 3
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 3,
+            "sid": 3,
+            "phase": "statement"
+          },
+          "thread": 3,
+          "frame": 3
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 3,
+            "sid": 4,
+            "phase": "statement"
+          },
+          "thread": 3,
+          "frame": 3
+        }
+      ],
+      "final_instances": [
+        {
+          "thread": 0,
+          "frame": 0,
+          "function": 0,
+          "sid": 0,
+          "status": "running"
+        },
+        {
+          "thread": 1,
+          "frame": 1,
+          "function": 1,
+          "sid": 1,
+          "status": "running"
+        },
+        {
+          "thread": 2,
+          "frame": 2,
+          "function": 2,
+          "sid": 1,
+          "status": "running"
+        },
+        {
+          "thread": 3,
+          "frame": null,
+          "function": 3,
+          "sid": null,
+          "status": "finished"
+        }
+      ],
+      "blocked": [
+        {
+          "thread": 0,
+          "kind": "scope",
+          "resource": null,
+          "resource_name": null,
+          "holder": null,
+          "waiting": 0,
+          "detail": "waiting for scope members"
+        },
+        {
+          "thread": 1,
+          "kind": "lock",
+          "resource": 1,
+          "resource_name": "main::b",
+          "holder": 2,
+          "waiting": 1,
+          "detail": "waiting for a lock"
+        },
+        {
+          "thread": 2,
+          "kind": "lock",
+          "resource": 0,
+          "resource_name": "main::a",
+          "holder": 1,
+          "waiting": 1,
+          "detail": "waiting for a lock"
+        }
+      ],
+      "cir_statements": [
+        {
+          "module": "main",
+          "function": "main",
+          "sid": "s1"
+        },
+        {
+          "module": "main",
+          "function": "u1ab",
+          "sid": "s2"
+        },
+        {
+          "module": "main",
+          "function": "u1ba",
+          "sid": "s2"
+        },
+        {
+          "module": "main",
+          "function": "i1",
+          "sid": null
+        }
+      ],
+      "proven_facts": [
+        "reached a counterexample state after 10 step(s)",
+        "explored 284 reachable states"
+      ],
+      "repair_hints": [
+        "check lock acquisition order, channel capacity, and missing notify/join"
+      ]
+    }
+  ],
+  "boundary_events": [],
+  "unsupported": [],
+  "invalid": [],
+  "model_fingerprint": "c2cc53fe5f684e3d",
+  "contract_fingerprint": "4225bbd6f532383f",
+  "assumptions": {
+    "sequential_consistency": true,
+    "no_spurious_wakeups": true
+  },
+  "bounds": {
+    "max_threads": 16,
+    "max_frames_per_thread": 16,
+    "max_states": 20000,
+    "max_depth": 128,
+    "max_boundary_events": 512
+  },
+  "analysis_started": true
+}

@@ -1,0 +1,1 @@
+/Users/kevin/local-repos/ConcIR/target/release/concir-backend replay /Users/kevin/local-repos/ConcIR/experiments/pilot-v2-lifecycle/lifecycle-52203/results/batches/b2/raw/p1_same__main__a__r1__98b94f3770b587e2acfc0ade/attempt-20260918T045041438402-52203-1/artifact.json

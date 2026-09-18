@@ -1,0 +1,1 @@
+/Users/kevin/local-repos/ConcIR/target/release/concir-backend replay /Users/kevin/local-repos/ConcIR/experiments/pilot-v2-lifecycle/results/batches/smoke-lifecycle/raw/cross_module_two_cycles__smoke__b__r1__66ad497813eb8dad80364727/attempt-20260918T045106350120-52671-11/artifact.json

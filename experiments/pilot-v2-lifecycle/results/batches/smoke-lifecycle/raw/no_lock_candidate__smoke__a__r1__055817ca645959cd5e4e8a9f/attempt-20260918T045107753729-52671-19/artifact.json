@@ -1,0 +1,323 @@
+{
+  "schema_version": "concir-repair-artifact-v1",
+  "source": {
+    "crate_version": "0.1.0",
+    "binary_fingerprint": "763382a6a366685a"
+  },
+  "input_program": {
+    "program": "channel_deadlock",
+    "version": "3.5.0",
+    "modules": [
+      {
+        "name": "main",
+        "provides": {
+          "resources": [
+            "ch1",
+            "ch2"
+          ],
+          "functions": [
+            "main",
+            "s",
+            "r"
+          ],
+          "types": []
+        },
+        "requires": {
+          "resources": [],
+          "functions": [],
+          "types": []
+        },
+        "resources": [
+          {
+            "name": "ch1",
+            "kind": "sync",
+            "type": "Channel",
+            "mode": "Sync",
+            "base": "Int",
+            "capacity": 0
+          },
+          {
+            "name": "ch2",
+            "kind": "sync",
+            "type": "Channel",
+            "mode": "Sync",
+            "base": "Int",
+            "capacity": 0
+          }
+        ],
+        "protection": [],
+        "functions": [
+          {
+            "name": "main",
+            "kind": "normal",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "scope",
+                "funcs": [
+                  "s",
+                  "r"
+                ]
+              },
+              {
+                "sid": "s2",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "s",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "channel_send",
+                "channel": "ch1",
+                "value": "1"
+              },
+              {
+                "sid": "s2",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "r",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "channel_recv",
+                "channel": "ch2",
+                "dst": "_"
+              },
+              {
+                "sid": "s2",
+                "kind": "return"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "entry": "main::main"
+  },
+  "frozen_contract": {
+    "name": "channel-deadlock",
+    "properties": [
+      {
+        "kind": "deadlock_free",
+        "id": "no-deadlock"
+      }
+    ],
+    "preserved": [],
+    "assumptions": {
+      "sequential_consistency": true,
+      "no_spurious_wakeups": true
+    },
+    "bounds": {
+      "max_threads": 8,
+      "max_frames_per_thread": 8,
+      "max_states": 20000,
+      "max_depth": 64,
+      "max_boundary_events": 256
+    },
+    "allowed_scope": {
+      "functions": [],
+      "modules": [],
+      "allow_lock_reorder": true,
+      "allow_statement_delete": false
+    }
+  },
+  "effective_config": {
+    "strategy": "single",
+    "candidate_budget": 64,
+    "verification_budget": 64,
+    "max_depth": 4,
+    "max_total_edits": 4,
+    "bounds": {
+      "max_threads": 8,
+      "max_frames_per_thread": 8,
+      "max_states": 20000,
+      "max_depth": 64,
+      "max_boundary_events": 256
+    }
+  },
+  "nodes": [
+    {
+      "id": 0,
+      "parent": null,
+      "depth": 0,
+      "total_edits": 0,
+      "program_fingerprint": "9391ac2fad205ae4",
+      "incoming": null,
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 5,
+        "transitions_explored": 5,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "FAIL",
+            "detail": "a reachable state has no enabled step and unfinished threads"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "no-deadlock",
+            "outcome": "FAIL",
+            "message": "reachable global deadlock",
+            "complete": true,
+            "counterexample": [
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 0,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 0,
+                "frame": 0
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              }
+            ],
+            "final_instances": [
+              {
+                "thread": 0,
+                "frame": 0,
+                "function": 0,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 1,
+                "frame": 1,
+                "function": 1,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 2,
+                "frame": 2,
+                "function": 2,
+                "sid": 0,
+                "status": "running"
+              }
+            ],
+            "blocked": [
+              {
+                "thread": 0,
+                "kind": "scope",
+                "resource": null,
+                "resource_name": null,
+                "holder": null,
+                "waiting": 0,
+                "detail": "waiting for scope members"
+              },
+              {
+                "thread": 1,
+                "kind": "channel_send",
+                "resource": 0,
+                "resource_name": "main::ch1",
+                "holder": null,
+                "waiting": 1,
+                "detail": "channel send blocked"
+              },
+              {
+                "thread": 2,
+                "kind": "channel_recv",
+                "resource": 1,
+                "resource_name": "main::ch2",
+                "holder": null,
+                "waiting": 1,
+                "detail": "channel receive blocked"
+              }
+            ],
+            "cir_statements": [
+              {
+                "module": "main",
+                "function": "main",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "s",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "r",
+                "sid": "s1"
+              }
+            ],
+            "proven_facts": [
+              "reached a counterexample state after 3 step(s)",
+              "explored 5 reachable states"
+            ],
+            "repair_hints": [
+              "check lock acquisition order, channel capacity, and missing notify/join"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "9391ac2fad205ae4",
+        "contract_fingerprint": "9b70941e3996008f",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 8,
+          "max_frames_per_thread": 8,
+          "max_states": 20000,
+          "max_depth": 64,
+          "max_boundary_events": 256
+        },
+        "analysis_started": true
+      },
+      "note": null
+    }
+  ],
+  "attempts": [],
+  "patch_chain": [],
+  "accepted_node": null,
+  "accepted_program": null,
+  "accepted_report": null,
+  "outcome": "no_acceptable_candidate",
+  "stop_reason": "no-acceptable-candidate",
+  "saw_unknown": false,
+  "truncation": null,
+  "counts": {
+    "proposals": 0,
+    "unique_candidate_programs": 1,
+    "verification_calls": 1,
+    "cache_hits": 0,
+    "states_explored": 5,
+    "nodes": 1
+  },
+  "reproduce": "concir-backend repair <program.json> <contract.json> --strategy a   # candidate_budget=64 verification_budget=64 max_depth=4 max_total_edits=4 bounds=AnalysisBounds { max_threads: 8, max_frames_per_thread: 8, max_states: 20000, max_depth: 64, max_boundary_events: 256 }"
+}

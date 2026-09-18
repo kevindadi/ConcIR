@@ -1,0 +1,1 @@
+{"at_utc": "2026-09-18T04:50:42.095675+00:00", "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6", "code_fingerprint": "7e6d73bf741734c69523026dc6cd7b69b444b8597118dbb009a4b68c3d7cbd50", "pid": 52280, "plan_count": 12, "replay_timeout_s": 2, "resuming": false, "search_timeout_s": 2, "total_budget_s": 0.05}

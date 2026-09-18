@@ -1,0 +1,2785 @@
+{
+  "schema_version": "concir-repair-artifact-v1",
+  "source": {
+    "crate_version": "0.1.0",
+    "binary_fingerprint": "763382a6a366685a"
+  },
+  "input_program": {
+    "program": "two_cycles",
+    "version": "3.5.0",
+    "modules": [
+      {
+        "name": "main",
+        "provides": {
+          "resources": [
+            "a",
+            "b",
+            "c",
+            "d"
+          ],
+          "functions": [
+            "main",
+            "t1",
+            "t2",
+            "t3",
+            "t4"
+          ],
+          "types": []
+        },
+        "requires": {
+          "resources": [],
+          "functions": [],
+          "types": []
+        },
+        "resources": [
+          {
+            "name": "a",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "b",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "c",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "d",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          }
+        ],
+        "protection": [],
+        "functions": [
+          {
+            "name": "main",
+            "kind": "normal",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "scope",
+                "funcs": [
+                  "t1",
+                  "t2",
+                  "t3",
+                  "t4"
+                ]
+              },
+              {
+                "sid": "s2",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "t1",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "a"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "b"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "b"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "a"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "t2",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "b"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "a"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "a"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "b"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "t3",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "c"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "d"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "d"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "c"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "t4",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "d"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "c"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "c"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "d"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "entry": "main::main"
+  },
+  "frozen_contract": {
+    "name": "two-cycles",
+    "properties": [
+      {
+        "kind": "deadlock_free",
+        "id": "no-deadlock"
+      }
+    ],
+    "preserved": [
+      {
+        "kind": "reachable",
+        "description": "t1 completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "main::t1"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "t2 completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "main::t2"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "t3 completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "main::t3"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "t4 completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "main::t4"
+        }
+      }
+    ],
+    "assumptions": {
+      "sequential_consistency": true,
+      "no_spurious_wakeups": true
+    },
+    "bounds": {
+      "max_threads": 8,
+      "max_frames_per_thread": 8,
+      "max_states": 20000,
+      "max_depth": 64,
+      "max_boundary_events": 256
+    },
+    "allowed_scope": {
+      "functions": [],
+      "modules": [],
+      "allow_lock_reorder": true,
+      "allow_statement_delete": false
+    }
+  },
+  "effective_config": {
+    "strategy": "composite",
+    "candidate_budget": 64,
+    "verification_budget": 64,
+    "max_depth": 4,
+    "max_total_edits": 4,
+    "bounds": {
+      "max_threads": 8,
+      "max_frames_per_thread": 8,
+      "max_states": 20000,
+      "max_depth": 64,
+      "max_boundary_events": 256
+    }
+  },
+  "nodes": [
+    {
+      "id": 0,
+      "parent": null,
+      "depth": 0,
+      "total_edits": 0,
+      "program_fingerprint": "2bf77496302b10ff",
+      "incoming": null,
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 2211,
+        "transitions_explored": 6582,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "FAIL",
+            "detail": "a reachable state has no enabled step and unfinished threads"
+          },
+          {
+            "id": "preserved: t1 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: t2 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: t3 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f3)"
+          },
+          {
+            "id": "preserved: t4 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f4)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "no-deadlock",
+            "outcome": "FAIL",
+            "message": "reachable global deadlock",
+            "complete": true,
+            "counterexample": [
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 0,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 0,
+                "frame": 0
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              }
+            ],
+            "final_instances": [
+              {
+                "thread": 0,
+                "frame": 0,
+                "function": 0,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 1,
+                "frame": 1,
+                "function": 1,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 2,
+                "frame": 2,
+                "function": 2,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 3,
+                "frame": 3,
+                "function": 3,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 4,
+                "frame": 4,
+                "function": 4,
+                "sid": 1,
+                "status": "running"
+              }
+            ],
+            "blocked": [
+              {
+                "thread": 0,
+                "kind": "scope",
+                "resource": null,
+                "resource_name": null,
+                "holder": null,
+                "waiting": 0,
+                "detail": "waiting for scope members"
+              },
+              {
+                "thread": 1,
+                "kind": "lock",
+                "resource": 1,
+                "resource_name": "main::b",
+                "holder": 2,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 2,
+                "kind": "lock",
+                "resource": 0,
+                "resource_name": "main::a",
+                "holder": 1,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 3,
+                "kind": "lock",
+                "resource": 3,
+                "resource_name": "main::d",
+                "holder": 4,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 4,
+                "kind": "lock",
+                "resource": 2,
+                "resource_name": "main::c",
+                "holder": 3,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              }
+            ],
+            "cir_statements": [
+              {
+                "module": "main",
+                "function": "main",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "t1",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "t2",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "t3",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "t4",
+                "sid": "s2"
+              }
+            ],
+            "proven_facts": [
+              "reached a counterexample state after 9 step(s)",
+              "explored 2211 reachable states"
+            ],
+            "repair_hints": [
+              "check lock acquisition order, channel capacity, and missing notify/join"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "2bf77496302b10ff",
+        "contract_fingerprint": "69c95f42066670ca",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 8,
+          "max_frames_per_thread": 8,
+          "max_states": 20000,
+          "max_depth": 64,
+          "max_boundary_events": 256
+        },
+        "analysis_started": true
+      },
+      "note": null
+    },
+    {
+      "id": 1,
+      "parent": 0,
+      "depth": 1,
+      "total_edits": 1,
+      "program_fingerprint": "9785a4cd66c7069b",
+      "incoming": {
+        "module": "main",
+        "function": "t1",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+          }
+        ],
+        "original_function_hash": "46b3c1dc641b149b",
+        "parent_fingerprint": "2bf77496302b10ff",
+        "program_fingerprint": "9785a4cd66c7069b"
+      },
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 1929,
+        "transitions_explored": 5739,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "FAIL",
+            "detail": "a reachable state has no enabled step and unfinished threads"
+          },
+          {
+            "id": "preserved: t1 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: t2 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: t3 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f3)"
+          },
+          {
+            "id": "preserved: t4 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f4)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "no-deadlock",
+            "outcome": "FAIL",
+            "message": "reachable global deadlock",
+            "complete": true,
+            "counterexample": [
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 0,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 0,
+                "frame": 0
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              }
+            ],
+            "final_instances": [
+              {
+                "thread": 0,
+                "frame": 0,
+                "function": 0,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 1,
+                "frame": null,
+                "function": 1,
+                "sid": null,
+                "status": "finished"
+              },
+              {
+                "thread": 2,
+                "frame": null,
+                "function": 2,
+                "sid": null,
+                "status": "finished"
+              },
+              {
+                "thread": 3,
+                "frame": 3,
+                "function": 3,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 4,
+                "frame": 4,
+                "function": 4,
+                "sid": 1,
+                "status": "running"
+              }
+            ],
+            "blocked": [
+              {
+                "thread": 0,
+                "kind": "scope",
+                "resource": null,
+                "resource_name": null,
+                "holder": null,
+                "waiting": 0,
+                "detail": "waiting for scope members"
+              },
+              {
+                "thread": 3,
+                "kind": "lock",
+                "resource": 3,
+                "resource_name": "main::d",
+                "holder": 4,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 4,
+                "kind": "lock",
+                "resource": 2,
+                "resource_name": "main::c",
+                "holder": 3,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              }
+            ],
+            "cir_statements": [
+              {
+                "module": "main",
+                "function": "main",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "t1",
+                "sid": null
+              },
+              {
+                "module": "main",
+                "function": "t2",
+                "sid": null
+              },
+              {
+                "module": "main",
+                "function": "t3",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "t4",
+                "sid": "s2"
+              }
+            ],
+            "proven_facts": [
+              "reached a counterexample state after 15 step(s)",
+              "explored 1929 reachable states"
+            ],
+            "repair_hints": [
+              "check lock acquisition order, channel capacity, and missing notify/join"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "9785a4cd66c7069b",
+        "contract_fingerprint": "69c95f42066670ca",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 8,
+          "max_frames_per_thread": 8,
+          "max_states": 20000,
+          "max_depth": 64,
+          "max_boundary_events": 256
+        },
+        "analysis_started": true
+      },
+      "note": null
+    },
+    {
+      "id": 2,
+      "parent": 0,
+      "depth": 1,
+      "total_edits": 1,
+      "program_fingerprint": "5ae147f55b22a6a7",
+      "incoming": {
+        "module": "main",
+        "function": "t2",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+          }
+        ],
+        "original_function_hash": "1ce2e11f961c57c0",
+        "parent_fingerprint": "2bf77496302b10ff",
+        "program_fingerprint": "5ae147f55b22a6a7"
+      },
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 1929,
+        "transitions_explored": 5739,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "FAIL",
+            "detail": "a reachable state has no enabled step and unfinished threads"
+          },
+          {
+            "id": "preserved: t1 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: t2 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: t3 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f3)"
+          },
+          {
+            "id": "preserved: t4 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f4)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "no-deadlock",
+            "outcome": "FAIL",
+            "message": "reachable global deadlock",
+            "complete": true,
+            "counterexample": [
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 0,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 0,
+                "frame": 0
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              }
+            ],
+            "final_instances": [
+              {
+                "thread": 0,
+                "frame": 0,
+                "function": 0,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 1,
+                "frame": null,
+                "function": 1,
+                "sid": null,
+                "status": "finished"
+              },
+              {
+                "thread": 2,
+                "frame": null,
+                "function": 2,
+                "sid": null,
+                "status": "finished"
+              },
+              {
+                "thread": 3,
+                "frame": 3,
+                "function": 3,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 4,
+                "frame": 4,
+                "function": 4,
+                "sid": 1,
+                "status": "running"
+              }
+            ],
+            "blocked": [
+              {
+                "thread": 0,
+                "kind": "scope",
+                "resource": null,
+                "resource_name": null,
+                "holder": null,
+                "waiting": 0,
+                "detail": "waiting for scope members"
+              },
+              {
+                "thread": 3,
+                "kind": "lock",
+                "resource": 3,
+                "resource_name": "main::d",
+                "holder": 4,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 4,
+                "kind": "lock",
+                "resource": 2,
+                "resource_name": "main::c",
+                "holder": 3,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              }
+            ],
+            "cir_statements": [
+              {
+                "module": "main",
+                "function": "main",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "t1",
+                "sid": null
+              },
+              {
+                "module": "main",
+                "function": "t2",
+                "sid": null
+              },
+              {
+                "module": "main",
+                "function": "t3",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "t4",
+                "sid": "s2"
+              }
+            ],
+            "proven_facts": [
+              "reached a counterexample state after 15 step(s)",
+              "explored 1929 reachable states"
+            ],
+            "repair_hints": [
+              "check lock acquisition order, channel capacity, and missing notify/join"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "5ae147f55b22a6a7",
+        "contract_fingerprint": "69c95f42066670ca",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 8,
+          "max_frames_per_thread": 8,
+          "max_states": 20000,
+          "max_depth": 64,
+          "max_boundary_events": 256
+        },
+        "analysis_started": true
+      },
+      "note": null
+    },
+    {
+      "id": 3,
+      "parent": 0,
+      "depth": 1,
+      "total_edits": 1,
+      "program_fingerprint": "b5a63a66789af2df",
+      "incoming": {
+        "module": "main",
+        "function": "t3",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+          }
+        ],
+        "original_function_hash": "d6cd3281c94a6e61",
+        "parent_fingerprint": "2bf77496302b10ff",
+        "program_fingerprint": "b5a63a66789af2df"
+      },
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 1929,
+        "transitions_explored": 5739,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "FAIL",
+            "detail": "a reachable state has no enabled step and unfinished threads"
+          },
+          {
+            "id": "preserved: t1 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: t2 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: t3 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f3)"
+          },
+          {
+            "id": "preserved: t4 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f4)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "no-deadlock",
+            "outcome": "FAIL",
+            "message": "reachable global deadlock",
+            "complete": true,
+            "counterexample": [
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 0,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 0,
+                "frame": 0
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              }
+            ],
+            "final_instances": [
+              {
+                "thread": 0,
+                "frame": 0,
+                "function": 0,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 1,
+                "frame": 1,
+                "function": 1,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 2,
+                "frame": 2,
+                "function": 2,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 3,
+                "frame": null,
+                "function": 3,
+                "sid": null,
+                "status": "finished"
+              },
+              {
+                "thread": 4,
+                "frame": null,
+                "function": 4,
+                "sid": null,
+                "status": "finished"
+              }
+            ],
+            "blocked": [
+              {
+                "thread": 0,
+                "kind": "scope",
+                "resource": null,
+                "resource_name": null,
+                "holder": null,
+                "waiting": 0,
+                "detail": "waiting for scope members"
+              },
+              {
+                "thread": 1,
+                "kind": "lock",
+                "resource": 1,
+                "resource_name": "main::b",
+                "holder": 2,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 2,
+                "kind": "lock",
+                "resource": 0,
+                "resource_name": "main::a",
+                "holder": 1,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              }
+            ],
+            "cir_statements": [
+              {
+                "module": "main",
+                "function": "main",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "t1",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "t2",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "t3",
+                "sid": null
+              },
+              {
+                "module": "main",
+                "function": "t4",
+                "sid": null
+              }
+            ],
+            "proven_facts": [
+              "reached a counterexample state after 15 step(s)",
+              "explored 1929 reachable states"
+            ],
+            "repair_hints": [
+              "check lock acquisition order, channel capacity, and missing notify/join"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "b5a63a66789af2df",
+        "contract_fingerprint": "69c95f42066670ca",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 8,
+          "max_frames_per_thread": 8,
+          "max_states": 20000,
+          "max_depth": 64,
+          "max_boundary_events": 256
+        },
+        "analysis_started": true
+      },
+      "note": null
+    },
+    {
+      "id": 4,
+      "parent": 0,
+      "depth": 1,
+      "total_edits": 1,
+      "program_fingerprint": "7558a591582a0ad3",
+      "incoming": {
+        "module": "main",
+        "function": "t4",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+          }
+        ],
+        "original_function_hash": "91d14fc9575a7b46",
+        "parent_fingerprint": "2bf77496302b10ff",
+        "program_fingerprint": "7558a591582a0ad3"
+      },
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 1929,
+        "transitions_explored": 5739,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "FAIL",
+            "detail": "a reachable state has no enabled step and unfinished threads"
+          },
+          {
+            "id": "preserved: t1 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: t2 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: t3 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f3)"
+          },
+          {
+            "id": "preserved: t4 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f4)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "no-deadlock",
+            "outcome": "FAIL",
+            "message": "reachable global deadlock",
+            "complete": true,
+            "counterexample": [
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 0,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 0,
+                "frame": 0
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              }
+            ],
+            "final_instances": [
+              {
+                "thread": 0,
+                "frame": 0,
+                "function": 0,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 1,
+                "frame": 1,
+                "function": 1,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 2,
+                "frame": 2,
+                "function": 2,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 3,
+                "frame": null,
+                "function": 3,
+                "sid": null,
+                "status": "finished"
+              },
+              {
+                "thread": 4,
+                "frame": null,
+                "function": 4,
+                "sid": null,
+                "status": "finished"
+              }
+            ],
+            "blocked": [
+              {
+                "thread": 0,
+                "kind": "scope",
+                "resource": null,
+                "resource_name": null,
+                "holder": null,
+                "waiting": 0,
+                "detail": "waiting for scope members"
+              },
+              {
+                "thread": 1,
+                "kind": "lock",
+                "resource": 1,
+                "resource_name": "main::b",
+                "holder": 2,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 2,
+                "kind": "lock",
+                "resource": 0,
+                "resource_name": "main::a",
+                "holder": 1,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              }
+            ],
+            "cir_statements": [
+              {
+                "module": "main",
+                "function": "main",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "t1",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "t2",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "t3",
+                "sid": null
+              },
+              {
+                "module": "main",
+                "function": "t4",
+                "sid": null
+              }
+            ],
+            "proven_facts": [
+              "reached a counterexample state after 15 step(s)",
+              "explored 1929 reachable states"
+            ],
+            "repair_hints": [
+              "check lock acquisition order, channel capacity, and missing notify/join"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "7558a591582a0ad3",
+        "contract_fingerprint": "69c95f42066670ca",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 8,
+          "max_frames_per_thread": 8,
+          "max_states": 20000,
+          "max_depth": 64,
+          "max_boundary_events": 256
+        },
+        "analysis_started": true
+      },
+      "note": null
+    },
+    {
+      "id": 5,
+      "parent": 1,
+      "depth": 2,
+      "total_edits": 2,
+      "program_fingerprint": "e2449d9147670a33",
+      "incoming": {
+        "module": "main",
+        "function": "t2",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+          }
+        ],
+        "original_function_hash": "1ce2e11f961c57c0",
+        "parent_fingerprint": "9785a4cd66c7069b",
+        "program_fingerprint": "e2449d9147670a33"
+      },
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 1835,
+        "transitions_explored": 5364,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "FAIL",
+            "detail": "a reachable state has no enabled step and unfinished threads"
+          },
+          {
+            "id": "preserved: t1 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: t2 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: t3 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f3)"
+          },
+          {
+            "id": "preserved: t4 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f4)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "no-deadlock",
+            "outcome": "FAIL",
+            "message": "reachable global deadlock",
+            "complete": true,
+            "counterexample": [
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 0,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 0,
+                "frame": 0
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 3,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 4,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              }
+            ],
+            "final_instances": [
+              {
+                "thread": 0,
+                "frame": 0,
+                "function": 0,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 1,
+                "frame": 1,
+                "function": 1,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 2,
+                "frame": 2,
+                "function": 2,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 3,
+                "frame": 3,
+                "function": 3,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 4,
+                "frame": 4,
+                "function": 4,
+                "sid": 1,
+                "status": "running"
+              }
+            ],
+            "blocked": [
+              {
+                "thread": 0,
+                "kind": "scope",
+                "resource": null,
+                "resource_name": null,
+                "holder": null,
+                "waiting": 0,
+                "detail": "waiting for scope members"
+              },
+              {
+                "thread": 1,
+                "kind": "lock",
+                "resource": 0,
+                "resource_name": "main::a",
+                "holder": 2,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 2,
+                "kind": "lock",
+                "resource": 1,
+                "resource_name": "main::b",
+                "holder": 1,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 3,
+                "kind": "lock",
+                "resource": 3,
+                "resource_name": "main::d",
+                "holder": 4,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 4,
+                "kind": "lock",
+                "resource": 2,
+                "resource_name": "main::c",
+                "holder": 3,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              }
+            ],
+            "cir_statements": [
+              {
+                "module": "main",
+                "function": "main",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "t1",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "t2",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "t3",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "t4",
+                "sid": "s2"
+              }
+            ],
+            "proven_facts": [
+              "reached a counterexample state after 9 step(s)",
+              "explored 1835 reachable states"
+            ],
+            "repair_hints": [
+              "check lock acquisition order, channel capacity, and missing notify/join"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "e2449d9147670a33",
+        "contract_fingerprint": "69c95f42066670ca",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 8,
+          "max_frames_per_thread": 8,
+          "max_states": 20000,
+          "max_depth": 64,
+          "max_boundary_events": 256
+        },
+        "analysis_started": true
+      },
+      "note": null
+    },
+    {
+      "id": 6,
+      "parent": 1,
+      "depth": 2,
+      "total_edits": 2,
+      "program_fingerprint": "e6652875a8d5b49b",
+      "incoming": {
+        "module": "main",
+        "function": "t3",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+          }
+        ],
+        "original_function_hash": "d6cd3281c94a6e61",
+        "parent_fingerprint": "9785a4cd66c7069b",
+        "program_fingerprint": "e6652875a8d5b49b"
+      },
+      "report": {
+        "outcome": "PASS",
+        "complete": true,
+        "states_explored": 1683,
+        "transitions_explored": 5004,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "PASS",
+            "detail": "no deadlock state reachable"
+          },
+          {
+            "id": "preserved: t1 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: t2 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: t3 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f3)"
+          },
+          {
+            "id": "preserved: t4 completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f4)"
+          }
+        ],
+        "diagnostics": [],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "e6652875a8d5b49b",
+        "contract_fingerprint": "69c95f42066670ca",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 8,
+          "max_frames_per_thread": 8,
+          "max_states": 20000,
+          "max_depth": 64,
+          "max_boundary_events": 256
+        },
+        "analysis_started": true
+      },
+      "note": "accepted"
+    }
+  ],
+  "attempts": [
+    {
+      "id": 0,
+      "parent": 0,
+      "patch": {
+        "id": "lockorder:main:t1:s1-s2",
+        "module": "main",
+        "function": "t1",
+        "original_hash": "46b3c1dc641b149b",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+          }
+        ]
+      },
+      "result": "verified",
+      "reused_node": null,
+      "program_fingerprint": "9785a4cd66c7069b",
+      "outcome": "FAIL",
+      "reason": null
+    },
+    {
+      "id": 1,
+      "parent": 0,
+      "patch": {
+        "id": "lockorder:main:t2:s1-s2",
+        "module": "main",
+        "function": "t2",
+        "original_hash": "1ce2e11f961c57c0",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+          }
+        ]
+      },
+      "result": "verified",
+      "reused_node": null,
+      "program_fingerprint": "5ae147f55b22a6a7",
+      "outcome": "FAIL",
+      "reason": null
+    },
+    {
+      "id": 2,
+      "parent": 0,
+      "patch": {
+        "id": "lockorder:main:t3:s1-s2",
+        "module": "main",
+        "function": "t3",
+        "original_hash": "d6cd3281c94a6e61",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+          }
+        ]
+      },
+      "result": "verified",
+      "reused_node": null,
+      "program_fingerprint": "b5a63a66789af2df",
+      "outcome": "FAIL",
+      "reason": null
+    },
+    {
+      "id": 3,
+      "parent": 0,
+      "patch": {
+        "id": "lockorder:main:t4:s1-s2",
+        "module": "main",
+        "function": "t4",
+        "original_hash": "91d14fc9575a7b46",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+          }
+        ]
+      },
+      "result": "verified",
+      "reused_node": null,
+      "program_fingerprint": "7558a591582a0ad3",
+      "outcome": "FAIL",
+      "reason": null
+    },
+    {
+      "id": 4,
+      "parent": 1,
+      "patch": {
+        "id": "lockorder:main:t1:s2-s1",
+        "module": "main",
+        "function": "t1",
+        "original_hash": "c2e01d60c447e867",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s2",
+            "b": "s1"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+          }
+        ]
+      },
+      "result": "reused",
+      "reused_node": 0,
+      "program_fingerprint": "2bf77496302b10ff",
+      "outcome": "FAIL",
+      "reason": "equivalent candidate already verified"
+    },
+    {
+      "id": 5,
+      "parent": 1,
+      "patch": {
+        "id": "lockorder:main:t2:s1-s2",
+        "module": "main",
+        "function": "t2",
+        "original_hash": "1ce2e11f961c57c0",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+          }
+        ]
+      },
+      "result": "verified",
+      "reused_node": null,
+      "program_fingerprint": "e2449d9147670a33",
+      "outcome": "FAIL",
+      "reason": null
+    },
+    {
+      "id": 6,
+      "parent": 1,
+      "patch": {
+        "id": "lockorder:main:t3:s1-s2",
+        "module": "main",
+        "function": "t3",
+        "original_hash": "d6cd3281c94a6e61",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+          }
+        ]
+      },
+      "result": "verified",
+      "reused_node": null,
+      "program_fingerprint": "e6652875a8d5b49b",
+      "outcome": "PASS",
+      "reason": null
+    }
+  ],
+  "patch_chain": [
+    {
+      "module": "main",
+      "function": "t1",
+      "changes": [
+        {
+          "kind": "swap_statements",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "provenance": [
+        {
+          "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+        }
+      ],
+      "original_function_hash": "46b3c1dc641b149b",
+      "parent_fingerprint": "2bf77496302b10ff",
+      "program_fingerprint": "9785a4cd66c7069b"
+    },
+    {
+      "module": "main",
+      "function": "t3",
+      "changes": [
+        {
+          "kind": "swap_statements",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "provenance": [
+        {
+          "description": "heuristic: swap an adjacent pair of mutex acquisitions"
+        }
+      ],
+      "original_function_hash": "d6cd3281c94a6e61",
+      "parent_fingerprint": "9785a4cd66c7069b",
+      "program_fingerprint": "e6652875a8d5b49b"
+    }
+  ],
+  "accepted_node": 6,
+  "accepted_program": {
+    "program": "two_cycles",
+    "version": "3.5.0",
+    "modules": [
+      {
+        "name": "main",
+        "provides": {
+          "resources": [
+            "a",
+            "b",
+            "c",
+            "d"
+          ],
+          "functions": [
+            "main",
+            "t1",
+            "t2",
+            "t3",
+            "t4"
+          ],
+          "types": []
+        },
+        "requires": {
+          "resources": [],
+          "functions": [],
+          "types": []
+        },
+        "resources": [
+          {
+            "name": "a",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "b",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "c",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "d",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          }
+        ],
+        "protection": [],
+        "functions": [
+          {
+            "name": "main",
+            "kind": "normal",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "scope",
+                "funcs": [
+                  "t1",
+                  "t2",
+                  "t3",
+                  "t4"
+                ]
+              },
+              {
+                "sid": "s2",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "t1",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "b"
+              },
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "a"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "b"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "a"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "t2",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "b"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "a"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "a"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "b"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "t3",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "d"
+              },
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "c"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "d"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "c"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "t4",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "d"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "c"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "c"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "d"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "entry": "main::main"
+  },
+  "accepted_report": {
+    "outcome": "PASS",
+    "complete": true,
+    "states_explored": 1683,
+    "transitions_explored": 5004,
+    "properties": [
+      {
+        "id": "no-deadlock",
+        "outcome": "PASS",
+        "detail": "no deadlock state reachable"
+      },
+      {
+        "id": "preserved: t1 completes",
+        "outcome": "PASS",
+        "detail": "preserved reachability: completed(f1)"
+      },
+      {
+        "id": "preserved: t2 completes",
+        "outcome": "PASS",
+        "detail": "preserved reachability: completed(f2)"
+      },
+      {
+        "id": "preserved: t3 completes",
+        "outcome": "PASS",
+        "detail": "preserved reachability: completed(f3)"
+      },
+      {
+        "id": "preserved: t4 completes",
+        "outcome": "PASS",
+        "detail": "preserved reachability: completed(f4)"
+      }
+    ],
+    "diagnostics": [],
+    "boundary_events": [],
+    "unsupported": [],
+    "invalid": [],
+    "model_fingerprint": "e6652875a8d5b49b",
+    "contract_fingerprint": "69c95f42066670ca",
+    "assumptions": {
+      "sequential_consistency": true,
+      "no_spurious_wakeups": true
+    },
+    "bounds": {
+      "max_threads": 8,
+      "max_frames_per_thread": 8,
+      "max_states": 20000,
+      "max_depth": 64,
+      "max_boundary_events": 256
+    },
+    "analysis_started": true
+  },
+  "outcome": "repaired",
+  "stop_reason": "solved",
+  "saw_unknown": false,
+  "truncation": null,
+  "counts": {
+    "proposals": 7,
+    "unique_candidate_programs": 7,
+    "verification_calls": 7,
+    "cache_hits": 1,
+    "states_explored": 13445,
+    "nodes": 7
+  },
+  "reproduce": "concir-backend repair <program.json> <contract.json> --strategy b   # candidate_budget=64 verification_budget=64 max_depth=4 max_total_edits=4 bounds=AnalysisBounds { max_threads: 8, max_frames_per_thread: 8, max_states: 20000, max_depth: 64, max_boundary_events: 256 }"
+}

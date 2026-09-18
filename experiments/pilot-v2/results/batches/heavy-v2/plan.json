@@ -1,0 +1,131 @@
+[
+  {
+    "stage": "repair",
+    "suite": "heavy",
+    "case": "p3_same",
+    "family": "three_defects",
+    "params": {
+      "defect_units": 3,
+      "interference_pairs": 0,
+      "cross": "none",
+      "order": "base"
+    },
+    "model": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p3_same.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p3_same_contract.json",
+    "config_name": "heavy",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "a",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p3_same.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p3_same_contract.json",
+      "model_sha256": "e86db9fb3d1d1761989a4dc029632fa946aa82aaf95da8914df7c353db8a700c",
+      "model_norm_sha256": "304f9d833383d6575fc4a52063136479f9ba50dfbb797b92c0a5694ed0747900",
+      "contract_sha256": "6737432d7dd1f44894db66dff93ae36a8a066f4125797847a11ac194812f723c",
+      "contract_norm_sha256": "c5a6f3a756fed269fa89adfd9b75a2f21c0b1380eb3a8d1b33682025ee9171f7",
+      "contract_bounds": {
+        "max_threads": 16,
+        "max_frames_per_thread": 16,
+        "max_states": 200000,
+        "max_depth": 128,
+        "max_boundary_events": 512
+      }
+    },
+    "batch_id": "heavy-v2",
+    "search_timeout": 150.0,
+    "replay_timeout": 180.0,
+    "run_key": "d730341ad9e9bb0e78f1152a",
+    "run_fingerprint": "cf7654f7ea83e79490cc13e826ea073bec8c7f3463717f6e7ea4483fa81f5998"
+  },
+  {
+    "stage": "repair",
+    "suite": "heavy",
+    "case": "p3_same",
+    "family": "three_defects",
+    "params": {
+      "defect_units": 3,
+      "interference_pairs": 0,
+      "cross": "none",
+      "order": "base"
+    },
+    "model": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p3_same.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p3_same_contract.json",
+    "config_name": "heavy",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "b",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p3_same.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p3_same_contract.json",
+      "model_sha256": "e86db9fb3d1d1761989a4dc029632fa946aa82aaf95da8914df7c353db8a700c",
+      "model_norm_sha256": "304f9d833383d6575fc4a52063136479f9ba50dfbb797b92c0a5694ed0747900",
+      "contract_sha256": "6737432d7dd1f44894db66dff93ae36a8a066f4125797847a11ac194812f723c",
+      "contract_norm_sha256": "c5a6f3a756fed269fa89adfd9b75a2f21c0b1380eb3a8d1b33682025ee9171f7",
+      "contract_bounds": {
+        "max_threads": 16,
+        "max_frames_per_thread": 16,
+        "max_states": 200000,
+        "max_depth": 128,
+        "max_boundary_events": 512
+      }
+    },
+    "batch_id": "heavy-v2",
+    "search_timeout": 150.0,
+    "replay_timeout": 180.0,
+    "run_key": "0beeb7217f9b63e3f9f76f6c",
+    "run_fingerprint": "ba660fece09529321d5ba4f14f13657dfd643be9b7d2e2a701e4aade4a4b8d2f"
+  },
+  {
+    "stage": "repair",
+    "suite": "heavy",
+    "case": "p3_same",
+    "family": "three_defects",
+    "params": {
+      "defect_units": 3,
+      "interference_pairs": 0,
+      "cross": "none",
+      "order": "base"
+    },
+    "model": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p3_same.json",
+    "contract": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p3_same_contract.json",
+    "config_name": "heavy",
+    "config": {
+      "candidate_budget": 64,
+      "verification_budget": 64,
+      "max_depth": 4,
+      "max_total_edits": 4
+    },
+    "strategy": "c",
+    "repeat": 1,
+    "identity": {
+      "model_path": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p3_same.json",
+      "contract_path": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p3_same_contract.json",
+      "model_sha256": "e86db9fb3d1d1761989a4dc029632fa946aa82aaf95da8914df7c353db8a700c",
+      "model_norm_sha256": "304f9d833383d6575fc4a52063136479f9ba50dfbb797b92c0a5694ed0747900",
+      "contract_sha256": "6737432d7dd1f44894db66dff93ae36a8a066f4125797847a11ac194812f723c",
+      "contract_norm_sha256": "c5a6f3a756fed269fa89adfd9b75a2f21c0b1380eb3a8d1b33682025ee9171f7",
+      "contract_bounds": {
+        "max_threads": 16,
+        "max_frames_per_thread": 16,
+        "max_states": 200000,
+        "max_depth": 128,
+        "max_boundary_events": 512
+      }
+    },
+    "batch_id": "heavy-v2",
+    "search_timeout": 150.0,
+    "replay_timeout": 180.0,
+    "run_key": "cc0036bdf850e948b21106c0",
+    "run_fingerprint": "b7dd253499f9018874c4e11030f75c88b41cb4e6930eb86f0aebdadb558e0ffc"
+  }
+]

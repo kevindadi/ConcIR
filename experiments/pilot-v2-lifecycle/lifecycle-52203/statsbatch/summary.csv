@@ -1,0 +1,5 @@
+stage,suite,case,family,config_name,strategy,repeat,raw_outcome,final_classification,evidence_status,stop_reason,truncation,saw_unknown,root_outcome,report_complete,proposals,unique_programs,verification_calls,cache_hits,states_explored,transitions_explored,nodes,patch_len,accepted_chain_len,exit_code,wall_ms,wall_ms_basis,search_wall_ms,replay_exit,replay_wall_ms,replay_ok,artifact_sha256,artifact_path,attempt_id,reused_from
+repair,pilot,p1_same,,main,a,1,repaired,repaired,complete,solved,,,FAIL,,,,2,,10,,,1,,0,2,,1,0,,True,x,/nonexistent,,
+repair,pilot,p1_same,,main,b,1,repaired,repaired,complete,solved,,,FAIL,,,,2,,10,,,1,,0,2,,1,0,,True,x,/nonexistent,,
+repair,pilot,p1_same,,main,b,1,repaired,repaired,complete,solved,,,FAIL,,,,2,,10,,,1,,0,2,,1,0,,True,x,/nonexistent,,
+repair,pilot,p1_same,,main,c,1,repaired,repaired,complete,solved,,,FAIL,,,,2,,10,,,1,,0,2,,1,0,,True,x,/nonexistent,,

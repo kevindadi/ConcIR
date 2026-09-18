@@ -1,0 +1,4 @@
+stage,suite,case,family,config_name,strategy,repeat,raw_outcome,final_classification,evidence_status,stop_reason,truncation,saw_unknown,root_outcome,report_complete,proposals,unique_programs,verification_calls,cache_hits,states_explored,transitions_explored,nodes,patch_len,accepted_chain_len,exit_code,wall_ms,wall_ms_basis,search_wall_ms,replay_exit,replay_wall_ms,end_to_end_wall_ms,cumulative_attempt_wall_ms,replay_ok,artifact_sha256,artifact_path,attempt_id,reused_from
+explore,matrix,dashmap-369-buggy,real_root,buggy,,1,UNSUPPORTED,UNSUPPORTED,complete,,,,,False,,,,,0,0,,,,5,2,search,2,,,,2,,,,20260918T071618004120-98361-3,
+explore,matrix,rmw-zenoh-998-buggy,real_root,buggy,,1,FAIL,FAIL,complete,,,,,True,,,,,49,72,,,,1,4,search,4,,,,4,,,,20260918T071617994183-98361-1,
+explore,matrix,rmw-zenoh-998-fixed,real_root,fixed,,1,PASS,PASS,complete,,,,,True,,,,,39,56,,,,0,3,search,3,,,,3,,,,20260918T071617999865-98361-2,

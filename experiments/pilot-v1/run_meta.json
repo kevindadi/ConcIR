@@ -1,0 +1,17 @@
+{
+  "binary": "/Users/kevin/local-repos/ConcIR/target/release/concir-backend",
+  "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+  "source_id": "e8480c4a54840e68d7cf3a62c5075e4fc02e6966+dirty:e3b0c44298fc",
+  "suites": [
+    "smoke",
+    "pilot"
+  ],
+  "planned": 228,
+  "executed": 228,
+  "reused": 0,
+  "resume_mismatches": 0,
+  "not_executed": [],
+  "timeout_s": 30.0,
+  "total_budget_s": 600.0,
+  "results_path": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v1/results.jsonl"
+}

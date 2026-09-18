@@ -1,0 +1,360 @@
+{
+  "outcome": "FAIL",
+  "complete": true,
+  "states_explored": 103825,
+  "transitions_explored": 463892,
+  "properties": [
+    {
+      "id": "no-deadlock",
+      "outcome": "FAIL",
+      "detail": "a reachable state has no enabled step and unfinished threads"
+    },
+    {
+      "id": "preserved: main::u1ab completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f1)"
+    },
+    {
+      "id": "preserved: main::u1ba completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f2)"
+    },
+    {
+      "id": "preserved: main::u2ab completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f3)"
+    },
+    {
+      "id": "preserved: main::u2ba completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f4)"
+    },
+    {
+      "id": "preserved: main::u3ab completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f5)"
+    },
+    {
+      "id": "preserved: main::u3ba completes",
+      "outcome": "PASS",
+      "detail": "preserved reachability: completed(f6)"
+    }
+  ],
+  "diagnostics": [
+    {
+      "property": "no-deadlock",
+      "outcome": "FAIL",
+      "message": "reachable global deadlock",
+      "complete": true,
+      "counterexample": [
+        {
+          "origin": {
+            "module": 0,
+            "function": 0,
+            "sid": 0,
+            "phase": "statement"
+          },
+          "thread": 0,
+          "frame": 0
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 1,
+            "sid": 0,
+            "phase": "statement"
+          },
+          "thread": 1,
+          "frame": 1
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 2,
+            "sid": 0,
+            "phase": "statement"
+          },
+          "thread": 2,
+          "frame": 2
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 1,
+            "sid": 1,
+            "phase": "statement"
+          },
+          "thread": 1,
+          "frame": 1
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 2,
+            "sid": 1,
+            "phase": "statement"
+          },
+          "thread": 2,
+          "frame": 2
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 3,
+            "sid": 0,
+            "phase": "statement"
+          },
+          "thread": 3,
+          "frame": 3
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 4,
+            "sid": 0,
+            "phase": "statement"
+          },
+          "thread": 4,
+          "frame": 4
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 3,
+            "sid": 1,
+            "phase": "statement"
+          },
+          "thread": 3,
+          "frame": 3
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 4,
+            "sid": 1,
+            "phase": "statement"
+          },
+          "thread": 4,
+          "frame": 4
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 5,
+            "sid": 0,
+            "phase": "statement"
+          },
+          "thread": 5,
+          "frame": 5
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 6,
+            "sid": 0,
+            "phase": "statement"
+          },
+          "thread": 6,
+          "frame": 6
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 5,
+            "sid": 1,
+            "phase": "statement"
+          },
+          "thread": 5,
+          "frame": 5
+        },
+        {
+          "origin": {
+            "module": 0,
+            "function": 6,
+            "sid": 1,
+            "phase": "statement"
+          },
+          "thread": 6,
+          "frame": 6
+        }
+      ],
+      "final_instances": [
+        {
+          "thread": 0,
+          "frame": 0,
+          "function": 0,
+          "sid": 0,
+          "status": "running"
+        },
+        {
+          "thread": 1,
+          "frame": 1,
+          "function": 1,
+          "sid": 1,
+          "status": "running"
+        },
+        {
+          "thread": 2,
+          "frame": 2,
+          "function": 2,
+          "sid": 1,
+          "status": "running"
+        },
+        {
+          "thread": 3,
+          "frame": 3,
+          "function": 3,
+          "sid": 1,
+          "status": "running"
+        },
+        {
+          "thread": 4,
+          "frame": 4,
+          "function": 4,
+          "sid": 1,
+          "status": "running"
+        },
+        {
+          "thread": 5,
+          "frame": 5,
+          "function": 5,
+          "sid": 1,
+          "status": "running"
+        },
+        {
+          "thread": 6,
+          "frame": 6,
+          "function": 6,
+          "sid": 1,
+          "status": "running"
+        }
+      ],
+      "blocked": [
+        {
+          "thread": 0,
+          "kind": "scope",
+          "resource": null,
+          "resource_name": null,
+          "holder": null,
+          "waiting": 0,
+          "detail": "waiting for scope members"
+        },
+        {
+          "thread": 1,
+          "kind": "lock",
+          "resource": 1,
+          "resource_name": "main::b",
+          "holder": 2,
+          "waiting": 1,
+          "detail": "waiting for a lock"
+        },
+        {
+          "thread": 2,
+          "kind": "lock",
+          "resource": 0,
+          "resource_name": "main::a",
+          "holder": 1,
+          "waiting": 1,
+          "detail": "waiting for a lock"
+        },
+        {
+          "thread": 3,
+          "kind": "lock",
+          "resource": 3,
+          "resource_name": "main::d",
+          "holder": 4,
+          "waiting": 1,
+          "detail": "waiting for a lock"
+        },
+        {
+          "thread": 4,
+          "kind": "lock",
+          "resource": 2,
+          "resource_name": "main::c",
+          "holder": 3,
+          "waiting": 1,
+          "detail": "waiting for a lock"
+        },
+        {
+          "thread": 5,
+          "kind": "lock",
+          "resource": 5,
+          "resource_name": "main::f",
+          "holder": 6,
+          "waiting": 1,
+          "detail": "waiting for a lock"
+        },
+        {
+          "thread": 6,
+          "kind": "lock",
+          "resource": 4,
+          "resource_name": "main::e",
+          "holder": 5,
+          "waiting": 1,
+          "detail": "waiting for a lock"
+        }
+      ],
+      "cir_statements": [
+        {
+          "module": "main",
+          "function": "main",
+          "sid": "s1"
+        },
+        {
+          "module": "main",
+          "function": "u1ab",
+          "sid": "s2"
+        },
+        {
+          "module": "main",
+          "function": "u1ba",
+          "sid": "s2"
+        },
+        {
+          "module": "main",
+          "function": "u2ab",
+          "sid": "s2"
+        },
+        {
+          "module": "main",
+          "function": "u2ba",
+          "sid": "s2"
+        },
+        {
+          "module": "main",
+          "function": "u3ab",
+          "sid": "s2"
+        },
+        {
+          "module": "main",
+          "function": "u3ba",
+          "sid": "s2"
+        }
+      ],
+      "proven_facts": [
+        "reached a counterexample state after 13 step(s)",
+        "explored 103825 reachable states"
+      ],
+      "repair_hints": [
+        "check lock acquisition order, channel capacity, and missing notify/join"
+      ]
+    }
+  ],
+  "boundary_events": [],
+  "unsupported": [],
+  "invalid": [],
+  "model_fingerprint": "0758e5f1fb57eda8",
+  "contract_fingerprint": "32b03f8fc24b44a5",
+  "assumptions": {
+    "sequential_consistency": true,
+    "no_spurious_wakeups": true
+  },
+  "bounds": {
+    "max_threads": 16,
+    "max_frames_per_thread": 16,
+    "max_states": 200000,
+    "max_depth": 128,
+    "max_boundary_events": 512
+  },
+  "analysis_started": true
+}

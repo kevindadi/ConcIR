@@ -1,0 +1,8 @@
+{
+  "nodes": 4,
+  "input_outcome": "FAIL",
+  "accepted_ok": null,
+  "accepted_node": null,
+  "chain_len": 0,
+  "outcome": "no_acceptable_candidate"
+}

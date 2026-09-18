@@ -1,0 +1,8 @@
+{
+  "nodes": 1,
+  "input_outcome": "PASS",
+  "accepted_ok": null,
+  "accepted_node": null,
+  "chain_len": 0,
+  "outcome": "already_satisfied"
+}

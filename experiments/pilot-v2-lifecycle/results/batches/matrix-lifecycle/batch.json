@@ -1,0 +1,59 @@
+{
+  "batch_id": "matrix-lifecycle",
+  "cohort": {
+    "manifest_sha256": "1ee30b03805d7d3f4beebb2a38d3429411c6ae163b1ea51dd984d5be4d7020df",
+    "manifest_path_identity": "experiments/pilot-v2/manifest.json",
+    "generator_sha256": "e70b688f1e89deb85cf62c965ea6501c2254e3ee5d16de90793afc8ab273e2da",
+    "code_fingerprint": "9a6eb384a5e744c0ea86d66101d7c841c99350d7d80c2b4d5dd7ee4de66c9fd6",
+    "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+    "tool_sha256": "f16f43f59f292619a405ba92ce681e8905ea6c1297d60fa50a13882025cf566d",
+    "search_timeout": 60.0,
+    "replay_timeout": 30.0,
+    "suites": [
+      "matrix"
+    ],
+    "plan_run_keys": [
+      "1d37bc75f507dddd4f04bf8d",
+      "22559976d536ab8a8296cf73",
+      "2856498c7180b8abc34c1f05",
+      "30c2e6d36e96d6cc403114f9",
+      "336f0d9064daec03225c6fbe",
+      "376d53c7aee0b92c3480fdb6",
+      "6f64b5fd3ab9f27016c4385f",
+      "7a20e9e63707dcccca73a146",
+      "ae62ab1bf4a81be01a40295b",
+      "b41ea4f5d809638253fef3bd",
+      "dce4fd1342f6bdadfcb0216b",
+      "e6b602bf85a63f890eb14643"
+    ],
+    "plan_run_fingerprints": [
+      "0fa12fbb33764f36c48e85f718cdaa16a85e4b74d1d440673dc79e6b97e301b3",
+      "2317175a5dc2bfc5afb5f815c76c6a070d65dc6df9a2e595f9d2b29057d439ca",
+      "2399e9abc8ba03b5b498cc5f8189de42aaaf2d632e8813caaf69ec66c2c2c961",
+      "49a74467c33ad506684e027ad07b04bbe8d92d9f3009510c251815ae5f31b518",
+      "5781c9d63a55938754cd0bcd654501b54ba890362dfd4916a060e9c6477f27f0",
+      "62cb96b0b6abd3f020d2e31bfe13ea6c79cdb6914464175733fb6935556ca65c",
+      "797ffb7bd5f64a61b7c52029a320670cf012bcb431b35b5599001f5a64c7c66f",
+      "7f3bd4a864dafae63772766f5fb36f5e52b8018a58c9b13f0ad09c05a2f24163",
+      "d207e5a0404825eb270324e9db9b31267f510eb7ac8ed6bc5bee0384071b0fc6",
+      "eaabc736f3dede4d81ec990076ca65d6c87f75b3e3c06013d85d63016d2443dc",
+      "feff95528283410fb5a095f5f0531a8f2acede5928ed2160b53bd841c4ab0090",
+      "ffbe441a78a20626e76fe2233b4876c6696471f0a2b56d1ff798122c28046997"
+    ]
+  },
+  "cohort_fingerprint": "008e2d171fc34e23a20b0bc52b29f9264e5fb7e45391b2af7fce1ab8b30f8350",
+  "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+  "code_fingerprint": "9a6eb384a5e744c0ea86d66101d7c841c99350d7d80c2b4d5dd7ee4de66c9fd6",
+  "manifest": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/manifest.json",
+  "suites": [
+    "matrix"
+  ],
+  "planned": 12,
+  "total_budget_s": 300.0,
+  "search_timeout_s": 60.0,
+  "replay_timeout_s": 30.0,
+  "env_collection_ms": 68,
+  "env_outside_budget": true,
+  "results_dir": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2-lifecycle/results/batches/matrix-lifecycle",
+  "total_budget_rule": "per-invocation recovery quota; not part of cohort identity"
+}

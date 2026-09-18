@@ -1,0 +1,20 @@
+{
+  "id": "rmw-zenoh-998",
+  "source_kind": "upstream issue with gdb proof",
+  "language": "C++ (ROS 2 rmw_zenoh); the synchronized primitives are std::mutex",
+  "repository": "https://github.com/ros2/rmw_zenoh",
+  "issue": "https://github.com/ros2/rmw_zenoh/issues/998",
+  "buggy_ref": "rolling @ e95c62d (reported against v0.11.0; package 0.2.9-1noble)",
+  "buggy_lines": [
+    "rmw_zenoh.cpp:2240 unique_lock(condition_mutex)",
+    "rmw_zenoh.cpp:2157 -> rmw_subscription_data.cpp:916 lock(mutex_)",
+    "rmw_subscription_data.cpp:1114 lock(mutex_)",
+    "detail/event.cpp:263 lock(condition_mutex)"
+  ],
+  "fixed_ref": null,
+  "fixed_note": "Issue closed 2026 with no linked PR/commit exposed in the issue; the stated fix direction is to release subscription mutex_ before acquiring the wait set condition_mutex.",
+  "license": "Apache-2.0",
+  "snippet_path": "sources/rmw-zenoh-998.md",
+  "retrieved_utc": "2026-09-18",
+  "snippet_sha256": "664051ca98670e66ac78c4bac9899e0aac8912348fafc503a4290089af37b71e"
+}

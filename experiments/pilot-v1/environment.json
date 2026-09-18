@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-09-18T03:08:06.899488+00:00",
+  "git": {
+    "commit": "e8480c4a54840e68d7cf3a62c5075e4fc02e6966",
+    "dirty": true,
+    "status_porcelain": "?? experiments/\n?? scripts/",
+    "diff_sha256": "",
+    "staged_diff_sha256": "",
+    "source_id": "e8480c4a54840e68d7cf3a62c5075e4fc02e6966+dirty:e3b0c44298fc"
+  },
+  "binary_path": "/Users/kevin/local-repos/ConcIR/target/release/concir-backend",
+  "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+  "rustc": "rustc 1.100.0-nightly (a69a63265 2026-09-03)",
+  "cargo": "cargo 1.100.0-nightly (b2e9d5f9d 2026-09-02)",
+  "python": "3.14.0",
+  "uname": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "processor": "arm",
+  "cpu_count": 12
+}

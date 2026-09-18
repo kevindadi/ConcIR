@@ -1,0 +1,2192 @@
+{
+  "schema_version": "concir-repair-artifact-v1",
+  "source": {
+    "crate_version": "0.1.0",
+    "binary_fingerprint": "763382a6a366685a"
+  },
+  "input_program": {
+    "program": "pilot",
+    "version": "3.5.0",
+    "modules": [
+      {
+        "name": "main",
+        "provides": {
+          "resources": [
+            "a",
+            "b"
+          ],
+          "functions": [
+            "main",
+            "u1ab",
+            "u1ba"
+          ],
+          "types": []
+        },
+        "requires": {
+          "resources": [],
+          "functions": [
+            "other::u2ab",
+            "other::u2ba",
+            "other::u3ab",
+            "other::u3ba"
+          ],
+          "types": []
+        },
+        "resources": [
+          {
+            "name": "a",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "b",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          }
+        ],
+        "protection": [],
+        "functions": [
+          {
+            "name": "main",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "scope",
+                "funcs": [
+                  "u1ab",
+                  "u1ba",
+                  "other::u2ab",
+                  "other::u2ba",
+                  "other::u3ab",
+                  "other::u3ba"
+                ]
+              },
+              {
+                "sid": "s2",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "u1ab",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "a"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "b"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "b"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "a"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "u1ba",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "b"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "a"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "a"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "b"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "other",
+        "provides": {
+          "resources": [
+            "c",
+            "d",
+            "e",
+            "f"
+          ],
+          "functions": [
+            "u2ab",
+            "u2ba",
+            "u3ab",
+            "u3ba"
+          ],
+          "types": []
+        },
+        "requires": {
+          "resources": [],
+          "functions": [],
+          "types": []
+        },
+        "resources": [
+          {
+            "name": "c",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "d",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "e",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          },
+          {
+            "name": "f",
+            "kind": "sync",
+            "type": "Mutex",
+            "mode": "Sync"
+          }
+        ],
+        "protection": [],
+        "functions": [
+          {
+            "name": "u2ab",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "c"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "d"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "d"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "c"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "u2ba",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "d"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "c"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "c"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "d"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "u3ab",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "e"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "f"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "f"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "e"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          },
+          {
+            "name": "u3ba",
+            "kind": "normal",
+            "form": "closure",
+            "body": [
+              {
+                "sid": "s1",
+                "kind": "mutex_lock",
+                "resource": "f"
+              },
+              {
+                "sid": "s2",
+                "kind": "mutex_lock",
+                "resource": "e"
+              },
+              {
+                "sid": "s3",
+                "kind": "mutex_unlock",
+                "resource": "e"
+              },
+              {
+                "sid": "s4",
+                "kind": "mutex_unlock",
+                "resource": "f"
+              },
+              {
+                "sid": "s5",
+                "kind": "return"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "entry": "main::main"
+  },
+  "frozen_contract": {
+    "name": "p3_cross_independent",
+    "properties": [
+      {
+        "kind": "deadlock_free",
+        "id": "no-deadlock"
+      }
+    ],
+    "preserved": [
+      {
+        "kind": "reachable",
+        "description": "main::u1ab completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "main::u1ab"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "main::u1ba completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "main::u1ba"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "other::u2ab completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "other::u2ab"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "other::u2ba completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "other::u2ba"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "other::u3ab completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "other::u3ab"
+        }
+      },
+      {
+        "kind": "reachable",
+        "description": "other::u3ba completes",
+        "goal": {
+          "kind": "function_completed",
+          "function": "other::u3ba"
+        }
+      }
+    ],
+    "assumptions": {
+      "sequential_consistency": true,
+      "no_spurious_wakeups": true
+    },
+    "bounds": {
+      "max_threads": 16,
+      "max_frames_per_thread": 16,
+      "max_states": 200000,
+      "max_depth": 128,
+      "max_boundary_events": 512
+    },
+    "allowed_scope": {
+      "functions": [],
+      "modules": [],
+      "allow_lock_reorder": true,
+      "allow_statement_delete": false
+    }
+  },
+  "effective_config": {
+    "strategy": "single",
+    "candidate_budget": 8,
+    "verification_budget": 4,
+    "max_depth": 1,
+    "max_total_edits": 1,
+    "bounds": {
+      "max_threads": 16,
+      "max_frames_per_thread": 16,
+      "max_states": 200000,
+      "max_depth": 128,
+      "max_boundary_events": 512
+    }
+  },
+  "nodes": [
+    {
+      "id": 0,
+      "parent": null,
+      "depth": 0,
+      "total_edits": 0,
+      "program_fingerprint": "b3e1d4a5f51a3c0a",
+      "incoming": null,
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 103825,
+        "transitions_explored": 463892,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "FAIL",
+            "detail": "a reachable state has no enabled step and unfinished threads"
+          },
+          {
+            "id": "preserved: main::u1ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: main::u1ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: other::u2ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f3)"
+          },
+          {
+            "id": "preserved: other::u2ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f4)"
+          },
+          {
+            "id": "preserved: other::u3ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f5)"
+          },
+          {
+            "id": "preserved: other::u3ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f6)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "no-deadlock",
+            "outcome": "FAIL",
+            "message": "reachable global deadlock",
+            "complete": true,
+            "counterexample": [
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 0,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 0,
+                "frame": 0
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 3,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 4,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 3,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 4,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 5,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 5,
+                "frame": 5
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 6,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 6,
+                "frame": 6
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 5,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 5,
+                "frame": 5
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 6,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 6,
+                "frame": 6
+              }
+            ],
+            "final_instances": [
+              {
+                "thread": 0,
+                "frame": 0,
+                "function": 0,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 1,
+                "frame": 1,
+                "function": 1,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 2,
+                "frame": 2,
+                "function": 2,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 3,
+                "frame": 3,
+                "function": 3,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 4,
+                "frame": 4,
+                "function": 4,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 5,
+                "frame": 5,
+                "function": 5,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 6,
+                "frame": 6,
+                "function": 6,
+                "sid": 1,
+                "status": "running"
+              }
+            ],
+            "blocked": [
+              {
+                "thread": 0,
+                "kind": "scope",
+                "resource": null,
+                "resource_name": null,
+                "holder": null,
+                "waiting": 0,
+                "detail": "waiting for scope members"
+              },
+              {
+                "thread": 1,
+                "kind": "lock",
+                "resource": 1,
+                "resource_name": "main::b",
+                "holder": 2,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 2,
+                "kind": "lock",
+                "resource": 0,
+                "resource_name": "main::a",
+                "holder": 1,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 3,
+                "kind": "lock",
+                "resource": 3,
+                "resource_name": "other::d",
+                "holder": 4,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 4,
+                "kind": "lock",
+                "resource": 2,
+                "resource_name": "other::c",
+                "holder": 3,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 5,
+                "kind": "lock",
+                "resource": 5,
+                "resource_name": "other::f",
+                "holder": 6,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 6,
+                "kind": "lock",
+                "resource": 4,
+                "resource_name": "other::e",
+                "holder": 5,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              }
+            ],
+            "cir_statements": [
+              {
+                "module": "main",
+                "function": "main",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "u1ab",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "u1ba",
+                "sid": "s2"
+              },
+              {
+                "module": "other",
+                "function": "u2ab",
+                "sid": "s2"
+              },
+              {
+                "module": "other",
+                "function": "u2ba",
+                "sid": "s2"
+              },
+              {
+                "module": "other",
+                "function": "u3ab",
+                "sid": "s2"
+              },
+              {
+                "module": "other",
+                "function": "u3ba",
+                "sid": "s2"
+              }
+            ],
+            "proven_facts": [
+              "reached a counterexample state after 13 step(s)",
+              "explored 103825 reachable states"
+            ],
+            "repair_hints": [
+              "check lock acquisition order, channel capacity, and missing notify/join"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "b3e1d4a5f51a3c0a",
+        "contract_fingerprint": "054c5b9e4b7edb3f",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 16,
+          "max_frames_per_thread": 16,
+          "max_states": 200000,
+          "max_depth": 128,
+          "max_boundary_events": 512
+        },
+        "analysis_started": true
+      },
+      "note": null
+    },
+    {
+      "id": 1,
+      "parent": 0,
+      "depth": 1,
+      "total_edits": 1,
+      "program_fingerprint": "8d2edc3aae4dd8a6",
+      "incoming": {
+        "module": "main",
+        "function": "u1ab",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "unify lock acquisition order for adjacent mutex locks"
+          }
+        ],
+        "original_function_hash": "317c6037f3ac90cd",
+        "parent_fingerprint": "b3e1d4a5f51a3c0a",
+        "program_fingerprint": "8d2edc3aae4dd8a6"
+      },
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 90571,
+        "transitions_explored": 404531,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "FAIL",
+            "detail": "a reachable state has no enabled step and unfinished threads"
+          },
+          {
+            "id": "preserved: main::u1ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: main::u1ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: other::u2ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f3)"
+          },
+          {
+            "id": "preserved: other::u2ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f4)"
+          },
+          {
+            "id": "preserved: other::u3ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f5)"
+          },
+          {
+            "id": "preserved: other::u3ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f6)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "no-deadlock",
+            "outcome": "FAIL",
+            "message": "reachable global deadlock",
+            "complete": true,
+            "counterexample": [
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 0,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 0,
+                "frame": 0
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 3,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 4,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 3,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 4,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 5,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 5,
+                "frame": 5
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 6,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 6,
+                "frame": 6
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 5,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 5,
+                "frame": 5
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 6,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 6,
+                "frame": 6
+              }
+            ],
+            "final_instances": [
+              {
+                "thread": 0,
+                "frame": 0,
+                "function": 0,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 1,
+                "frame": null,
+                "function": 1,
+                "sid": null,
+                "status": "finished"
+              },
+              {
+                "thread": 2,
+                "frame": null,
+                "function": 2,
+                "sid": null,
+                "status": "finished"
+              },
+              {
+                "thread": 3,
+                "frame": 3,
+                "function": 3,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 4,
+                "frame": 4,
+                "function": 4,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 5,
+                "frame": 5,
+                "function": 5,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 6,
+                "frame": 6,
+                "function": 6,
+                "sid": 1,
+                "status": "running"
+              }
+            ],
+            "blocked": [
+              {
+                "thread": 0,
+                "kind": "scope",
+                "resource": null,
+                "resource_name": null,
+                "holder": null,
+                "waiting": 0,
+                "detail": "waiting for scope members"
+              },
+              {
+                "thread": 3,
+                "kind": "lock",
+                "resource": 3,
+                "resource_name": "other::d",
+                "holder": 4,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 4,
+                "kind": "lock",
+                "resource": 2,
+                "resource_name": "other::c",
+                "holder": 3,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 5,
+                "kind": "lock",
+                "resource": 5,
+                "resource_name": "other::f",
+                "holder": 6,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 6,
+                "kind": "lock",
+                "resource": 4,
+                "resource_name": "other::e",
+                "holder": 5,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              }
+            ],
+            "cir_statements": [
+              {
+                "module": "main",
+                "function": "main",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "u1ab",
+                "sid": null
+              },
+              {
+                "module": "main",
+                "function": "u1ba",
+                "sid": null
+              },
+              {
+                "module": "other",
+                "function": "u2ab",
+                "sid": "s2"
+              },
+              {
+                "module": "other",
+                "function": "u2ba",
+                "sid": "s2"
+              },
+              {
+                "module": "other",
+                "function": "u3ab",
+                "sid": "s2"
+              },
+              {
+                "module": "other",
+                "function": "u3ba",
+                "sid": "s2"
+              }
+            ],
+            "proven_facts": [
+              "reached a counterexample state after 19 step(s)",
+              "explored 90571 reachable states"
+            ],
+            "repair_hints": [
+              "check lock acquisition order, channel capacity, and missing notify/join"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "8d2edc3aae4dd8a6",
+        "contract_fingerprint": "054c5b9e4b7edb3f",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 16,
+          "max_frames_per_thread": 16,
+          "max_states": 200000,
+          "max_depth": 128,
+          "max_boundary_events": 512
+        },
+        "analysis_started": true
+      },
+      "note": null
+    },
+    {
+      "id": 2,
+      "parent": 0,
+      "depth": 1,
+      "total_edits": 1,
+      "program_fingerprint": "6f98132c3883f122",
+      "incoming": {
+        "module": "main",
+        "function": "u1ba",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "unify lock acquisition order for adjacent mutex locks"
+          }
+        ],
+        "original_function_hash": "5a951e489212d31f",
+        "parent_fingerprint": "b3e1d4a5f51a3c0a",
+        "program_fingerprint": "6f98132c3883f122"
+      },
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 90571,
+        "transitions_explored": 404531,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "FAIL",
+            "detail": "a reachable state has no enabled step and unfinished threads"
+          },
+          {
+            "id": "preserved: main::u1ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: main::u1ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: other::u2ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f3)"
+          },
+          {
+            "id": "preserved: other::u2ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f4)"
+          },
+          {
+            "id": "preserved: other::u3ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f5)"
+          },
+          {
+            "id": "preserved: other::u3ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f6)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "no-deadlock",
+            "outcome": "FAIL",
+            "message": "reachable global deadlock",
+            "complete": true,
+            "counterexample": [
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 0,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 0,
+                "frame": 0
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 3,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 4,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 3,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 4,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 5,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 5,
+                "frame": 5
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 6,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 6,
+                "frame": 6
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 5,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 5,
+                "frame": 5
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 6,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 6,
+                "frame": 6
+              }
+            ],
+            "final_instances": [
+              {
+                "thread": 0,
+                "frame": 0,
+                "function": 0,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 1,
+                "frame": null,
+                "function": 1,
+                "sid": null,
+                "status": "finished"
+              },
+              {
+                "thread": 2,
+                "frame": null,
+                "function": 2,
+                "sid": null,
+                "status": "finished"
+              },
+              {
+                "thread": 3,
+                "frame": 3,
+                "function": 3,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 4,
+                "frame": 4,
+                "function": 4,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 5,
+                "frame": 5,
+                "function": 5,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 6,
+                "frame": 6,
+                "function": 6,
+                "sid": 1,
+                "status": "running"
+              }
+            ],
+            "blocked": [
+              {
+                "thread": 0,
+                "kind": "scope",
+                "resource": null,
+                "resource_name": null,
+                "holder": null,
+                "waiting": 0,
+                "detail": "waiting for scope members"
+              },
+              {
+                "thread": 3,
+                "kind": "lock",
+                "resource": 3,
+                "resource_name": "other::d",
+                "holder": 4,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 4,
+                "kind": "lock",
+                "resource": 2,
+                "resource_name": "other::c",
+                "holder": 3,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 5,
+                "kind": "lock",
+                "resource": 5,
+                "resource_name": "other::f",
+                "holder": 6,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 6,
+                "kind": "lock",
+                "resource": 4,
+                "resource_name": "other::e",
+                "holder": 5,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              }
+            ],
+            "cir_statements": [
+              {
+                "module": "main",
+                "function": "main",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "u1ab",
+                "sid": null
+              },
+              {
+                "module": "main",
+                "function": "u1ba",
+                "sid": null
+              },
+              {
+                "module": "other",
+                "function": "u2ab",
+                "sid": "s2"
+              },
+              {
+                "module": "other",
+                "function": "u2ba",
+                "sid": "s2"
+              },
+              {
+                "module": "other",
+                "function": "u3ab",
+                "sid": "s2"
+              },
+              {
+                "module": "other",
+                "function": "u3ba",
+                "sid": "s2"
+              }
+            ],
+            "proven_facts": [
+              "reached a counterexample state after 19 step(s)",
+              "explored 90571 reachable states"
+            ],
+            "repair_hints": [
+              "check lock acquisition order, channel capacity, and missing notify/join"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "6f98132c3883f122",
+        "contract_fingerprint": "054c5b9e4b7edb3f",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 16,
+          "max_frames_per_thread": 16,
+          "max_states": 200000,
+          "max_depth": 128,
+          "max_boundary_events": 512
+        },
+        "analysis_started": true
+      },
+      "note": null
+    },
+    {
+      "id": 3,
+      "parent": 0,
+      "depth": 1,
+      "total_edits": 1,
+      "program_fingerprint": "276909a5385e7472",
+      "incoming": {
+        "module": "other",
+        "function": "u2ab",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "unify lock acquisition order for adjacent mutex locks"
+          }
+        ],
+        "original_function_hash": "63befec22f97498e",
+        "parent_fingerprint": "b3e1d4a5f51a3c0a",
+        "program_fingerprint": "276909a5385e7472"
+      },
+      "report": {
+        "outcome": "FAIL",
+        "complete": true,
+        "states_explored": 90571,
+        "transitions_explored": 404531,
+        "properties": [
+          {
+            "id": "no-deadlock",
+            "outcome": "FAIL",
+            "detail": "a reachable state has no enabled step and unfinished threads"
+          },
+          {
+            "id": "preserved: main::u1ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f1)"
+          },
+          {
+            "id": "preserved: main::u1ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f2)"
+          },
+          {
+            "id": "preserved: other::u2ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f3)"
+          },
+          {
+            "id": "preserved: other::u2ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f4)"
+          },
+          {
+            "id": "preserved: other::u3ab completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f5)"
+          },
+          {
+            "id": "preserved: other::u3ba completes",
+            "outcome": "PASS",
+            "detail": "preserved reachability: completed(f6)"
+          }
+        ],
+        "diagnostics": [
+          {
+            "property": "no-deadlock",
+            "outcome": "FAIL",
+            "message": "reachable global deadlock",
+            "complete": true,
+            "counterexample": [
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 0,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 0,
+                "frame": 0
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 1,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 1,
+                "frame": 1
+              },
+              {
+                "origin": {
+                  "module": 0,
+                  "function": 2,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 2,
+                "frame": 2
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 3,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 3,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 3,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 3,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 3,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 3,
+                "frame": 3
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 4,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 4,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 4,
+                  "sid": 2,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 4,
+                  "sid": 3,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 4,
+                  "sid": 4,
+                  "phase": "statement"
+                },
+                "thread": 4,
+                "frame": 4
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 5,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 5,
+                "frame": 5
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 6,
+                  "sid": 0,
+                  "phase": "statement"
+                },
+                "thread": 6,
+                "frame": 6
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 5,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 5,
+                "frame": 5
+              },
+              {
+                "origin": {
+                  "module": 1,
+                  "function": 6,
+                  "sid": 1,
+                  "phase": "statement"
+                },
+                "thread": 6,
+                "frame": 6
+              }
+            ],
+            "final_instances": [
+              {
+                "thread": 0,
+                "frame": 0,
+                "function": 0,
+                "sid": 0,
+                "status": "running"
+              },
+              {
+                "thread": 1,
+                "frame": 1,
+                "function": 1,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 2,
+                "frame": 2,
+                "function": 2,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 3,
+                "frame": null,
+                "function": 3,
+                "sid": null,
+                "status": "finished"
+              },
+              {
+                "thread": 4,
+                "frame": null,
+                "function": 4,
+                "sid": null,
+                "status": "finished"
+              },
+              {
+                "thread": 5,
+                "frame": 5,
+                "function": 5,
+                "sid": 1,
+                "status": "running"
+              },
+              {
+                "thread": 6,
+                "frame": 6,
+                "function": 6,
+                "sid": 1,
+                "status": "running"
+              }
+            ],
+            "blocked": [
+              {
+                "thread": 0,
+                "kind": "scope",
+                "resource": null,
+                "resource_name": null,
+                "holder": null,
+                "waiting": 0,
+                "detail": "waiting for scope members"
+              },
+              {
+                "thread": 1,
+                "kind": "lock",
+                "resource": 1,
+                "resource_name": "main::b",
+                "holder": 2,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 2,
+                "kind": "lock",
+                "resource": 0,
+                "resource_name": "main::a",
+                "holder": 1,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 5,
+                "kind": "lock",
+                "resource": 5,
+                "resource_name": "other::f",
+                "holder": 6,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              },
+              {
+                "thread": 6,
+                "kind": "lock",
+                "resource": 4,
+                "resource_name": "other::e",
+                "holder": 5,
+                "waiting": 1,
+                "detail": "waiting for a lock"
+              }
+            ],
+            "cir_statements": [
+              {
+                "module": "main",
+                "function": "main",
+                "sid": "s1"
+              },
+              {
+                "module": "main",
+                "function": "u1ab",
+                "sid": "s2"
+              },
+              {
+                "module": "main",
+                "function": "u1ba",
+                "sid": "s2"
+              },
+              {
+                "module": "other",
+                "function": "u2ab",
+                "sid": null
+              },
+              {
+                "module": "other",
+                "function": "u2ba",
+                "sid": null
+              },
+              {
+                "module": "other",
+                "function": "u3ab",
+                "sid": "s2"
+              },
+              {
+                "module": "other",
+                "function": "u3ba",
+                "sid": "s2"
+              }
+            ],
+            "proven_facts": [
+              "reached a counterexample state after 19 step(s)",
+              "explored 90571 reachable states"
+            ],
+            "repair_hints": [
+              "check lock acquisition order, channel capacity, and missing notify/join"
+            ]
+          }
+        ],
+        "boundary_events": [],
+        "unsupported": [],
+        "invalid": [],
+        "model_fingerprint": "276909a5385e7472",
+        "contract_fingerprint": "054c5b9e4b7edb3f",
+        "assumptions": {
+          "sequential_consistency": true,
+          "no_spurious_wakeups": true
+        },
+        "bounds": {
+          "max_threads": 16,
+          "max_frames_per_thread": 16,
+          "max_states": 200000,
+          "max_depth": 128,
+          "max_boundary_events": 512
+        },
+        "analysis_started": true
+      },
+      "note": null
+    }
+  ],
+  "attempts": [
+    {
+      "id": 0,
+      "parent": 0,
+      "patch": {
+        "id": "lockorder:main:u1ab:s1-s2",
+        "module": "main",
+        "function": "u1ab",
+        "original_hash": "317c6037f3ac90cd",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "unify lock acquisition order for adjacent mutex locks"
+          }
+        ]
+      },
+      "result": "verified",
+      "reused_node": null,
+      "program_fingerprint": "8d2edc3aae4dd8a6",
+      "outcome": "FAIL",
+      "reason": null
+    },
+    {
+      "id": 1,
+      "parent": 0,
+      "patch": {
+        "id": "lockorder:main:u1ba:s1-s2",
+        "module": "main",
+        "function": "u1ba",
+        "original_hash": "5a951e489212d31f",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "unify lock acquisition order for adjacent mutex locks"
+          }
+        ]
+      },
+      "result": "verified",
+      "reused_node": null,
+      "program_fingerprint": "6f98132c3883f122",
+      "outcome": "FAIL",
+      "reason": null
+    },
+    {
+      "id": 2,
+      "parent": 0,
+      "patch": {
+        "id": "lockorder:other:u2ab:s1-s2",
+        "module": "other",
+        "function": "u2ab",
+        "original_hash": "63befec22f97498e",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "unify lock acquisition order for adjacent mutex locks"
+          }
+        ]
+      },
+      "result": "verified",
+      "reused_node": null,
+      "program_fingerprint": "276909a5385e7472",
+      "outcome": "FAIL",
+      "reason": null
+    },
+    {
+      "id": 3,
+      "parent": 0,
+      "patch": {
+        "id": "lockorder:other:u2ba:s1-s2",
+        "module": "other",
+        "function": "u2ba",
+        "original_hash": "f6c08a6df755d470",
+        "changes": [
+          {
+            "kind": "swap_statements",
+            "a": "s1",
+            "b": "s2"
+          }
+        ],
+        "provenance": [
+          {
+            "description": "unify lock acquisition order for adjacent mutex locks"
+          }
+        ]
+      },
+      "result": "budget-blocked",
+      "reused_node": null,
+      "program_fingerprint": "234accac1432923e",
+      "outcome": null,
+      "reason": "verification budget exhausted before this candidate was verified"
+    }
+  ],
+  "patch_chain": [],
+  "accepted_node": null,
+  "accepted_program": null,
+  "accepted_report": null,
+  "outcome": "budget_exhausted",
+  "stop_reason": "verification-budget",
+  "saw_unknown": false,
+  "truncation": null,
+  "counts": {
+    "proposals": 4,
+    "unique_candidate_programs": 4,
+    "verification_calls": 4,
+    "cache_hits": 0,
+    "states_explored": 375538,
+    "nodes": 4
+  },
+  "reproduce": "concir-backend repair <program.json> <contract.json> --strategy a   # candidate_budget=8 verification_budget=4 max_depth=1 max_total_edits=1 bounds=AnalysisBounds { max_threads: 16, max_frames_per_thread: 16, max_states: 200000, max_depth: 128, max_boundary_events: 512 }"
+}

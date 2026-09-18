@@ -1,0 +1,40 @@
+{
+  "batches": [
+    {
+      "batch_id": "rc-abc",
+      "records": 6,
+      "unique_run_keys": 6,
+      "complete": 6,
+      "not_complete": 0,
+      "artifacts_hashed": 6,
+      "artifact_hash_mismatch": 0,
+      "count_mismatch": 0,
+      "exit_mismatch": 0,
+      "replay_missing": 0,
+      "incomplete_fields": 0,
+      "classification": {
+        "repaired": 3,
+        "unsupported": 3
+      }
+    },
+    {
+      "batch_id": "rc-root",
+      "records": 3,
+      "unique_run_keys": 3,
+      "complete": 3,
+      "not_complete": 0,
+      "artifacts_hashed": 0,
+      "artifact_hash_mismatch": 0,
+      "count_mismatch": 0,
+      "exit_mismatch": 0,
+      "replay_missing": 0,
+      "incomplete_fields": 0,
+      "classification": {
+        "UNSUPPORTED": 1,
+        "PASS": 1,
+        "FAIL": 1
+      }
+    }
+  ],
+  "issues": []
+}

@@ -1,0 +1,57 @@
+{
+  "name": "p2_names_swapped_witness",
+  "properties": [
+    {
+      "kind": "deadlock_free",
+      "id": "no-deadlock"
+    }
+  ],
+  "preserved": [
+    {
+      "kind": "reachable",
+      "description": "u2ba completes",
+      "goal": {
+        "kind": "function_completed",
+        "function": "u2ba"
+      }
+    },
+    {
+      "kind": "reachable",
+      "description": "u2ab completes",
+      "goal": {
+        "kind": "function_completed",
+        "function": "u2ab"
+      }
+    },
+    {
+      "kind": "reachable",
+      "description": "u1ba completes",
+      "goal": {
+        "kind": "function_completed",
+        "function": "u1ba"
+      }
+    },
+    {
+      "kind": "reachable",
+      "description": "u1ab completes",
+      "goal": {
+        "kind": "function_completed",
+        "function": "u1ab"
+      }
+    }
+  ],
+  "assumptions": {
+    "sequential_consistency": true,
+    "no_spurious_wakeups": true
+  },
+  "bounds": {
+    "max_threads": 16,
+    "max_frames_per_thread": 16,
+    "max_states": 1000000,
+    "max_depth": 128,
+    "max_boundary_events": 512
+  },
+  "allowed_scope": {
+    "allow_lock_reorder": true
+  }
+}

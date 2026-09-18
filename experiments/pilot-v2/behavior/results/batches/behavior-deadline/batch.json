@@ -1,0 +1,23 @@
+{
+  "batch_id": "behavior-deadline",
+  "batch_fingerprint": "9ed80f45c9ba26a430df2e8132004b3f3484008136f4a0a8b3c79df18af69f5e",
+  "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+  "code_fingerprint": "f21cb0119347449f82c4c9ff84881d25bce7692acf04f58c761418f994f7ba36",
+  "manifest": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/behavior/tiny_manifest.json",
+  "suites": [
+    "pilot"
+  ],
+  "planned": 12,
+  "executed": 1,
+  "reused": 0,
+  "replay_recovered": 0,
+  "not_executed": 11,
+  "resume_mismatch": 0,
+  "total_budget_s": 0.05,
+  "search_timeout_s": 2,
+  "replay_timeout_s": 2,
+  "env_collection_ms": 88,
+  "env_outside_budget": true,
+  "resume": false,
+  "results_dir": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/behavior/results/batches/behavior-deadline"
+}

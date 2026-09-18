@@ -1,0 +1,1 @@
+/Users/kevin/local-repos/ConcIR/target/release/concir-backend explore /Users/kevin/local-repos/ConcIR/experiments/pilot-v2/cases/p1_interf.json /Users/kevin/local-repos/ConcIR/experiments/pilot-v2/matrix_contracts/p1_interf_ms20000_contract.json petri

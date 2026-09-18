@@ -1,0 +1,41 @@
+{
+  "batches": [
+    {
+      "batch_id": "matrix-lifecycle",
+      "records": 12,
+      "unique_run_keys": 12,
+      "complete": 12,
+      "not_complete": 0,
+      "artifacts_hashed": 0,
+      "artifact_hash_mismatch": 0,
+      "count_mismatch": 0,
+      "exit_mismatch": 0,
+      "replay_missing": 0,
+      "incomplete_fields": 0,
+      "classification": {
+        "FAIL": 11,
+        "UNKNOWN": 1
+      }
+    },
+    {
+      "batch_id": "smoke-lifecycle",
+      "records": 24,
+      "unique_run_keys": 24,
+      "complete": 24,
+      "not_complete": 0,
+      "artifacts_hashed": 24,
+      "artifact_hash_mismatch": 0,
+      "count_mismatch": 0,
+      "exit_mismatch": 0,
+      "replay_missing": 0,
+      "incomplete_fields": 0,
+      "classification": {
+        "no_acceptable_candidate": 11,
+        "repaired": 7,
+        "already_satisfied": 3,
+        "budget_exhausted": 3
+      }
+    }
+  ],
+  "issues": []
+}

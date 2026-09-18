@@ -1,0 +1,655 @@
+{
+  "batch_id": "matrix-v2",
+  "batch_fingerprint": "19c398db787b058e9a251f500a012dcd91cfe6687dbbf53db9bfacdcf84eebd0",
+  "records": 12,
+  "complete": 12,
+  "not_complete": 0,
+  "nondeterministic": [],
+  "wall_stats": [],
+  "paired": {
+    "pairs": 0,
+    "both_repaired": 0,
+    "c_le_b_ver": 0,
+    "c_lt_b_ver": 0,
+    "sum_b_ver": 0,
+    "sum_c_ver": 0,
+    "sum_b_states": 0,
+    "sum_c_states": 0,
+    "sum_b_wall_ms": 0,
+    "sum_c_wall_ms": 0,
+    "success_differs": []
+  },
+  "by_suite": {
+    "matrix": {
+      "FAIL": 11,
+      "UNKNOWN": 1
+    }
+  },
+  "status_by_suite": {
+    "matrix": {
+      "complete": 12
+    }
+  },
+  "matrix": [
+    {
+      "case": "p1_same",
+      "bounds_variant": "ms100000",
+      "bounds": {
+        "max_boundary_events": 512,
+        "max_depth": 128,
+        "max_frames_per_thread": 16,
+        "max_states": 100000,
+        "max_threads": 16
+      },
+      "outcome": "FAIL",
+      "status": "complete",
+      "states": 49,
+      "transitions": 72,
+      "wall_ms": 2
+    },
+    {
+      "case": "p2_same",
+      "bounds_variant": "ms200000",
+      "bounds": {
+        "max_boundary_events": 512,
+        "max_depth": 128,
+        "max_frames_per_thread": 16,
+        "max_states": 200000,
+        "max_threads": 16
+      },
+      "outcome": "FAIL",
+      "status": "complete",
+      "states": 2211,
+      "transitions": 6582,
+      "wall_ms": 56
+    },
+    {
+      "case": "p3_same",
+      "bounds_variant": "ms20000",
+      "bounds": {
+        "max_boundary_events": 512,
+        "max_depth": 128,
+        "max_frames_per_thread": 16,
+        "max_states": 20000,
+        "max_threads": 16
+      },
+      "outcome": "UNKNOWN",
+      "status": "complete",
+      "states": 20001,
+      "transitions": 67922,
+      "wall_ms": 697
+    },
+    {
+      "case": "p1_interf",
+      "bounds_variant": "ms20000",
+      "bounds": {
+        "max_boundary_events": 512,
+        "max_depth": 128,
+        "max_frames_per_thread": 16,
+        "max_states": 20000,
+        "max_threads": 16
+      },
+      "outcome": "FAIL",
+      "status": "complete",
+      "states": 284,
+      "transitions": 657,
+      "wall_ms": 8
+    },
+    {
+      "case": "p1_interf",
+      "bounds_variant": "ms200000",
+      "bounds": {
+        "max_boundary_events": 512,
+        "max_depth": 128,
+        "max_frames_per_thread": 16,
+        "max_states": 200000,
+        "max_threads": 16
+      },
+      "outcome": "FAIL",
+      "status": "complete",
+      "states": 284,
+      "transitions": 657,
+      "wall_ms": 8
+    },
+    {
+      "case": "p1_same",
+      "bounds_variant": "ms200000",
+      "bounds": {
+        "max_boundary_events": 512,
+        "max_depth": 128,
+        "max_frames_per_thread": 16,
+        "max_states": 200000,
+        "max_threads": 16
+      },
+      "outcome": "FAIL",
+      "status": "complete",
+      "states": 49,
+      "transitions": 72,
+      "wall_ms": 2
+    },
+    {
+      "case": "p2_same",
+      "bounds_variant": "ms20000",
+      "bounds": {
+        "max_boundary_events": 512,
+        "max_depth": 128,
+        "max_frames_per_thread": 16,
+        "max_states": 20000,
+        "max_threads": 16
+      },
+      "outcome": "FAIL",
+      "status": "complete",
+      "states": 2211,
+      "transitions": 6582,
+      "wall_ms": 55
+    },
+    {
+      "case": "p1_interf",
+      "bounds_variant": "ms100000",
+      "bounds": {
+        "max_boundary_events": 512,
+        "max_depth": 128,
+        "max_frames_per_thread": 16,
+        "max_states": 100000,
+        "max_threads": 16
+      },
+      "outcome": "FAIL",
+      "status": "complete",
+      "states": 284,
+      "transitions": 657,
+      "wall_ms": 8
+    },
+    {
+      "case": "p3_same",
+      "bounds_variant": "ms200000",
+      "bounds": {
+        "max_boundary_events": 512,
+        "max_depth": 128,
+        "max_frames_per_thread": 16,
+        "max_states": 200000,
+        "max_threads": 16
+      },
+      "outcome": "FAIL",
+      "status": "complete",
+      "states": 103825,
+      "transitions": 463892,
+      "wall_ms": 4647
+    },
+    {
+      "case": "p3_same",
+      "bounds_variant": "ms100000",
+      "bounds": {
+        "max_boundary_events": 512,
+        "max_depth": 128,
+        "max_frames_per_thread": 16,
+        "max_states": 100000,
+        "max_threads": 16
+      },
+      "outcome": "FAIL",
+      "status": "complete",
+      "states": 100000,
+      "transitions": 439834,
+      "wall_ms": 4361
+    },
+    {
+      "case": "p2_same",
+      "bounds_variant": "ms100000",
+      "bounds": {
+        "max_boundary_events": 512,
+        "max_depth": 128,
+        "max_frames_per_thread": 16,
+        "max_states": 100000,
+        "max_threads": 16
+      },
+      "outcome": "FAIL",
+      "status": "complete",
+      "states": 2211,
+      "transitions": 6582,
+      "wall_ms": 56
+    },
+    {
+      "case": "p1_same",
+      "bounds_variant": "ms20000",
+      "bounds": {
+        "max_boundary_events": 512,
+        "max_depth": 128,
+        "max_frames_per_thread": 16,
+        "max_states": 20000,
+        "max_threads": 16
+      },
+      "outcome": "FAIL",
+      "status": "complete",
+      "states": 49,
+      "transitions": 72,
+      "wall_ms": 2
+    }
+  ],
+  "witness": [
+    {
+      "case": "p1_same",
+      "witness_kind": "legal",
+      "legal": true,
+      "swaps": [
+        {
+          "module": "main",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "chain_len": 1,
+      "permissions_ok": true,
+      "final_outcome": "PASS",
+      "final_states": 43,
+      "error": null
+    },
+    {
+      "case": "p1_cross_shared",
+      "witness_kind": "legal",
+      "legal": true,
+      "swaps": [
+        {
+          "module": "other",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "chain_len": 1,
+      "permissions_ok": true,
+      "final_outcome": "PASS",
+      "final_states": 43,
+      "error": null
+    },
+    {
+      "case": "p1_interf",
+      "witness_kind": "legal",
+      "legal": true,
+      "swaps": [
+        {
+          "module": "main",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "chain_len": 1,
+      "permissions_ok": true,
+      "final_outcome": "PASS",
+      "final_states": 248,
+      "error": null
+    },
+    {
+      "case": "p2_same",
+      "witness_kind": "legal",
+      "legal": true,
+      "swaps": [
+        {
+          "module": "main",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        },
+        {
+          "module": "main",
+          "function": "u2ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "chain_len": 2,
+      "permissions_ok": true,
+      "final_outcome": "PASS",
+      "final_states": 1683,
+      "error": null
+    },
+    {
+      "case": "p2_cross_independent",
+      "witness_kind": "legal",
+      "legal": true,
+      "swaps": [
+        {
+          "module": "main",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        },
+        {
+          "module": "other",
+          "function": "u2ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "chain_len": 2,
+      "permissions_ok": true,
+      "final_outcome": "PASS",
+      "final_states": 1683,
+      "error": null
+    },
+    {
+      "case": "p2_cross_shared",
+      "witness_kind": "legal",
+      "legal": true,
+      "swaps": [
+        {
+          "module": "other",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        },
+        {
+          "module": "other",
+          "function": "u2ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "chain_len": 2,
+      "permissions_ok": true,
+      "final_outcome": "PASS",
+      "final_states": 1683,
+      "error": null
+    },
+    {
+      "case": "p2_interf",
+      "witness_kind": "legal",
+      "legal": true,
+      "swaps": [
+        {
+          "module": "main",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        },
+        {
+          "module": "main",
+          "function": "u2ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "chain_len": 2,
+      "permissions_ok": true,
+      "final_outcome": "PASS",
+      "final_states": 10088,
+      "error": null
+    },
+    {
+      "case": "c_already_correct",
+      "witness_kind": "none",
+      "legal": false,
+      "swaps": [],
+      "witness_expected": "PASS"
+    },
+    {
+      "case": "c_scope_restricted",
+      "witness_kind": "auxiliary",
+      "legal": false,
+      "swaps": [
+        {
+          "module": "main",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "aux_petri": {
+        "outcome": "PASS",
+        "states": 43,
+        "wall_ms": 3
+      },
+      "aux_interp": {
+        "outcome": "PASS",
+        "states": 43,
+        "wall_ms": 2
+      },
+      "witness_expected": "PASS"
+    },
+    {
+      "case": "c_lock_reorder_forbidden",
+      "witness_kind": "auxiliary",
+      "legal": false,
+      "swaps": [
+        {
+          "module": "main",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "aux_petri": {
+        "outcome": "PASS",
+        "states": 43,
+        "wall_ms": 3
+      },
+      "aux_interp": {
+        "outcome": "PASS",
+        "states": 43,
+        "wall_ms": 3
+      },
+      "witness_expected": "PASS"
+    },
+    {
+      "case": "c_preserved_unsatisfiable",
+      "witness_kind": "none",
+      "legal": false,
+      "swaps": [
+        {
+          "module": "main",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "witness_expected": "FAIL"
+    },
+    {
+      "case": "c_bounds_unknown",
+      "witness_kind": "legal",
+      "legal": true,
+      "swaps": [
+        {
+          "module": "main",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        },
+        {
+          "module": "main",
+          "function": "u2ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "chain_len": 2,
+      "permissions_ok": true,
+      "final_outcome": "UNKNOWN",
+      "final_states": 50,
+      "error": null,
+      "expanded": {
+        "outcome": "PASS",
+        "states": 1683,
+        "wall_ms": 43
+      }
+    },
+    {
+      "case": "e_name_order",
+      "witness_kind": "legal",
+      "legal": true,
+      "swaps": [
+        {
+          "module": "main",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        },
+        {
+          "module": "main",
+          "function": "u2ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "chain_len": 2,
+      "permissions_ok": true,
+      "final_outcome": "PASS",
+      "final_states": 1683,
+      "error": null
+    },
+    {
+      "case": "e_module_order",
+      "witness_kind": "legal",
+      "legal": true,
+      "swaps": [
+        {
+          "module": "main",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        },
+        {
+          "module": "other",
+          "function": "u2ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "chain_len": 2,
+      "permissions_ok": true,
+      "final_outcome": "PASS",
+      "final_states": 1683,
+      "error": null
+    },
+    {
+      "case": "p3_same",
+      "witness_kind": "legal",
+      "legal": true,
+      "swaps": [
+        {
+          "module": "main",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        },
+        {
+          "module": "main",
+          "function": "u2ba",
+          "a": "s1",
+          "b": "s2"
+        },
+        {
+          "module": "main",
+          "function": "u3ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "chain_len": 3,
+      "permissions_ok": true,
+      "final_outcome": "PASS",
+      "final_states": 68923,
+      "error": null
+    },
+    {
+      "case": "p3_cross_independent",
+      "witness_kind": "legal",
+      "legal": true,
+      "swaps": [
+        {
+          "module": "main",
+          "function": "u1ba",
+          "a": "s1",
+          "b": "s2"
+        },
+        {
+          "module": "other",
+          "function": "u2ba",
+          "a": "s1",
+          "b": "s2"
+        },
+        {
+          "module": "other",
+          "function": "u3ba",
+          "a": "s1",
+          "b": "s2"
+        }
+      ],
+      "chain_len": 3,
+      "permissions_ok": true,
+      "final_outcome": "PASS",
+      "final_states": 68923,
+      "error": null
+    }
+  ],
+  "meta": {
+    "batch_id": "matrix-v2",
+    "batch_fingerprint": "19c398db787b058e9a251f500a012dcd91cfe6687dbbf53db9bfacdcf84eebd0",
+    "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+    "code_fingerprint": "99ad9172a5e03b1b48b41ea804c2a1e426e0c1341474ba2a2484ca67a61bdc83",
+    "manifest": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/manifest.json",
+    "suites": [
+      "matrix"
+    ],
+    "planned": 12,
+    "executed": 12,
+    "reused": 0,
+    "replay_recovered": 0,
+    "not_executed": 0,
+    "resume_mismatch": 0,
+    "total_budget_s": 400.0,
+    "search_timeout_s": 60.0,
+    "replay_timeout_s": 30.0,
+    "env_collection_ms": 69,
+    "env_outside_budget": true,
+    "resume": false,
+    "results_dir": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/results/batches/matrix-v2"
+  },
+  "environment": {
+    "recorded_at_utc": "2026-09-18T03:58:33.421045+00:00",
+    "git": {
+      "commit": "e8480c4a54840e68d7cf3a62c5075e4fc02e6966",
+      "dirty": true,
+      "status_porcelain": "?? examples/pilot_tool.rs\n?? experiments/\n?? scripts/",
+      "tracked_diff_sha256": "",
+      "staged_diff_sha256": ""
+    },
+    "code": {
+      "files": {
+        "scripts/run_pilot.py": {
+          "sha256": "f1452f74c51b016a0af5fbd79c34ee1b1be066db298b9e9a0887a7d77d8754b3",
+          "bytes": 58977
+        },
+        "scripts/pilot_analyze.py": {
+          "sha256": "66088feb8947cd751c69bf2ea656f42c4bff173715549d39821280540cf55386",
+          "bytes": 13344
+        },
+        "experiments/pilot-v2/generate_cases.py": {
+          "sha256": "e70b688f1e89deb85cf62c965ea6501c2254e3ee5d16de90793afc8ab273e2da",
+          "bytes": 32322
+        },
+        "experiments/pilot-v2/manifest.json": {
+          "sha256": "1ee30b03805d7d3f4beebb2a38d3429411c6ae163b1ea51dd984d5be4d7020df",
+          "bytes": 31634
+        },
+        "examples/pilot_tool.rs": {
+          "sha256": "fb40d6c0ab1580d6ec5270ca11f2fe78df82c66f2667fe2d6a56fe017eca3098",
+          "bytes": 7957
+        }
+      },
+      "fingerprint": "99ad9172a5e03b1b48b41ea804c2a1e426e0c1341474ba2a2484ca67a61bdc83"
+    },
+    "binary_path": "/Users/kevin/local-repos/ConcIR/target/release/concir-backend",
+    "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+    "tool_path": "/Users/kevin/local-repos/ConcIR/target/release/examples/pilot_tool",
+    "tool_sha256": "f16f43f59f292619a405ba92ce681e8905ea6c1297d60fa50a13882025cf566d",
+    "rustc": "rustc 1.100.0-nightly (a69a63265 2026-09-03)",
+    "cargo": "cargo 1.100.0-nightly (b2e9d5f9d 2026-09-02)",
+    "python": "3.14.0",
+    "uname": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "cpu_count": 12,
+    "env_collection_ms": 69,
+    "env_outside_budget": true
+  }
+}

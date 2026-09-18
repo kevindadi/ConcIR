@@ -1,0 +1,8 @@
+{
+  "nodes": 28,
+  "input_outcome": "FAIL",
+  "accepted_ok": true,
+  "accepted_node": 27,
+  "chain_len": 3,
+  "outcome": "repaired"
+}

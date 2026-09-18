@@ -1,0 +1,1 @@
+PASS summarize_reads_valid_index_only records=1 attempts=2

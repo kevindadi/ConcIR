@@ -1,0 +1,23 @@
+{
+  "batch_id": "pilot-v2",
+  "batch_fingerprint": "f960603cab8f0cce370f6571b2dab1666d424257587fc33c6fb9b898f447134d",
+  "binary_sha256": "65a8f633f986e890d2e4256700db3ab62c1ee3b69418af30e61531b3c96b62c6",
+  "code_fingerprint": "99ad9172a5e03b1b48b41ea804c2a1e426e0c1341474ba2a2484ca67a61bdc83",
+  "manifest": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/manifest.json",
+  "suites": [
+    "pilot"
+  ],
+  "planned": 180,
+  "executed": 180,
+  "reused": 0,
+  "replay_recovered": 0,
+  "not_executed": 0,
+  "resume_mismatch": 0,
+  "total_budget_s": 600.0,
+  "search_timeout_s": 30.0,
+  "replay_timeout_s": 60.0,
+  "env_collection_ms": 93,
+  "env_outside_budget": true,
+  "resume": false,
+  "results_dir": "/Users/kevin/local-repos/ConcIR/experiments/pilot-v2/results/batches/pilot-v2"
+}

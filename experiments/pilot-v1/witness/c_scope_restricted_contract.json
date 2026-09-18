@@ -1,0 +1,44 @@
+{
+  "name": "c_scope_restricted_witness",
+  "properties": [
+    {
+      "kind": "deadlock_free",
+      "id": "no-deadlock"
+    }
+  ],
+  "preserved": [
+    {
+      "kind": "reachable",
+      "description": "u1ab completes",
+      "goal": {
+        "kind": "function_completed",
+        "function": "u1ab"
+      }
+    },
+    {
+      "kind": "reachable",
+      "description": "u1ba completes",
+      "goal": {
+        "kind": "function_completed",
+        "function": "u1ba"
+      }
+    }
+  ],
+  "assumptions": {
+    "sequential_consistency": true,
+    "no_spurious_wakeups": true
+  },
+  "bounds": {
+    "max_threads": 16,
+    "max_frames_per_thread": 16,
+    "max_states": 1000000,
+    "max_depth": 128,
+    "max_boundary_events": 512
+  },
+  "allowed_scope": {
+    "allow_lock_reorder": true,
+    "functions": [
+      "main::main"
+    ]
+  }
+}

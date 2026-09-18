@@ -1,0 +1,13 @@
+stage,suite,case,family,config_name,strategy,repeat,raw_outcome,final_classification,evidence_status,stop_reason,truncation,saw_unknown,root_outcome,proposals,unique_programs,verification_calls,cache_hits,states_explored,transitions_explored,nodes,patch_len,accepted_chain_len,exit_code,wall_ms,search_wall_ms,replay_exit,replay_wall_ms,replay_ok,artifact_sha256,artifact_path,reused_from
+explore,matrix,p1_interf,interference,ms100000,,1,FAIL,FAIL,complete,,,,,,,,,284,657,,,,1,8,8,,,,,,
+explore,matrix,p1_interf,interference,ms20000,,1,FAIL,FAIL,complete,,,,,,,,,284,657,,,,1,8,8,,,,,,
+explore,matrix,p1_interf,interference,ms200000,,1,FAIL,FAIL,complete,,,,,,,,,284,657,,,,1,8,8,,,,,,
+explore,matrix,p1_same,one_defect,ms100000,,1,FAIL,FAIL,complete,,,,,,,,,49,72,,,,1,2,2,,,,,,
+explore,matrix,p1_same,one_defect,ms20000,,1,FAIL,FAIL,complete,,,,,,,,,49,72,,,,1,2,2,,,,,,
+explore,matrix,p1_same,one_defect,ms200000,,1,FAIL,FAIL,complete,,,,,,,,,49,72,,,,1,2,2,,,,,,
+explore,matrix,p2_same,two_defects,ms100000,,1,FAIL,FAIL,complete,,,,,,,,,2211,6582,,,,1,56,56,,,,,,
+explore,matrix,p2_same,two_defects,ms20000,,1,FAIL,FAIL,complete,,,,,,,,,2211,6582,,,,1,55,55,,,,,,
+explore,matrix,p2_same,two_defects,ms200000,,1,FAIL,FAIL,complete,,,,,,,,,2211,6582,,,,1,56,56,,,,,,
+explore,matrix,p3_same,three_defects,ms100000,,1,FAIL,FAIL,complete,,,,,,,,,100000,439834,,,,1,4361,4361,,,,,,
+explore,matrix,p3_same,three_defects,ms20000,,1,UNKNOWN,UNKNOWN,complete,,,,,,,,,20001,67922,,,,3,697,697,,,,,,
+explore,matrix,p3_same,three_defects,ms200000,,1,FAIL,FAIL,complete,,,,,,,,,103825,463892,,,,1,4647,4647,,,,,,

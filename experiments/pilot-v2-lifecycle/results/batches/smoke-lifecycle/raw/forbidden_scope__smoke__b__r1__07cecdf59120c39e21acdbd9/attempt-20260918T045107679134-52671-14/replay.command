@@ -1,0 +1,1 @@
+/Users/kevin/local-repos/ConcIR/target/release/concir-backend replay /Users/kevin/local-repos/ConcIR/experiments/pilot-v2-lifecycle/results/batches/smoke-lifecycle/raw/forbidden_scope__smoke__b__r1__07cecdf59120c39e21acdbd9/attempt-20260918T045107679134-52671-14/artifact.json
