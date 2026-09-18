@@ -10,6 +10,7 @@ pub mod fqn;
 pub mod interp;
 pub mod petri;
 pub mod repair;
+pub mod schema;
 pub mod sem;
 pub mod typedef;
 pub mod validate;

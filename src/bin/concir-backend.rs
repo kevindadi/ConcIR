@@ -177,6 +177,10 @@ fn main() {
         usage();
     }
     match args[1].as_str() {
+        "schema" => {
+            let value = concir::schema::schema();
+            println!("{}", serde_json::to_string_pretty(&value).expect("serialize"));
+        }
         "codegen" => {
             let path = args.get(2).unwrap_or_else(|| usage());
             let out = flag_value(&args, "--out")

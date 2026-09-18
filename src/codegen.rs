@@ -380,7 +380,8 @@ pub fn generate(program: &SemProgram) -> Result<Generated, String> {
             ResKind::Condvar => "Arc<Condvar>".to_string(),
             ResKind::Semaphore => "Arc<cir_trace::Semaphore>".to_string(),
             ResKind::Channel => {
-                return Err(format!("codegen does not support channel '{}' yet", r.name));
+                let bt = r.ty.as_ref().ok_or("channel resource without a base type")?;
+                format!("Arc<cir_trace::Channel<{}>>", rust_ty(bt)?)
             }
             ResKind::RwLock => return Err("codegen does not support RwLock".into()),
             ResKind::Var | ResKind::Atomic => {
@@ -397,8 +398,9 @@ pub fn generate(program: &SemProgram) -> Result<Generated, String> {
     for func in program.functions() {
         if func.is_nobody {
             let name = format!("cf_{}", sanitize(&func.name));
+            let placeholder = g.hole(&func.name, "", "()");
             g.emit(format!(
-                "fn {name}(_shared: Shared, _tag: &str) {{ /* HOLE(nobody) */ }}"
+                "fn {name}(_shared: Shared, _tag: &str) {{ let _: () = {placeholder}; }}"
             ));
             g.emit("");
             continue;
@@ -417,7 +419,10 @@ pub fn generate(program: &SemProgram) -> Result<Generated, String> {
             ResKind::Mutex => "Arc::new(Mutex::new(()))".to_string(),
             ResKind::Condvar => "Arc::new(Condvar::new())".to_string(),
             ResKind::Semaphore => format!("cir_trace::Semaphore::new({})", r.permits),
-            ResKind::Channel => return Err("channel unsupported".into()),
+            ResKind::Channel => {
+                let bt = r.ty.as_ref().ok_or("channel resource without a base type")?;
+                format!("cir_trace::Channel::<{}>::new({})", rust_ty(bt)?, r.capacity)
+            }
             ResKind::RwLock => return Err("RwLock unsupported".into()),
             ResKind::Var | ResKind::Atomic => {
                 let bt = r.ty.as_ref().ok_or("value resource without a type")?;

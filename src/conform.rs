@@ -68,7 +68,7 @@ fn observable_sids(program: &SemProgram) -> BTreeSet<String> {
     for f in program.functions() {
         for s in &f.body {
             if is_observable(&s.op) {
-                out.insert(format!("{}::{}", program.module_name(f.module), s.sid));
+                out.insert(format!("{}::{}::{}", program.module_name(f.module), f.name, s.sid));
             }
         }
     }
@@ -153,7 +153,7 @@ fn advance(
     start_tags: &BTreeMap<String, ThreadId>,
     tid: ThreadId,
     sid: &str,
-) -> Result<Vec<(MachineState, BTreeMap<String, ThreadId>)>, Vec<String>> {
+) -> Result<Vec<(MachineState, BTreeMap<String, ThreadId>, crate::sem::ids::FunctionId)>, Vec<String>> {
     let mut closure: Vec<(MachineState, BTreeMap<String, ThreadId>)> =
         vec![(start.clone(), start_tags.clone())];
     let mut visited: HashSet<String> = HashSet::new();
@@ -184,7 +184,7 @@ fn advance(
         }
     }
 
-    let mut out: Vec<(MachineState, BTreeMap<String, ThreadId>)> = Vec::new();
+    let mut out: Vec<(MachineState, BTreeMap<String, ThreadId>, crate::sem::ids::FunctionId)> = Vec::new();
     let mut seen_states: HashSet<String> = HashSet::new();
     for (state, map) in &closure {
         let enabled = match it.successors(state) {
@@ -207,7 +207,7 @@ fn advance(
             }
             let key = it.state_key(&step.state);
             if seen_states.insert(key) {
-                out.push((step.state.clone(), nm));
+                out.push((step.state.clone(), nm, step.label.origin.function));
             }
         }
     }
@@ -317,6 +317,7 @@ pub fn conform(program: &SemProgram, trace: &[(String, String)]) -> Conformance 
             };
         }
         let mut next: Vec<(MachineState, BTreeMap<String, ThreadId>)> = Vec::new();
+        let mut matched_functions: BTreeSet<crate::sem::ids::FunctionId> = BTreeSet::new();
         let mut expected: Vec<String> = Vec::new();
         let mut tag_known = false;
         for (state, map) in &frontier {
@@ -325,7 +326,12 @@ pub fn conform(program: &SemProgram, trace: &[(String, String)]) -> Conformance 
             };
             tag_known = true;
             match advance(program, &it, state, map, tid, sid) {
-                Ok(results) => next.extend(results),
+                Ok(results) => {
+                    for (s, m, f) in results {
+                        matched_functions.insert(f);
+                        next.push((s, m));
+                    }
+                }
                 Err(exp) => {
                     for e in exp {
                         if !expected.contains(&e) {
@@ -383,10 +389,9 @@ pub fn conform(program: &SemProgram, trace: &[(String, String)]) -> Conformance 
             .into_iter()
             .filter(|(st, _)| seen_states.insert(it.state_key(st)))
             .collect();
-        for s in observable_sids(program) {
-            if s.ends_with(&format!("::{sid}")) {
-                seen.insert(s);
-            }
+        for function in &matched_functions {
+            let f = program.function(*function);
+            seen.insert(format!("{}::{}::{}", program.module_name(f.module), f.name, sid));
         }
     }
     Conformance {

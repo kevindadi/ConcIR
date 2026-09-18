@@ -70,7 +70,9 @@ fn conform_accepts_a_valid_trace() {
     ]);
     let result = conform(&sem, &ok);
     assert_eq!(result.status, "conformant", "{:?}", result);
-    assert_eq!(result.coverage.sids_seen, 4);
+    // coverage is keyed per (function, sid): t1 and t2 each contribute four.
+    assert!(result.coverage.sids_total >= 8);
+    assert_eq!(result.coverage.sids_seen, result.coverage.sids_total);
 }
 
 #[test]
