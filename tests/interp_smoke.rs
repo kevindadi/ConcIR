@@ -39,7 +39,10 @@ fn producer_consumer_terminates() {
     let src = include_str!("../examples/producer_consumer.json");
     let (states, finished, seen) = bfs_finished(src, 20000);
     eprintln!("producer_consumer: states={states} seen={seen} finished={finished}");
-    assert!(finished, "producer_consumer should have a terminating execution");
+    assert!(
+        finished,
+        "producer_consumer should have a terminating execution"
+    );
 }
 
 #[test]
@@ -47,5 +50,8 @@ fn state_machine_runs() {
     let src = include_str!("../examples/state_machine.json");
     let (states, finished, seen) = bfs_finished(src, 20000);
     eprintln!("state_machine: states={states} seen={seen} finished={finished}");
-    assert!(finished, "state_machine should have a terminating execution");
+    assert!(
+        finished,
+        "state_machine should have a terminating execution"
+    );
 }

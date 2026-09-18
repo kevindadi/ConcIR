@@ -62,10 +62,12 @@ impl PatchScope {
         if self.functions.is_empty() {
             return true;
         }
-        self.functions.iter().any(|entry| match entry.split_once("::") {
-            Some((m, f)) => m == module && f == function,
-            None => entry == function,
-        })
+        self.functions
+            .iter()
+            .any(|entry| match entry.split_once("::") {
+                Some((m, f)) => m == module && f == function,
+                None => entry == function,
+            })
     }
 
     pub fn unrestricted() -> Self {
@@ -102,7 +104,10 @@ impl std::error::Error for ContractError {}
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PropertySpec {
     /// `invariant` must hold in every reachable state.
-    Safety { id: String, invariant: PredicateSpec },
+    Safety {
+        id: String,
+        invariant: PredicateSpec,
+    },
     /// No reachable deadlock state.
     DeadlockFree { id: String },
     /// Some reachable state satisfies `goal` (EF).
@@ -118,9 +123,15 @@ pub enum PropertySpec {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PreservedSpec {
     /// `goal` must remain reachable.
-    Reachable { description: String, goal: PredicateSpec },
+    Reachable {
+        description: String,
+        goal: PredicateSpec,
+    },
     /// `invariant` must remain true in every reachable state.
-    Always { description: String, invariant: PredicateSpec },
+    Always {
+        description: String,
+        invariant: PredicateSpec,
+    },
 }
 
 /// Serializable predicate description, resolved against the program.
@@ -129,23 +140,52 @@ pub enum PreservedSpec {
 pub enum PredicateSpec {
     True,
     False,
-    VarEq { resource: String, value: serde_json::Value },
+    VarEq {
+        resource: String,
+        value: serde_json::Value,
+    },
     VarCmp {
         resource: String,
         op: String,
         value: serde_json::Value,
     },
-    FunctionCompleted { function: String },
-    FunctionCompletedAtLeast { function: String, n: usize },
-    ScopeCompleted { function: String, sid: String },
-    StatementReached { function: String, sid: String },
-    MutexFree { resource: String },
-    MutexHeld { resource: String },
-    ChannelEmpty { resource: String },
-    ChannelAtLeast { resource: String, len: usize },
-    Not { predicate: Box<PredicateSpec> },
-    And { predicates: Vec<PredicateSpec> },
-    Or { predicates: Vec<PredicateSpec> },
+    FunctionCompleted {
+        function: String,
+    },
+    FunctionCompletedAtLeast {
+        function: String,
+        n: usize,
+    },
+    ScopeCompleted {
+        function: String,
+        sid: String,
+    },
+    StatementReached {
+        function: String,
+        sid: String,
+    },
+    MutexFree {
+        resource: String,
+    },
+    MutexHeld {
+        resource: String,
+    },
+    ChannelEmpty {
+        resource: String,
+    },
+    ChannelAtLeast {
+        resource: String,
+        len: usize,
+    },
+    Not {
+        predicate: Box<PredicateSpec>,
+    },
+    And {
+        predicates: Vec<PredicateSpec>,
+    },
+    Or {
+        predicates: Vec<PredicateSpec>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -315,7 +355,8 @@ impl ContractSpec {
         let mut properties = Vec::new();
         for p in &self.properties {
             let resolve = |e: &PredicateSpec| {
-                e.resolve(program, default_module).map_err(ContractError::Invalid)
+                e.resolve(program, default_module)
+                    .map_err(ContractError::Invalid)
             };
             let (id, property) = match p {
                 PropertySpec::Safety { id, invariant } => (
@@ -337,12 +378,9 @@ impl ContractSpec {
                         goal: resolve(goal)?,
                     },
                 ),
-                PropertySpec::Unreachable { id, bad } => (
-                    id.clone(),
-                    Property::Unreachable {
-                        bad: resolve(bad)?,
-                    },
-                ),
+                PropertySpec::Unreachable { id, bad } => {
+                    (id.clone(), Property::Unreachable { bad: resolve(bad)? })
+                }
             };
             properties.push(PropertySpecResolved { id, property });
         }
@@ -497,7 +535,7 @@ impl PredicateSpec {
                     resource: rid,
                     len: *len,
                 }
-            },
+            }
             PredicateSpec::Not { predicate } => {
                 Predicate::not(predicate.resolve(program, default_module)?)
             }

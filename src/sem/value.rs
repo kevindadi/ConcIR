@@ -278,12 +278,12 @@ pub fn default_value(ty: &BaseType) -> Value {
                     .map(|(k, t)| (k.clone(), default_value(t)))
                     .collect(),
             ),
-            ComplexBaseType::Array(def) => {
-                Value::Array((0..def.len.max(0)).map(|_| default_value(&def.elem)).collect())
-            }
-            ComplexBaseType::BoundedInt { lo, hi } => {
-                Value::Int(0i64.clamp(*lo, *hi))
-            }
+            ComplexBaseType::Array(def) => Value::Array(
+                (0..def.len.max(0))
+                    .map(|_| default_value(&def.elem))
+                    .collect(),
+            ),
+            ComplexBaseType::BoundedInt { lo, hi } => Value::Int(0i64.clamp(*lo, *hi)),
         },
     }
 }

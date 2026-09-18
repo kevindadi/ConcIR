@@ -23,8 +23,8 @@ use crate::sem::system::{
 use crate::sem::value::{within_type, Value};
 
 use super::state::{
-    BlockReason, FrameView, MachineState, MutexState, PendingSend, RetAddr, ScopeState, ThreadState,
-    ThreadStatus,
+    BlockReason, FrameView, MachineState, MutexState, PendingSend, RetAddr, ScopeState,
+    ThreadState, ThreadStatus,
 };
 
 pub struct Interpreter<'a> {
@@ -88,7 +88,13 @@ impl<'a> Interpreter<'a> {
         crate::fqn::fqn(self.program.module_name(res.module), &res.name)
     }
 
-    fn dst_type_ok(&self, state: &MachineState, frame: FrameId, dst: SlotRef, value: &Value) -> bool {
+    fn dst_type_ok(
+        &self,
+        state: &MachineState,
+        frame: FrameId,
+        dst: SlotRef,
+        value: &Value,
+    ) -> bool {
         match dst {
             SlotRef::Discard => true,
             SlotRef::Local(slot) => {
@@ -261,7 +267,10 @@ impl<'a> Interpreter<'a> {
         if live >= self.bounds.max_threads {
             boundary.push(BoundaryEvent::new(
                 BoundaryKind::ThreadLimit,
-                format!("thread limit {} reached while spawning", self.bounds.max_threads),
+                format!(
+                    "thread limit {} reached while spawning",
+                    self.bounds.max_threads
+                ),
             ));
             return Ok(None);
         }
@@ -301,7 +310,13 @@ impl<'a> Interpreter<'a> {
         Ok(Some(tid))
     }
 
-    fn step_label(&self, function: FunctionId, sid: usize, tid: ThreadId, fid: FrameId) -> StepLabel {
+    fn step_label(
+        &self,
+        function: FunctionId,
+        sid: usize,
+        tid: ThreadId,
+        fid: FrameId,
+    ) -> StepLabel {
         StepLabel::new(TransitionOrigin {
             module: self.program.function(function).module,
             function,
@@ -470,7 +485,10 @@ impl<'a> Interpreter<'a> {
                             .get_mut(&channel)
                             .unwrap()
                             .pending_send
-                            .push_back(PendingSend { thread: tid, value: v });
+                            .push_back(PendingSend {
+                                thread: tid,
+                                value: v,
+                            });
                         next.block(tid, BlockReason::ChannelSend(channel));
                     } else {
                         let mut out = Vec::new();
@@ -515,7 +533,10 @@ impl<'a> Interpreter<'a> {
                             .get_mut(&channel)
                             .unwrap()
                             .pending_send
-                            .push_back(PendingSend { thread: tid, value: v });
+                            .push_back(PendingSend {
+                                thread: tid,
+                                value: v,
+                            });
                         next.block(tid, BlockReason::ChannelSend(channel));
                     }
                 }
@@ -601,13 +622,13 @@ impl<'a> Interpreter<'a> {
             SemOp::CondvarWait { condvar, lock } => {
                 match next.store.mutexes.get(&lock) {
                     Some(MutexState::Held(owner)) if *owner == tid => {}
-                    _ => {
-                        return Err(BackendError::invalid(
-                            "E511",
-                            format!("thread {tid} waited on Condvar {condvar} without holding Mutex {lock}"),
-                        )
-                        .at(&at))
-                    }
+                    _ => return Err(BackendError::invalid(
+                        "E511",
+                        format!(
+                            "thread {tid} waited on Condvar {condvar} without holding Mutex {lock}"
+                        ),
+                    )
+                    .at(&at)),
                 }
                 next.store.mutexes.insert(lock, MutexState::Free);
                 {
@@ -630,7 +651,9 @@ impl<'a> Interpreter<'a> {
             }
             SemOp::SemaphoreAcquire { resource, count } => {
                 if count <= 0 {
-                    return Err(BackendError::invalid("E904", "semaphore count must be positive").at(&at));
+                    return Err(
+                        BackendError::invalid("E904", "semaphore count must be positive").at(&at),
+                    );
                 }
                 let available = *next.store.semaphores.get(&resource).unwrap_or(&0);
                 if available >= count {
@@ -646,7 +669,9 @@ impl<'a> Interpreter<'a> {
             }
             SemOp::SemaphoreRelease { resource, count } => {
                 if count <= 0 {
-                    return Err(BackendError::invalid("E904", "semaphore count must be positive").at(&at));
+                    return Err(
+                        BackendError::invalid("E904", "semaphore count must be positive").at(&at),
+                    );
                 }
                 let available = *next.store.semaphores.get(&resource).unwrap_or(&0);
                 let updated = available.checked_add(count).ok_or_else(|| {
@@ -668,7 +693,10 @@ impl<'a> Interpreter<'a> {
                     if next.threads[&tid].stack.len() >= self.bounds.max_frames_per_thread {
                         boundary.push(BoundaryEvent::new(
                             BoundaryKind::FrameLimit,
-                            format!("frame limit {} reached while calling '{}'", self.bounds.max_frames_per_thread, callee.name),
+                            format!(
+                                "frame limit {} reached while calling '{}'",
+                                self.bounds.max_frames_per_thread, callee.name
+                            ),
                         ));
                         return Ok(Vec::new());
                     }
@@ -680,7 +708,9 @@ impl<'a> Interpreter<'a> {
                         .slots
                         .iter()
                         .enumerate()
-                        .filter(|(_, s)| s.class == crate::sem::program::SlotClass::Param && s.modeled)
+                        .filter(|(_, s)| {
+                            s.class == crate::sem::program::SlotClass::Param && s.modeled
+                        })
                         .map(|(i, _)| i)
                         .collect();
                     // Every argument binding must respect the parameter's
@@ -734,7 +764,8 @@ impl<'a> Interpreter<'a> {
                 next.alloc.next_scope += 1;
                 let mut remaining = std::collections::BTreeSet::new();
                 for func in &funcs {
-                    let Some(child) = self.create_thread(&mut next, *func, Some(scope), boundary)?
+                    let Some(child) =
+                        self.create_thread(&mut next, *func, Some(scope), boundary)?
                     else {
                         return Ok(Vec::new());
                     };
@@ -759,9 +790,18 @@ impl<'a> Interpreter<'a> {
                 }
             }
             SemOp::Join { handle } => {
-                let hid = next.frame(fid).handles.get(&handle).copied().ok_or_else(|| {
-                    BackendError::invalid("E402", format!("join handle '{handle}' was never spawned in this activation")).at(&at)
-                })?;
+                let hid = next
+                    .frame(fid)
+                    .handles
+                    .get(&handle)
+                    .copied()
+                    .ok_or_else(|| {
+                        BackendError::invalid(
+                            "E402",
+                            format!("join handle '{handle}' was never spawned in this activation"),
+                        )
+                        .at(&at)
+                    })?;
                 let child = next.threads[&tid].handle_children.get(&hid).copied();
                 match child {
                     Some(c) if next.finished.contains(&c) => {
@@ -952,7 +992,9 @@ impl<'a> Interpreter<'a> {
                     .sem_waiters
                     .get(r)
                     .and_then(|q| q.iter().find(|(t, _)| *t == tid).map(|(_, n)| *n));
-                let Some(need) = need else { return Ok(Vec::new()) };
+                let Some(need) = need else {
+                    return Ok(Vec::new());
+                };
                 let available = *next.store.semaphores.get(r).unwrap_or(&0);
                 if available < need {
                     return Ok(Vec::new());
@@ -973,13 +1015,17 @@ impl<'a> Interpreter<'a> {
                         .channels
                         .get(c)
                         .and_then(|ch| ch.pending_recv.front().copied());
-                    let Some(recv) = recv else { return Ok(Vec::new()) };
+                    let Some(recv) = recv else {
+                        return Ok(Vec::new());
+                    };
                     let pos = next
                         .store
                         .channels
                         .get(c)
                         .and_then(|ch| ch.pending_send.iter().position(|p| p.thread == tid));
-                    let Some(pos) = pos else { return Ok(Vec::new()) };
+                    let Some(pos) = pos else {
+                        return Ok(Vec::new());
+                    };
                     let value = next
                         .store
                         .channels
@@ -1021,7 +1067,9 @@ impl<'a> Interpreter<'a> {
                         .channels
                         .get(c)
                         .and_then(|ch| ch.pending_send.iter().position(|p| p.thread == tid));
-                    let Some(pos) = pos else { return Ok(Vec::new()) };
+                    let Some(pos) = pos else {
+                        return Ok(Vec::new());
+                    };
                     let send = next
                         .store
                         .channels
@@ -1048,7 +1096,9 @@ impl<'a> Interpreter<'a> {
                         .channels
                         .get(c)
                         .and_then(|ch| ch.pending_send.front().cloned());
-                    let Some(send) = send else { return Ok(Vec::new()) };
+                    let Some(send) = send else {
+                        return Ok(Vec::new());
+                    };
                     let dst = self.recv_dst_of(&next, tid).unwrap_or(SlotRef::Discard);
                     if !self.try_write_dst(&mut next, fid, dst, send.value.clone())? {
                         return Ok(Vec::new());
@@ -1071,12 +1121,7 @@ impl<'a> Interpreter<'a> {
                     if !self.try_write_dst(&mut next, fid, dst, v)? {
                         return Ok(Vec::new());
                     }
-                    next.store
-                        .channels
-                        .get_mut(c)
-                        .unwrap()
-                        .buffer
-                        .pop_front();
+                    next.store.channels.get_mut(c).unwrap().buffer.pop_front();
                     if let Some(ch) = next.store.channels.get_mut(c) {
                         ch.pending_recv.retain(|t| *t != tid);
                     }
@@ -1145,7 +1190,9 @@ impl<'a> TransitionSystem for Interpreter<'a> {
             state
                 .threads
                 .values()
-                .filter(|t| matches!(&t.status, ThreadStatus::Blocked(BlockReason::Lock(x)) if x == r))
+                .filter(
+                    |t| matches!(&t.status, ThreadStatus::Blocked(BlockReason::Lock(x)) if x == r),
+                )
                 .count()
         };
         for t in state.threads.values() {
@@ -1272,7 +1319,11 @@ impl<'a> TransitionSystem for Interpreter<'a> {
             Predicate::VarEq { resource, value } => {
                 state.store.read_shared(*resource) == Some(value)
             }
-            Predicate::VarCmp { resource, op, value } => state
+            Predicate::VarCmp {
+                resource,
+                op,
+                value,
+            } => state
                 .store
                 .read_shared(*resource)
                 .and_then(|v| compare_values(*op, v, value))
@@ -1322,7 +1373,11 @@ impl<'a> TransitionSystem for Interpreter<'a> {
 
 // ───────────────────────── Canonical rendering ─────────────────────────
 
-fn render_state(program: &SemProgram, state: &MachineState, enc: &dyn Fn(&Value) -> String) -> String {
+fn render_state(
+    program: &SemProgram,
+    state: &MachineState,
+    enc: &dyn Fn(&Value) -> String,
+) -> String {
     let _ = program;
     let thread_order: Vec<ThreadId> = state.threads.keys().copied().collect();
     let frame_order: Vec<FrameId> = state.store.frames.keys().copied().collect();
@@ -1332,7 +1387,12 @@ fn render_state(program: &SemProgram, state: &MachineState, enc: &dyn Fn(&Value)
         .frames
         .values()
         .flat_map(|f| f.handles.values().copied())
-        .chain(state.threads.values().flat_map(|t| t.handle_children.keys().copied()))
+        .chain(
+            state
+                .threads
+                .values()
+                .flat_map(|t| t.handle_children.keys().copied()),
+        )
         .collect();
     handle_ids.sort();
     handle_ids.dedup();
@@ -1367,8 +1427,10 @@ fn render_state(program: &SemProgram, state: &MachineState, enc: &dyn Fn(&Value)
     };
 
     let mut out = String::new();
-    out.push_str("STORE
-");
+    out.push_str(
+        "STORE
+",
+    );
     for (r, v) in &state.store.vars {
         out.push_str(&format!("  var r{}={}\n", r.0, enc(v)));
     }
@@ -1389,13 +1451,21 @@ fn render_state(program: &SemProgram, state: &MachineState, enc: &dyn Fn(&Value)
         out.push_str(&format!(
             "  chan r{} buf=[{}] send=[{}] recv=[{}]\n",
             r.0,
-            c.buffer.iter().map(Value::canonical).collect::<Vec<_>>().join(","),
+            c.buffer
+                .iter()
+                .map(Value::canonical)
+                .collect::<Vec<_>>()
+                .join(","),
             c.pending_send
                 .iter()
                 .map(|p| format!("{}:{}", tname(p.thread), enc(&p.value)))
                 .collect::<Vec<_>>()
                 .join(","),
-            c.pending_recv.iter().map(|t| tname(*t)).collect::<Vec<_>>().join(","),
+            c.pending_recv
+                .iter()
+                .map(|t| tname(*t))
+                .collect::<Vec<_>>()
+                .join(","),
         ));
     }
     for (r, c) in &state.store.condvars {
@@ -1444,7 +1514,9 @@ fn render_state(program: &SemProgram, state: &MachineState, enc: &dyn Fn(&Value)
         let status = match &th.status {
             ThreadStatus::Runnable => "run".to_string(),
             ThreadStatus::Finished => "done".to_string(),
-            ThreadStatus::Blocked(b) => format!("blocked:{}", block_reason_text(b, &tname, &hname, &sname)),
+            ThreadStatus::Blocked(b) => {
+                format!("blocked:{}", block_reason_text(b, &tname, &hname, &sname))
+            }
         };
         let mut kids: Vec<String> = th
             .handle_children
@@ -1458,14 +1530,19 @@ fn render_state(program: &SemProgram, state: &MachineState, enc: &dyn Fn(&Value)
             status,
             stack.join(","),
             kids.join(","),
-            th.parent_scope.map(|s| sname(s)).unwrap_or_else(|| "-".into())
+            th.parent_scope
+                .map(|s| sname(s))
+                .unwrap_or_else(|| "-".into())
         ));
     }
     for (r, q) in &state.sem_waiters {
         out.push_str(&format!(
             "  semq r{}=[{}]\n",
             r.0,
-            q.iter().map(|(t, n)| format!("{}:{}", tname(*t), n)).collect::<Vec<_>>().join(",")
+            q.iter()
+                .map(|(t, n)| format!("{}:{}", tname(*t), n))
+                .collect::<Vec<_>>()
+                .join(",")
         ));
     }
     for s in state.scopes.values() {

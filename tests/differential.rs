@@ -41,7 +41,11 @@ fn lower(src: &str) -> SemProgram {
 }
 
 fn fn_key(sp: &SemProgram, f: FunctionId) -> String {
-    format!("M{}::{}", sp.function(f).module.index(), sp.function(f).name)
+    format!(
+        "M{}::{}",
+        sp.function(f).module.index(),
+        sp.function(f).name
+    )
 }
 
 fn res_key(sp: &SemProgram, r: ResourceId) -> String {
@@ -200,7 +204,13 @@ fn proj_it(sp: &SemProgram, s: &MachineState) -> String {
         let stack: Vec<String> = t
             .stack
             .iter()
-            .map(|f| format!("{}@{}", fn_key(sp, s.store.frames[f].function), s.store.frames[f].pc))
+            .map(|f| {
+                format!(
+                    "{}@{}",
+                    fn_key(sp, s.store.frames[f].function),
+                    s.store.frames[f].pc
+                )
+            })
             .collect();
         let status = match &t.status {
             ThreadStatus::Runnable => "run".to_string(),
@@ -428,7 +438,13 @@ fn proj_pn(pn: &PetriEngine, sp: &SemProgram, s: &NetState) -> String {
         let stack: Vec<String> = t
             .stack
             .iter()
-            .map(|f| format!("{}@{}", fn_key(sp, s.store.frames[f].function), s.store.frames[f].pc))
+            .map(|f| {
+                format!(
+                    "{}@{}",
+                    fn_key(sp, s.store.frames[f].function),
+                    s.store.frames[f].pc
+                )
+            })
             .collect();
         let status = if s.store.finished.contains(tid) {
             "done".to_string()
@@ -505,8 +521,16 @@ fn explore_it(sp: &SemProgram) -> Explored {
     let b = bounds();
     let it = Interpreter::new(sp, b.clone());
     let r = explore::explore(&it, &b);
-    assert!(r.boundary_events.is_empty(), "interp boundary: {:?}", r.boundary_events);
-    assert!(r.unsupported.is_empty(), "interp unsupported: {:?}", r.unsupported);
+    assert!(
+        r.boundary_events.is_empty(),
+        "interp boundary: {:?}",
+        r.boundary_events
+    );
+    assert!(
+        r.unsupported.is_empty(),
+        "interp unsupported: {:?}",
+        r.unsupported
+    );
     assert!(r.invalid.is_empty(), "interp invalid: {:?}", r.invalid);
     assert!(!r.truncated, "interp search truncated");
 
@@ -519,13 +543,25 @@ fn explore_it(sp: &SemProgram) -> Explored {
             // Reconstruct the step label by replaying? We need source/target
             // labels; `edges` only stores target + label.
             let thread_order: Vec<ThreadId> = s.threads.keys().copied().collect();
-            let tmap: BTreeMap<ThreadId, usize> =
-                thread_order.iter().enumerate().map(|(k, t)| (*t, k)).collect();
+            let tmap: BTreeMap<ThreadId, usize> = thread_order
+                .iter()
+                .enumerate()
+                .map(|(k, t)| (*t, k))
+                .collect();
             let frame_order: Vec<FrameId> = s.store.frames.keys().copied().collect();
-            let fmap: BTreeMap<FrameId, usize> =
-                frame_order.iter().enumerate().map(|(k, f)| (*f, k)).collect();
-            let tid = label.thread.map(|x| format!("T{}", tmap[&x])).unwrap_or_default();
-            let fid = label.frame.map(|x| format!("F{}", fmap[&x])).unwrap_or_default();
+            let fmap: BTreeMap<FrameId, usize> = frame_order
+                .iter()
+                .enumerate()
+                .map(|(k, f)| (*f, k))
+                .collect();
+            let tid = label
+                .thread
+                .map(|x| format!("T{}", tmap[&x]))
+                .unwrap_or_default();
+            let fid = label
+                .frame
+                .map(|x| format!("F{}", fmap[&x]))
+                .unwrap_or_default();
             let sid = label.origin.sid;
             let key = format!(
                 "{}#{}#{}#{}",
@@ -544,8 +580,16 @@ fn explore_pn(sp: &SemProgram) -> Explored {
     let b = bounds();
     let pn = PetriEngine::new(sp, b.clone());
     let r = explore::explore(&pn, &b);
-    assert!(r.boundary_events.is_empty(), "petri boundary: {:?}", r.boundary_events);
-    assert!(r.unsupported.is_empty(), "petri unsupported: {:?}", r.unsupported);
+    assert!(
+        r.boundary_events.is_empty(),
+        "petri boundary: {:?}",
+        r.boundary_events
+    );
+    assert!(
+        r.unsupported.is_empty(),
+        "petri unsupported: {:?}",
+        r.unsupported
+    );
     assert!(r.invalid.is_empty(), "petri invalid: {:?}", r.invalid);
     assert!(!r.truncated, "petri search truncated");
 
@@ -556,13 +600,25 @@ fn explore_pn(sp: &SemProgram) -> Explored {
         projections.insert(p.clone());
         for (t, label) in &r.edges[i] {
             let thread_order: Vec<ThreadId> = s.store.threads.keys().copied().collect();
-            let tmap: BTreeMap<ThreadId, usize> =
-                thread_order.iter().enumerate().map(|(k, t)| (*t, k)).collect();
+            let tmap: BTreeMap<ThreadId, usize> = thread_order
+                .iter()
+                .enumerate()
+                .map(|(k, t)| (*t, k))
+                .collect();
             let frame_order: Vec<FrameId> = s.store.frames.keys().copied().collect();
-            let fmap: BTreeMap<FrameId, usize> =
-                frame_order.iter().enumerate().map(|(k, f)| (*f, k)).collect();
-            let tid = label.thread.map(|x| format!("T{}", tmap[&x])).unwrap_or_default();
-            let fid = label.frame.map(|x| format!("F{}", fmap[&x])).unwrap_or_default();
+            let fmap: BTreeMap<FrameId, usize> = frame_order
+                .iter()
+                .enumerate()
+                .map(|(k, f)| (*f, k))
+                .collect();
+            let tid = label
+                .thread
+                .map(|x| format!("T{}", tmap[&x]))
+                .unwrap_or_default();
+            let fid = label
+                .frame
+                .map(|x| format!("F{}", fmap[&x]))
+                .unwrap_or_default();
             // Project auxiliary net steps onto the blocked thread's CIR
             // statement (the interpreter's resume step).
             let (function, sid) = match label.origin.sid {
@@ -597,7 +653,10 @@ fn compare(name: &str, src: &str) {
             eprintln!("  P-only:\n{x}");
         }
     }
-    assert_eq!(it.projections, pn.projections, "state projection mismatch for {name}");
+    assert_eq!(
+        it.projections, pn.projections,
+        "state projection mismatch for {name}"
+    );
     if it.edges != pn.edges {
         eprintln!(
             "{name}: edge relations differ (interp-only {}, petri-only {})",
@@ -626,7 +685,10 @@ fn differential_matches_producer_consumer() {
 
 #[test]
 fn differential_matches_state_machine() {
-    compare("state_machine", include_str!("../examples/state_machine.json"));
+    compare(
+        "state_machine",
+        include_str!("../examples/state_machine.json"),
+    );
 }
 
 #[test]
@@ -751,10 +813,9 @@ fn differential_matches_notify_choice() {
 // ── meta-transformations ────────────────────────────────────────────
 
 fn outcome_of(src: &str) -> concir::sem::outcome::Outcome {
-    let spec: concir::explore::contract::ContractSpec = serde_json::from_str(
-        r#"{"name":"d","properties":[{"kind":"deadlock_free","id":"d"}]}"#,
-    )
-    .unwrap();
+    let spec: concir::explore::contract::ContractSpec =
+        serde_json::from_str(r#"{"name":"d","properties":[{"kind":"deadlock_free","id":"d"}]}"#)
+            .unwrap();
     concir::explore::verify_program(
         &serde_json::from_str(src).unwrap(),
         &spec,
@@ -871,11 +932,18 @@ fn differential_is_invariant_under_resource_and_function_reorder() {
     let ib = explore_it(&lower(b)).projections;
     if ia != ib {
         eprintln!("only a: {}", ia.difference(&ib).count());
-        for x in ia.difference(&ib).take(2) { eprintln!("A:\n{x}"); }
+        for x in ia.difference(&ib).take(2) {
+            eprintln!("A:\n{x}");
+        }
         eprintln!("only b: {}", ib.difference(&ia).count());
-        for x in ib.difference(&ia).take(2) { eprintln!("B:\n{x}"); }
+        for x in ib.difference(&ia).take(2) {
+            eprintln!("B:\n{x}");
+        }
     }
-    assert_eq!(ia, ib, "resource/function reordering changed the projection");
+    assert_eq!(
+        ia, ib,
+        "resource/function reordering changed the projection"
+    );
     compare("reorder_a", a);
     compare("reorder_b", b);
 }

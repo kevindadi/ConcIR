@@ -22,12 +22,12 @@ fn spec(name: &str) -> ContractSpec {
     serde_json::from_str(&fixture(name)).unwrap()
 }
 
-fn run(program_name: &str, contract_name: &str, engine: EngineKind) -> concir::explore::VerificationReport {
-    verify_program(
-        &program(program_name),
-        &spec(contract_name),
-        engine,
-    )
+fn run(
+    program_name: &str,
+    contract_name: &str,
+    engine: EngineKind,
+) -> concir::explore::VerificationReport {
+    verify_program(&program(program_name), &spec(contract_name), engine)
 }
 
 fn both(program_name: &str, contract_name: &str) -> (Outcome, Outcome, bool, bool) {
@@ -40,7 +40,10 @@ fn both(program_name: &str, contract_name: &str) -> (Outcome, Outcome, bool, boo
 
 #[test]
 fn r1_nested_handle_is_not_clobbered_by_a_call() {
-    let (i, p, ic, pc) = both("nested_handle_false_pass.json", "nested_handle_false_pass_contract.json");
+    let (i, p, ic, pc) = both(
+        "nested_handle_false_pass.json",
+        "nested_handle_false_pass_contract.json",
+    );
     assert_eq!(i, Outcome::Fail, "interpreter must find the deadlock");
     assert_eq!(p, Outcome::Fail, "petri must find the deadlock");
     assert!(ic && pc, "both searches must be complete");
@@ -64,7 +67,10 @@ fn r1_alpha_renaming_callee_handle_does_not_change_result() {
 
 #[test]
 fn r1_control_without_gate_is_deadlock_free() {
-    let (i, p, _, _) = both("nested_handle_names.json", "nested_handle_names_contract.json");
+    let (i, p, _, _) = both(
+        "nested_handle_names.json",
+        "nested_handle_names_contract.json",
+    );
     assert_eq!(i, Outcome::Pass);
     assert_eq!(p, Outcome::Pass);
 }
@@ -73,8 +79,15 @@ fn r1_control_without_gate_is_deadlock_free() {
 
 #[test]
 fn r4_notify_one_must_consider_every_waiter() {
-    let (i, p, ic, pc) = both("notify_choice_false_pass.json", "notify_choice_false_pass_contract.json");
-    assert_eq!(i, Outcome::Fail, "choosing w2 must be explored as a deadlock");
+    let (i, p, ic, pc) = both(
+        "notify_choice_false_pass.json",
+        "notify_choice_false_pass_contract.json",
+    );
+    assert_eq!(
+        i,
+        Outcome::Fail,
+        "choosing w2 must be explored as a deadlock"
+    );
     assert_eq!(p, Outcome::Fail);
     assert!(ic && pc);
 }
@@ -83,9 +96,16 @@ fn r4_notify_one_must_consider_every_waiter() {
 
 #[test]
 fn r5_notify_all_without_wait_advances() {
-    let (i, p, ic, pc) = both("notify_all_without_wait.json", "notify_all_without_wait_contract.json");
+    let (i, p, ic, pc) = both(
+        "notify_all_without_wait.json",
+        "notify_all_without_wait_contract.json",
+    );
     assert_eq!(i, Outcome::Pass);
-    assert_eq!(p, Outcome::Pass, "the net must build a notify_all with no wait site");
+    assert_eq!(
+        p,
+        Outcome::Pass,
+        "the net must build a notify_all with no wait site"
+    );
     assert!(ic && pc);
 }
 
@@ -101,14 +121,20 @@ fn r9_bodyless_entry_is_transparent_in_both_engines() {
 
 #[test]
 fn r9_unused_unsupported_resource_does_not_block() {
-    let (i, p, _, _) = both("unused_unsupported.json", "unused_unsupported_contract.json");
+    let (i, p, _, _) = both(
+        "unused_unsupported.json",
+        "unused_unsupported_contract.json",
+    );
     assert_eq!(i, Outcome::Pass);
     assert_eq!(p, Outcome::Pass);
 }
 
 #[test]
 fn r9_runtime_invalid_is_invalid_in_both_engines() {
-    let (i, p, _, _) = both("runtime_invalid_exit.json", "runtime_invalid_exit_contract.json");
+    let (i, p, _, _) = both(
+        "runtime_invalid_exit.json",
+        "runtime_invalid_exit_contract.json",
+    );
     assert_eq!(i, Outcome::Invalid);
     assert_eq!(p, Outcome::Invalid);
 }
@@ -135,8 +161,17 @@ fn r6_statically_invalid_program_is_invalid_not_pass() {
 
 #[test]
 fn r6_unsupported_assumptions_are_rejected() {
-    let report = run("ignored_assumptions.json", "ignored_assumptions_contract.json", EngineKind::Petri);
-    assert_eq!(report.outcome, Outcome::Unsupported, "{:?}", report.unsupported);
+    let report = run(
+        "ignored_assumptions.json",
+        "ignored_assumptions_contract.json",
+        EngineKind::Petri,
+    );
+    assert_eq!(
+        report.outcome,
+        Outcome::Unsupported,
+        "{:?}",
+        report.unsupported
+    );
     assert!(!report.unsupported.is_empty());
 }
 
@@ -155,7 +190,10 @@ fn r6_contract_spec_errors_are_structured() {
         r#"{"name":"bad","properties":[{"kind":"reachability","id":"g","goal":{"kind":"statement_reached","function":"main::main","sid":"s99"}}]}"#,
     )
     .unwrap();
-    assert!(matches!(missing.resolve(&sem), Err(ContractError::Invalid(_))));
+    assert!(matches!(
+        missing.resolve(&sem),
+        Err(ContractError::Invalid(_))
+    ));
     // Zero bounds -> Invalid.
     let zero: ContractSpec = serde_json::from_str(
         r#"{"name":"bad","properties":[{"kind":"deadlock_free","id":"d"}],"bounds":{"max_states":0}}"#,
@@ -174,7 +212,11 @@ fn r6_contract_spec_errors_are_structured() {
 
 #[test]
 fn r7_finite_call_loop_is_complete_with_small_state_space() {
-    let report = run("finite_call_loop.json", "finite_call_loop_contract.json", EngineKind::Petri);
+    let report = run(
+        "finite_call_loop.json",
+        "finite_call_loop_contract.json",
+        EngineKind::Petri,
+    );
     assert_eq!(report.outcome, Outcome::Pass, "{:?}", report.properties);
     assert!(report.complete);
     assert!(
@@ -182,7 +224,11 @@ fn r7_finite_call_loop_is_complete_with_small_state_space() {
         "monitor saturation should collapse the loop, got {} states",
         report.states_explored
     );
-    let i = run("finite_call_loop.json", "finite_call_loop_contract.json", EngineKind::Interpreter);
+    let i = run(
+        "finite_call_loop.json",
+        "finite_call_loop_contract.json",
+        EngineKind::Interpreter,
+    );
     assert_eq!(i.outcome, Outcome::Pass);
     assert!(i.complete);
 }
@@ -236,7 +282,12 @@ fn r3_forbidden_reorder_is_not_accepted() {
 #[test]
 fn r2_deleting_a_required_statement_is_not_accepted() {
     let patch = fixture("delete_patch.json");
-    let r = repair_with("repair_original.json", "stable_sid_contract.json", &patch, 4);
+    let r = repair_with(
+        "repair_original.json",
+        "stable_sid_contract.json",
+        &patch,
+        4,
+    );
     assert_ne!(r.outcome, RepairOutcome::Repaired);
     // The contract requires main::t2.s3; after deletion the target is gone.
     assert!(r
@@ -247,7 +298,11 @@ fn r2_deleting_a_required_statement_is_not_accepted() {
 
 #[test]
 fn r2_fresh_resolve_of_deleted_target_is_invalid() {
-    let report = run("deleted_program.json", "stable_sid_contract.json", EngineKind::Petri);
+    let report = run(
+        "deleted_program.json",
+        "stable_sid_contract.json",
+        EngineKind::Petri,
+    );
     assert_eq!(report.outcome, Outcome::Invalid, "{:?}", report.invalid);
     assert!(report.invalid.iter().any(|i| i.message.contains("s3")));
 }

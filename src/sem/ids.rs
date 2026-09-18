@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 
 macro_rules! id_type {
     ($name:ident, $inner:ty) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+        #[derive(
+            Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+        )]
         pub struct $name(pub $inner);
 
         impl $name {

@@ -69,7 +69,10 @@ fn spec(src: &str) -> ContractSpec {
 #[test]
 fn buggy_program_is_statically_valid_but_deadlocks() {
     let p = parse(BUGGY);
-    assert!(validate::validate(&p).valid, "buggy program must be statically valid");
+    assert!(
+        validate::validate(&p).valid,
+        "buggy program must be statically valid"
+    );
     let report = verify_program(&p, &spec(CONTRACT), EngineKind::Petri);
     assert_eq!(report.outcome, Outcome::Fail);
     assert!(report
@@ -102,7 +105,8 @@ fn end_to_end_lock_order_repair_succeeds() {
 #[test]
 fn rejects_patch_that_removes_required_behavior() {
     let p = parse(BUGGY);
-    let s = spec(r#"{
+    let s = spec(
+        r#"{
       "name": "lockorder",
       "properties": [{"kind": "deadlock_free", "id": "no-deadlock"}],
       "preserved": [
@@ -110,7 +114,8 @@ fn rejects_patch_that_removes_required_behavior() {
          "goal": {"kind": "var_eq", "resource": "x", "value": 2}}
       ],
       "allowed_scope": {"allow_statement_delete": true}
-    }"#);
+    }"#,
+    );
     let patch_json = r#"[{
       "module": "main",
       "function": "t2",
@@ -130,7 +135,8 @@ fn rejects_patch_that_removes_required_behavior() {
 #[test]
 fn budget_exhaustion_when_no_candidate_satisfies() {
     let p = parse(BUGGY);
-    let s = spec(r#"{
+    let s = spec(
+        r#"{
       "name": "lockorder",
       "properties": [{"kind": "deadlock_free", "id": "no-deadlock"}],
       "preserved": [
@@ -138,7 +144,8 @@ fn budget_exhaustion_when_no_candidate_satisfies() {
          "goal": {"kind": "false"}}
       ],
       "allowed_scope": {"allow_lock_reorder": true}
-    }"#);
+    }"#,
+    );
     let mut provider = LockOrderEnumerator::new(&p, &s.allowed_scope);
     let report = run_repair(&p, &s, &mut provider, 1);
     assert_eq!(report.outcome, RepairOutcome::BudgetExhausted);

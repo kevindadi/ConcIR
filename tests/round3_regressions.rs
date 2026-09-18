@@ -50,7 +50,10 @@ fn both(program_name: &str, contract_name: &str) -> (Outcome, Outcome, bool, boo
 fn b1_contract_only_resources_are_materialized() {
     for (p, c) in [
         ("r2_query_only_Var.json", "r2_query_only_Var_contract.json"),
-        ("r2_query_only_Atomic.json", "r2_query_only_Atomic_contract.json"),
+        (
+            "r2_query_only_Atomic.json",
+            "r2_query_only_Atomic_contract.json",
+        ),
     ] {
         let (i, pe, ic, pc) = both(p, c);
         assert_eq!(i, Outcome::Pass, "{p}");
@@ -58,8 +61,14 @@ fn b1_contract_only_resources_are_materialized() {
         assert!(ic && pc);
     }
     for (p, c) in [
-        ("r2_query_only_Var_negated.json", "r2_query_only_Var_negated_contract.json"),
-        ("r2_query_only_Atomic_negated.json", "r2_query_only_Atomic_negated_contract.json"),
+        (
+            "r2_query_only_Var_negated.json",
+            "r2_query_only_Var_negated_contract.json",
+        ),
+        (
+            "r2_query_only_Atomic_negated.json",
+            "r2_query_only_Atomic_negated_contract.json",
+        ),
     ] {
         let (i, pe, _, _) = both(p, c);
         assert_eq!(i, Outcome::Fail, "{p} must not be a false PASS");
@@ -76,10 +85,18 @@ fn b1_repair_must_reject_deleting_the_last_write() {
     let mut provider =
         FileCandidateProvider::from_json(&fixture("r2_query_only_delete_patch.json")).unwrap();
     let report = run_repair(&p, &s, &mut provider, 4);
-    assert_ne!(report.outcome, RepairOutcome::Repaired, "{:?}", report.rounds);
+    assert_ne!(
+        report.outcome,
+        RepairOutcome::Repaired,
+        "{:?}",
+        report.rounds
+    );
     assert!(report.rounds.iter().any(|r| !r.accepted));
 
-    let (i, pe, _, _) = both("r2_query_only_repair_after.json", "r2_query_only_repair_contract.json");
+    let (i, pe, _, _) = both(
+        "r2_query_only_repair_after.json",
+        "r2_query_only_repair_contract.json",
+    );
     assert_eq!(i, Outcome::Fail);
     assert_eq!(pe, Outcome::Fail);
 }
@@ -278,8 +295,18 @@ fn b5_bounded_dst_paths_respect_the_domain() {
     }"#;
     let a = run_str(call, goal, EngineKind::Interpreter);
     let b = run_str(call, goal, EngineKind::Petri);
-    assert_eq!(a.outcome, Outcome::Fail, "call return dst: {:?}", a.properties);
-    assert_eq!(b.outcome, Outcome::Fail, "call return dst: {:?}", b.properties);
+    assert_eq!(
+        a.outcome,
+        Outcome::Fail,
+        "call return dst: {:?}",
+        a.properties
+    );
+    assert_eq!(
+        b.outcome,
+        Outcome::Fail,
+        "call return dst: {:?}",
+        b.properties
+    );
 }
 
 // ── B6 ──────────────────────────────────────────────────────────────
@@ -288,7 +315,10 @@ fn b5_bounded_dst_paths_respect_the_domain() {
 fn b6_finite_concurrent_loops_complete() {
     for (p, c) in [
         ("r2_scope_loop.json", "r2_scope_loop_contract.json"),
-        ("r2_spawn_join_loop.json", "r2_spawn_join_loop_contract.json"),
+        (
+            "r2_spawn_join_loop.json",
+            "r2_spawn_join_loop_contract.json",
+        ),
     ] {
         let i = run(p, c, EngineKind::Interpreter);
         let pe = run(p, c, EngineKind::Petri);
@@ -340,7 +370,11 @@ fn b6_stale_handle_second_join_is_invalid() {
     let contract = r#"{"name":"c","properties":[{"kind":"deadlock_free","id":"d"}]}"#;
     let a = run_str(src, contract, EngineKind::Interpreter);
     let b = run_str(src, contract, EngineKind::Petri);
-    assert_eq!(a.outcome, Outcome::Invalid, "double join must be a semantic error");
+    assert_eq!(
+        a.outcome,
+        Outcome::Invalid,
+        "double join must be a semantic error"
+    );
     assert_eq!(b.outcome, Outcome::Invalid);
 }
 
@@ -364,8 +398,14 @@ fn b6_completion_threshold_saturates() {
     let at3 = r#"{"name":"c","properties":[{"kind":"reachability","id":"three","goal":{"kind":"function_completed_at_least","function":"main::worker","n":3}}]}"#;
     assert_eq!(run_str(src, at2, EngineKind::Petri).outcome, Outcome::Pass);
     assert_eq!(run_str(src, at3, EngineKind::Petri).outcome, Outcome::Fail);
-    assert_eq!(run_str(src, at2, EngineKind::Interpreter).outcome, Outcome::Pass);
-    assert_eq!(run_str(src, at3, EngineKind::Interpreter).outcome, Outcome::Fail);
+    assert_eq!(
+        run_str(src, at2, EngineKind::Interpreter).outcome,
+        Outcome::Pass
+    );
+    assert_eq!(
+        run_str(src, at3, EngineKind::Interpreter).outcome,
+        Outcome::Fail
+    );
 }
 
 // ── B7 ──────────────────────────────────────────────────────────────
@@ -380,12 +420,22 @@ fn b7_fqn_patch_scope_is_exact() {
     let mut provider =
         FileCandidateProvider::from_json(&fixture("r2_scope_swap_patch.json")).unwrap();
     let report = run_repair(&p, &s, &mut provider, 4);
-    assert_eq!(report.outcome, RepairOutcome::Repaired, "{:?}", report.rounds);
+    assert_eq!(
+        report.outcome,
+        RepairOutcome::Repaired,
+        "{:?}",
+        report.rounds
+    );
 
     // Automatic enumerator produces the same allowed target.
     let mut provider = LockOrderEnumerator::new(&p, &s.allowed_scope);
     let report = run_repair(&p, &s, &mut provider, 4);
-    assert_eq!(report.outcome, RepairOutcome::Repaired, "{:?}", report.rounds);
+    assert_eq!(
+        report.outcome,
+        RepairOutcome::Repaired,
+        "{:?}",
+        report.rounds
+    );
     assert_eq!(report.accepted.as_ref().unwrap().module, "main");
     assert_eq!(report.accepted.as_ref().unwrap().function, "t1");
 }
@@ -415,11 +465,22 @@ fn b7_patch_scope_excludes_other_module_same_function() {
 
 #[test]
 fn b8_semaphore_overflow_is_structured_invalid() {
-    let (i, pe, _, _) = both("r2_semaphore_overflow.json", "r2_semaphore_overflow_contract.json");
+    let (i, pe, _, _) = both(
+        "r2_semaphore_overflow.json",
+        "r2_semaphore_overflow_contract.json",
+    );
     assert_eq!(i, Outcome::Invalid);
     assert_eq!(pe, Outcome::Invalid);
-    let r = run("r2_semaphore_overflow.json", "r2_semaphore_overflow_contract.json", EngineKind::Petri);
-    assert!(r.invalid.iter().any(|x| x.code == "E905"), "{:?}", r.invalid);
+    let r = run(
+        "r2_semaphore_overflow.json",
+        "r2_semaphore_overflow_contract.json",
+        EngineKind::Petri,
+    );
+    assert!(
+        r.invalid.iter().any(|x| x.code == "E905"),
+        "{:?}",
+        r.invalid
+    );
 }
 
 // ── Metadata ────────────────────────────────────────────────────────

@@ -187,7 +187,10 @@ impl SemFunction {
     /// True for a body-less function that the backend can treat as an
     /// immediate, effect-free placeholder.
     pub fn is_transparent_nobody(&self) -> bool {
-        self.is_nobody && self.effects_empty && self.returns.is_none() && self.may_block != Some(true)
+        self.is_nobody
+            && self.effects_empty
+            && self.returns.is_none()
+            && self.may_block != Some(true)
     }
 }
 
@@ -309,22 +312,18 @@ pub fn lower(program: &Program) -> BackendResult<SemProgram> {
     for (mi, m) in program.modules.iter().enumerate() {
         for f in &m.functions {
             let id = FunctionId(lowerer.functions.len() as u32);
-            lowerer.functions.push(placeholder_function(
-                id,
-                ModuleId(mi as u32),
-                f,
-            ));
+            lowerer
+                .functions
+                .push(placeholder_function(id, ModuleId(mi as u32), f));
         }
     }
 
-    let entry = lowerer
-        .function_by_fqn(&program.entry)
-        .ok_or_else(|| {
-            BackendError::invalid(
-                "E100",
-                format!("entry function '{}' was not found", program.entry),
-            )
-        })?;
+    let entry = lowerer.function_by_fqn(&program.entry).ok_or_else(|| {
+        BackendError::invalid(
+            "E100",
+            format!("entry function '{}' was not found", program.entry),
+        )
+    })?;
     lowerer.entry = entry;
 
     for m in &program.modules {
@@ -439,7 +438,10 @@ fn lower_resource(
             let base = r.base.as_ref().ok_or_else(|| {
                 BackendError::invalid("E001", format!("resource '{}' is missing 'base'", r.name))
             })?;
-            Some(tenv.resolve(module_name, base).unwrap_or_else(|| base.clone()))
+            Some(
+                tenv.resolve(module_name, base)
+                    .unwrap_or_else(|| base.clone()),
+            )
         }
         _ => None,
     };
@@ -696,11 +698,7 @@ impl<'a> BodyCtx<'a> {
                 .at(at)),
             };
         }
-        Err(BackendError::invalid(
-            "E931",
-            format!("undefined name '{name}' in expression"),
-        )
-        .at(at))
+        Err(BackendError::invalid("E931", format!("undefined name '{name}' in expression")).at(at))
     }
 
     fn writable_slot(&self, name: &str, at: &str) -> BackendResult<SlotRef> {
@@ -727,11 +725,7 @@ impl<'a> BodyCtx<'a> {
                 .at(at)),
             };
         }
-        Err(BackendError::invalid(
-            "E921",
-            format!("'{name}' is not a writable slot"),
-        )
-        .at(at))
+        Err(BackendError::invalid("E921", format!("'{name}' is not a writable slot")).at(at))
     }
 
     fn expr(&self, text: &str, at: &str) -> BackendResult<LExpr> {
@@ -772,9 +766,11 @@ impl<'a> BodyCtx<'a> {
         match e {
             LExpr::Lit(crate::expr::Lit::Float(_)) => true,
             LExpr::Lit(_) => false,
-            LExpr::Slot(SlotRef::Local(i)) => {
-                self.slots.get(*i).map(|s| is_float_ty(&s.ty)).unwrap_or(false)
-            }
+            LExpr::Slot(SlotRef::Local(i)) => self
+                .slots
+                .get(*i)
+                .map(|s| is_float_ty(&s.ty))
+                .unwrap_or(false),
             LExpr::Slot(SlotRef::Shared(r)) => {
                 self.resource_tys.get(r).map(is_float_ty).unwrap_or(false)
             }
@@ -807,11 +803,7 @@ impl<'a> BodyCtx<'a> {
 
     fn resource(&self, name: &str, at: &str) -> BackendResult<ResourceId> {
         self.name_to_resource.get(name).copied().ok_or_else(|| {
-            BackendError::invalid(
-                "E100",
-                format!("unknown resource '{name}'"),
-            )
-            .at(at)
+            BackendError::invalid("E100", format!("unknown resource '{name}'")).at(at)
         })
     }
 }
@@ -828,7 +820,11 @@ fn unsupported_op(
     detail: &str,
 ) -> SemOp {
     l.unsupported
-        .push(Unsupported::new(construct, detail).at(fqn::location(ctx.module_name, ctx.fn_name, &s.sid)));
+        .push(Unsupported::new(construct, detail).at(fqn::location(
+            ctx.module_name,
+            ctx.fn_name,
+            &s.sid,
+        )));
     SemOp::Unsupported {
         construct: construct.to_string(),
     }
@@ -1100,7 +1096,11 @@ fn lower_op(l: &mut Lowerer, ctx: &BodyCtx, s: &ast::Stmt) -> BackendResult<SemO
                 dst,
             }
         }
-        ast::Op::Spawn { func, handle, args: _ } => {
+        ast::Op::Spawn {
+            func,
+            handle,
+            args: _,
+        } => {
             let callee = l.resolve_function(ctx.module, func).ok_or_else(|| {
                 BackendError::invalid("E101", format!("unknown function '{func}'")).at(&at)
             })?;
@@ -1204,7 +1204,13 @@ fn lower_op(l: &mut Lowerer, ctx: &BodyCtx, s: &ast::Stmt) -> BackendResult<SemO
             },
         },
         ast::Op::RwLockRead { .. } | ast::Op::RwLockWrite { .. } | ast::Op::RwLockUnlock { .. } => {
-            unsupported_op(l, ctx, s, "rwlock", "RwLock operations are not supported in v1")
+            unsupported_op(
+                l,
+                ctx,
+                s,
+                "rwlock",
+                "RwLock operations are not supported in v1",
+            )
         }
         ast::Op::Select { .. } => {
             unsupported_op(l, ctx, s, "select", "select is not supported in v1")
@@ -1212,9 +1218,7 @@ fn lower_op(l: &mut Lowerer, ctx: &BodyCtx, s: &ast::Stmt) -> BackendResult<SemO
         ast::Op::AsyncCall { .. } => {
             unsupported_op(l, ctx, s, "async_call", "async_call is not supported in v1")
         }
-        ast::Op::Await { .. } => {
-            unsupported_op(l, ctx, s, "await", "await is not supported in v1")
-        }
+        ast::Op::Await { .. } => unsupported_op(l, ctx, s, "await", "await is not supported in v1"),
         ast::Op::AbstractStep { .. } => unsupported_op(
             l,
             ctx,

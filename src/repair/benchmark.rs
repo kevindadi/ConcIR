@@ -15,7 +15,9 @@ use crate::explore::contract::ContractSpec;
 use crate::explore::{verify_program, EngineKind};
 use crate::sem::outcome::Outcome;
 
-use super::search::{program_fingerprint, run_search, RepairStrategy, SearchArtifact, SearchConfig};
+use super::search::{
+    program_fingerprint, run_search, RepairStrategy, SearchArtifact, SearchConfig,
+};
 use super::RepairOutcome;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -280,7 +282,14 @@ pub fn export_and_reverify(case_name: &str, strategy: RepairStrategy) -> Option<
     let case = CASES.iter().find(|c| c.name == case_name)?;
     let program = program_of(case);
     let spec = spec_of(case);
-    let report = run_search(&program, &spec, &SearchConfig { strategy, ..SearchConfig::default() });
+    let report = run_search(
+        &program,
+        &spec,
+        &SearchConfig {
+            strategy,
+            ..SearchConfig::default()
+        },
+    );
     let accepted = report.accepted_program?;
     let json = serde_json::to_string(&accepted).ok()?;
     let reparsed: Program = serde_json::from_str(&json).ok()?;

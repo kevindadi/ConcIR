@@ -139,7 +139,10 @@ fn main() {
                     module: module.clone(),
                     function: function.clone(),
                     original_hash,
-                    changes: vec![PatchChange::SwapStatements { a: a.clone(), b: b.clone() }],
+                    changes: vec![PatchChange::SwapStatements {
+                        a: a.clone(),
+                        b: b.clone(),
+                    }],
                     provenance: vec![SourceRelation {
                         description: "legal adjacent mutex-lock swap (pilot witness)".into(),
                     }],

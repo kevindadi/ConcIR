@@ -646,7 +646,13 @@ fn build_stmt(b: &mut Builder, f: &SemFunction, si: usize, stmt: &crate::sem::pr
     let fall = b.ctrl(fid, next_sid);
     let origin = b.origin(fid, si, Phase::Statement);
     match &stmt.op {
-        SemOp::Nop => b.add(NetOp::Nop, Binding::Control(input), Some(fall), vec![fall], origin),
+        SemOp::Nop => b.add(
+            NetOp::Nop,
+            Binding::Control(input),
+            Some(fall),
+            vec![fall],
+            origin,
+        ),
         SemOp::AssignLocal { target, expr } => b.add(
             NetOp::AssignLocal {
                 target: *target,
@@ -733,14 +739,18 @@ fn build_stmt(b: &mut Builder, f: &SemFunction, si: usize, stmt: &crate::sem::pr
             let mtx = b.place(PlaceKey::Mutex(*resource));
             let lw = b.place(PlaceKey::LockWait(*resource));
             b.add(
-                NetOp::MutexLockGrant { resource: *resource },
+                NetOp::MutexLockGrant {
+                    resource: *resource,
+                },
                 Binding::Control(input),
                 Some(fall),
                 vec![fall, mtx],
                 origin.clone(),
             );
             b.add(
-                NetOp::MutexLockBlock { resource: *resource },
+                NetOp::MutexLockBlock {
+                    resource: *resource,
+                },
                 Binding::Control(input),
                 Some(lw),
                 vec![lw, mtx],
@@ -750,7 +760,9 @@ fn build_stmt(b: &mut Builder, f: &SemFunction, si: usize, stmt: &crate::sem::pr
         SemOp::MutexUnlock { resource } => {
             let mtx = b.place(PlaceKey::Mutex(*resource));
             b.add(
-                NetOp::MutexUnlock { resource: *resource },
+                NetOp::MutexUnlock {
+                    resource: *resource,
+                },
                 Binding::Control(input),
                 Some(fall),
                 vec![fall, mtx],
@@ -861,9 +873,7 @@ fn build_stmt(b: &mut Builder, f: &SemFunction, si: usize, stmt: &crate::sem::pr
             // Choose any current waiter (one successor per token); the lock to
             // re-acquire is carried by the waiter token itself.
             b.add(
-                NetOp::CondvarNotifyHit {
-                    condvar: *condvar,
-                },
+                NetOp::CondvarNotifyHit { condvar: *condvar },
                 Binding::ControlChooseWait(input, cv),
                 Some(fall),
                 vec![fall, cv],
@@ -882,9 +892,7 @@ fn build_stmt(b: &mut Builder, f: &SemFunction, si: usize, stmt: &crate::sem::pr
             // Bulk transition: moves every current waiter to its lock queue.
             // Built unconditionally so it also advances with no wait site.
             b.add(
-                NetOp::CondvarNotifyAll {
-                    condvar: *condvar,
-                },
+                NetOp::CondvarNotifyAll { condvar: *condvar },
                 Binding::Control(input),
                 Some(fall),
                 vec![fall, cv],
@@ -956,13 +964,18 @@ fn build_stmt(b: &mut Builder, f: &SemFunction, si: usize, stmt: &crate::sem::pr
             );
         }
         SemOp::Scope { funcs } => {
-            let sw = b.place(PlaceKey::ScopeWait { function: fid, sid: si });
+            let sw = b.place(PlaceKey::ScopeWait {
+                function: fid,
+                sid: si,
+            });
             let mut outputs = vec![sw];
             for func in funcs {
                 outputs.push(b.ctrl(*func, 0));
             }
             b.add(
-                NetOp::Scope { funcs: funcs.clone() },
+                NetOp::Scope {
+                    funcs: funcs.clone(),
+                },
                 Binding::Control(input),
                 Some(fall),
                 outputs,
@@ -970,7 +983,10 @@ fn build_stmt(b: &mut Builder, f: &SemFunction, si: usize, stmt: &crate::sem::pr
             );
         }
         SemOp::Join { handle } => {
-            let jw = b.place(PlaceKey::JoinWait { function: fid, sid: si });
+            let jw = b.place(PlaceKey::JoinWait {
+                function: fid,
+                sid: si,
+            });
             b.add(
                 NetOp::JoinReady {
                     handle: handle.clone(),

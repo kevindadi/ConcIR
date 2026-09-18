@@ -9,8 +9,8 @@ use concir::interp::Interpreter;
 use concir::petri::exec::PetriEngine;
 use concir::sem::outcome::{AnalysisBounds, Outcome};
 use concir::sem::program;
-use concir::sem::value::{within_type, Value};
 use concir::sem::system::TransitionSystem;
+use concir::sem::value::{within_type, Value};
 
 fn fixture(name: &str) -> String {
     std::fs::read_to_string(format!("tests/repro_round4/{name}")).expect(name)
@@ -66,7 +66,11 @@ fn c1_canonical_collision_no_longer_merges_states() {
         "r3_canonical_false_pass.json",
         "r3_canonical_false_pass_contract.json",
     );
-    assert_eq!(ir, Outcome::Fail, "reaching A must violate the safety property");
+    assert_eq!(
+        ir,
+        Outcome::Fail,
+        "reaching A must violate the safety property"
+    );
     assert_eq!(pr, Outcome::Fail);
 }
 
@@ -124,7 +128,10 @@ fn raw_oracle<S: TransitionSystem>(engine: &S, goal: &concir::sem::system::Predi
         }
     }
     assert!(reachable, "{name}: goal must be reachable in the raw graph");
-    assert_eq!(conflicts, 0, "{name}: equal key with different predicate truth");
+    assert_eq!(
+        conflicts, 0,
+        "{name}: equal key with different predicate truth"
+    );
 }
 
 #[test]
@@ -158,8 +165,16 @@ fn c2_channel_payload_domain_is_enforced() {
         let p = format!("r3_channel_domain_{cap}.json");
         let c = format!("r3_channel_domain_{cap}_contract.json");
         let (i, pe, ic, pc) = both(&p, &c);
-        assert_eq!(i, Outcome::Fail, "capacity {cap}: invalid payload must not pass");
-        assert_eq!(pe, Outcome::Fail, "capacity {cap}: invalid payload must not pass");
+        assert_eq!(
+            i,
+            Outcome::Fail,
+            "capacity {cap}: invalid payload must not pass"
+        );
+        assert_eq!(
+            pe,
+            Outcome::Fail,
+            "capacity {cap}: invalid payload must not pass"
+        );
         assert!(ic && pc, "capacity {cap}: search must be complete");
     }
 }
@@ -182,8 +197,14 @@ fn c2_valid_channel_payload_still_flows() {
       "entry": "main::main"
     }"#;
     let contract = r#"{"name":"c","properties":[{"kind":"deadlock_free","id":"d"}]}"#;
-    assert_eq!(run_str(src, contract, EngineKind::Interpreter).outcome, Outcome::Pass);
-    assert_eq!(run_str(src, contract, EngineKind::Petri).outcome, Outcome::Pass);
+    assert_eq!(
+        run_str(src, contract, EngineKind::Interpreter).outcome,
+        Outcome::Pass
+    );
+    assert_eq!(
+        run_str(src, contract, EngineKind::Petri).outcome,
+        Outcome::Pass
+    );
 }
 
 // ── C3: recursive composite domains ─────────────────────────────────
@@ -194,9 +215,10 @@ fn c3_within_type_recurses_into_composites() {
     use std::collections::BTreeMap;
     let bounded = BaseType::Complex(ComplexBaseType::BoundedInt { lo: 0, hi: 1 });
     let int_ty = BaseType::Primitive("Int".into());
-    let struct_ty = BaseType::Complex(ComplexBaseType::Struct(BTreeMap::from([
-        ("n".to_string(), bounded.clone()),
-    ])));
+    let struct_ty = BaseType::Complex(ComplexBaseType::Struct(BTreeMap::from([(
+        "n".to_string(),
+        bounded.clone(),
+    )])));
     let mk = |n: i64| {
         let mut m = BTreeMap::new();
         m.insert("n".to_string(), Value::Int(n));
@@ -229,7 +251,11 @@ fn c3_within_type_recurses_into_composites() {
 #[test]
 fn c3_nested_bounded_field_update_is_disabled() {
     let (i, pe, ic, pc) = both("r3_nested_domain.json", "r3_nested_domain_contract.json");
-    assert_eq!(i, Outcome::Fail, "nested out-of-domain update must be unreachable");
+    assert_eq!(
+        i,
+        Outcome::Fail,
+        "nested out-of-domain update must be unreachable"
+    );
     assert_eq!(pe, Outcome::Fail);
     assert!(ic && pc);
 }
@@ -249,7 +275,10 @@ fn c3_array_and_mixed_nesting_domains() {
       "entry": "main::main"
     }"#;
     let goal = r#"{"name":"c","properties":[{"kind":"reachability","id":"bad","goal":{"kind":"not","predicate":{"kind":"or","predicates":[{"kind":"var_eq","resource":"x","value":[0]},{"kind":"var_eq","resource":"x","value":[1]}]}}}]}"#;
-    assert_eq!(run_str(arr, goal, EngineKind::Interpreter).outcome, Outcome::Fail);
+    assert_eq!(
+        run_str(arr, goal, EngineKind::Interpreter).outcome,
+        Outcome::Fail
+    );
     assert_eq!(run_str(arr, goal, EngineKind::Petri).outcome, Outcome::Fail);
 
     // Struct containing a bounded array; a legal value still flows.
@@ -265,7 +294,10 @@ fn c3_array_and_mixed_nesting_domains() {
       "entry": "main::main"
     }"#;
     let reach = r#"{"name":"c","properties":[{"kind":"reachability","id":"ok","goal":{"kind":"var_eq","resource":"y","value":{"xs":[1]}}}]}"#;
-    assert_eq!(run_str(ok, reach, EngineKind::Interpreter).outcome, Outcome::Pass);
+    assert_eq!(
+        run_str(ok, reach, EngineKind::Interpreter).outcome,
+        Outcome::Pass
+    );
     assert_eq!(run_str(ok, reach, EngineKind::Petri).outcome, Outcome::Pass);
 }
 

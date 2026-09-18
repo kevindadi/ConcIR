@@ -44,7 +44,11 @@ const R1_ATOMIC_LOAD: &str = r#"{
 #[test]
 fn r1_atomic_load_dst_into_protected_var_needs_lock() {
     let report = check(R1_ATOMIC_LOAD);
-    assert!(codes(&report).contains(&"E309".to_string()), "{:?}", codes(&report));
+    assert!(
+        codes(&report).contains(&"E309".to_string()),
+        "{:?}",
+        codes(&report)
+    );
 }
 
 const R1_CHANNEL_RECV: &str = r#"{
@@ -70,7 +74,11 @@ const R1_CHANNEL_RECV: &str = r#"{
 #[test]
 fn r1_channel_recv_dst_into_protected_var_needs_lock() {
     let report = check(R1_CHANNEL_RECV);
-    assert!(codes(&report).contains(&"E309".to_string()), "{:?}", codes(&report));
+    assert!(
+        codes(&report).contains(&"E309".to_string()),
+        "{:?}",
+        codes(&report)
+    );
 }
 
 const R1_CALL_DST: &str = r#"{
@@ -99,7 +107,11 @@ const R1_CALL_DST: &str = r#"{
 #[test]
 fn r1_call_dst_into_protected_var_needs_lock() {
     let report = check(R1_CALL_DST);
-    assert!(codes(&report).contains(&"E309".to_string()), "{:?}", codes(&report));
+    assert!(
+        codes(&report).contains(&"E309".to_string()),
+        "{:?}",
+        codes(&report)
+    );
 }
 
 // ── R2: condvar_wait must hold the paired lock ──────────────────────
@@ -125,7 +137,11 @@ const R2: &str = r#"{
 #[test]
 fn r2_condvar_wait_requires_lock_ownership() {
     let report = check(R2);
-    assert!(codes(&report).contains(&"E512".to_string()), "{:?}", codes(&report));
+    assert!(
+        codes(&report).contains(&"E512".to_string()),
+        "{:?}",
+        codes(&report)
+    );
 }
 
 // ── R3: may_block coverage and call propagation ─────────────────────
@@ -150,7 +166,11 @@ const R3_SEND: &str = r#"{
 #[test]
 fn r3_channel_send_counts_as_blocking() {
     let report = check(R3_SEND);
-    assert!(codes(&report).contains(&"E802".to_string()), "{:?}", codes(&report));
+    assert!(
+        codes(&report).contains(&"E802".to_string()),
+        "{:?}",
+        codes(&report)
+    );
 }
 
 const R3_PROPAGATION: &str = r#"{
@@ -176,7 +196,11 @@ const R3_PROPAGATION: &str = r#"{
 #[test]
 fn r3_may_block_propagates_through_calls() {
     let report = check(R3_PROPAGATION);
-    assert!(codes(&report).contains(&"E802".to_string()), "{:?}", codes(&report));
+    assert!(
+        codes(&report).contains(&"E802".to_string()),
+        "{:?}",
+        codes(&report)
+    );
 }
 
 // ── R4: requires_held is an analysis entry condition ────────────────

@@ -246,14 +246,22 @@ impl StepLabel {
     pub fn canonical(&self) -> String {
         format!(
             "{}::{}#{:?}/{:?}/t{:?}/f{:?}",
-            self.origin.module, self.origin.function, self.origin.sid, self.origin.phase,
-            self.thread, self.frame
+            self.origin.module,
+            self.origin.function,
+            self.origin.sid,
+            self.origin.phase,
+            self.thread,
+            self.frame
         )
     }
 }
 
 /// Stable location `module::function.sid` for diagnostics.
-pub fn location_of(program: &crate::sem::program::SemProgram, function: FunctionId, sid: Option<usize>) -> String {
+pub fn location_of(
+    program: &crate::sem::program::SemProgram,
+    function: FunctionId,
+    sid: Option<usize>,
+) -> String {
     let f = program.function(function);
     let m = program.module_name(f.module);
     match sid.and_then(|i| f.body.get(i)).map(|s| s.sid.as_str()) {

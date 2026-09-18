@@ -59,16 +59,28 @@ fn bounds() -> AnalysisBounds {
 #[test]
 fn d1_out_of_domain_return_is_disabled() {
     for (p, c) in [
-        ("r4_return_domain_wide_dst.json", "r4_return_domain_wide_dst_contract.json"),
-        ("r4_return_domain_discard.json", "r4_return_domain_discard_contract.json"),
-        ("r4_return_domain_entry.json", "r4_return_domain_entry_contract.json"),
+        (
+            "r4_return_domain_wide_dst.json",
+            "r4_return_domain_wide_dst_contract.json",
+        ),
+        (
+            "r4_return_domain_discard.json",
+            "r4_return_domain_discard_contract.json",
+        ),
+        (
+            "r4_return_domain_entry.json",
+            "r4_return_domain_entry_contract.json",
+        ),
     ] {
         let (i, pe, ic, pc) = both(p, c);
         assert_eq!(i, Outcome::Fail, "{p} interpreter must not complete");
         assert_eq!(pe, Outcome::Fail, "{p} petri must not complete");
         assert!(ic && pc, "{p} must be complete");
     }
-    let (i, pe, _, _) = both("r4_return_domain_valid.json", "r4_return_domain_valid_contract.json");
+    let (i, pe, _, _) = both(
+        "r4_return_domain_valid.json",
+        "r4_return_domain_valid_contract.json",
+    );
     assert_eq!(i, Outcome::Pass);
     assert_eq!(pe, Outcome::Pass);
 }
@@ -138,7 +150,11 @@ fn d1_nested_and_composite_returns() {
             &serde_json::from_str(goal).unwrap(),
             engine,
         );
-        assert_eq!(rep.outcome, Outcome::Fail, "composite return must be disabled");
+        assert_eq!(
+            rep.outcome,
+            Outcome::Fail,
+            "composite return must be disabled"
+        );
     }
 
     // In domain composite value completes.
@@ -202,11 +218,7 @@ fn shift_it(s: &MachineState) -> MachineState {
             for p in c.pending_send.iter_mut() {
                 p.thread = ThreadId(p.thread.0 + K);
             }
-            c.pending_recv = c
-                .pending_recv
-                .iter()
-                .map(|t| ThreadId(t.0 + K))
-                .collect();
+            c.pending_recv = c.pending_recv.iter().map(|t| ThreadId(t.0 + K)).collect();
             (*r, c)
         })
         .collect();
@@ -252,14 +264,7 @@ fn shift_it(s: &MachineState) -> MachineState {
     out.sem_waiters = s
         .sem_waiters
         .iter()
-        .map(|(r, q)| {
-            (
-                *r,
-                q.iter()
-                    .map(|(t, n)| (ThreadId(t.0 + K), *n))
-                    .collect(),
-            )
-        })
+        .map(|(r, q)| (*r, q.iter().map(|(t, n)| (ThreadId(t.0 + K), *n)).collect()))
         .collect();
     out.scopes = s
         .scopes
@@ -396,12 +401,7 @@ fn shift_pn(s: &NetState) -> NetState {
                 (ScopeId(id.0 + K), sc)
             })
             .collect(),
-        finished: s
-            .store
-            .finished
-            .iter()
-            .map(|t| ThreadId(t.0 + K))
-            .collect(),
+        finished: s.store.finished.iter().map(|t| ThreadId(t.0 + K)).collect(),
         completed_functions: s.store.completed_functions.clone(),
         completed_scopes: s.store.completed_scopes.clone(),
         reached: s.store.reached.clone(),
@@ -592,7 +592,11 @@ fn c1_raw_oracle_successor_quotient() {
         let truth = it.satisfied(&members[0], &pred);
         let actions = it_actions(&it, &members[0]);
         for m in &members[1..] {
-            assert_eq!(it.satisfied(m, &pred), truth, "key {key} predicate mismatch");
+            assert_eq!(
+                it.satisfied(m, &pred),
+                truth,
+                "key {key} predicate mismatch"
+            );
             assert_eq!(it_actions(&it, m), actions, "key {key} successor mismatch");
         }
     }

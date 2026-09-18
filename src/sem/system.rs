@@ -16,21 +16,42 @@ pub enum Predicate {
     True,
     False,
     /// A `Var`/`Atomic` equals a value.
-    VarEq { resource: ResourceId, value: Value },
+    VarEq {
+        resource: ResourceId,
+        value: Value,
+    },
     /// A `Var`/`Atomic` compares against a value.
-    VarCmp { resource: ResourceId, op: CmpOp, value: Value },
+    VarCmp {
+        resource: ResourceId,
+        op: CmpOp,
+        value: Value,
+    },
     /// At least one activation of `func` completed (durable across join).
-    FunctionCompleted { func: FunctionId },
+    FunctionCompleted {
+        func: FunctionId,
+    },
     /// At least `n` activations of `func` completed.
-    FunctionCompletedAtLeast { func: FunctionId, n: usize },
+    FunctionCompletedAtLeast {
+        func: FunctionId,
+        n: usize,
+    },
     /// The `scope` statement at `(func, sid)` completed all members.
-    ScopeCompleted { func: FunctionId, sid: usize },
+    ScopeCompleted {
+        func: FunctionId,
+        sid: usize,
+    },
     /// The statement at `(func, sid)` was reached.
-    StatementReached { func: FunctionId, sid: usize },
+    StatementReached {
+        func: FunctionId,
+        sid: usize,
+    },
     MutexFree(ResourceId),
     MutexHeld(ResourceId),
     ChannelEmpty(ResourceId),
-    ChannelAtLeast { resource: ResourceId, len: usize },
+    ChannelAtLeast {
+        resource: ResourceId,
+        len: usize,
+    },
     Not(Box<Predicate>),
     And(Vec<Predicate>),
     Or(Vec<Predicate>),
@@ -56,7 +77,11 @@ impl Predicate {
             Predicate::VarEq { resource, value } => {
                 format!("r{resource} == {}", value.canonical())
             }
-            Predicate::VarCmp { resource, op, value } => {
+            Predicate::VarCmp {
+                resource,
+                op,
+                value,
+            } => {
                 format!("r{resource} {:?} {}", op, value.canonical())
             }
             Predicate::FunctionCompleted { func } => format!("completed(f{func})"),

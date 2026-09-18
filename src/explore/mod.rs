@@ -110,7 +110,10 @@ impl<S: Clone + Eq + Hash> Reachability<S> {
 }
 
 /// Deterministically explore the reachable state graph up to the bounds.
-pub fn explore<S: TransitionSystem>(system: &S, bounds: &crate::sem::outcome::AnalysisBounds) -> Reachability<S::State> {
+pub fn explore<S: TransitionSystem>(
+    system: &S,
+    bounds: &crate::sem::outcome::AnalysisBounds,
+) -> Reachability<S::State> {
     let mut graph = Graph {
         states: Vec::new(),
         index: HashMap::new(),
@@ -338,12 +341,8 @@ pub fn verify<S: TransitionSystem>(
         }
     }
 
-    
-
-    let complete = !truncated
-        && boundary_events.is_empty()
-        && unsupported.is_empty()
-        && invalid.is_empty();
+    let complete =
+        !truncated && boundary_events.is_empty() && unsupported.is_empty() && invalid.is_empty();
 
     let mut diagnostics = Vec::new();
     let mut results = Vec::new();
@@ -524,7 +523,11 @@ fn check_property<S: TransitionSystem>(
                 }
                 None => PropertyResult {
                     id: id.into(),
-                    outcome: if complete { Outcome::Pass } else { Outcome::Unknown },
+                    outcome: if complete {
+                        Outcome::Pass
+                    } else {
+                        Outcome::Unknown
+                    },
                     detail: if complete {
                         "invariant held in all reachable states".into()
                     } else {
@@ -555,7 +558,11 @@ fn check_property<S: TransitionSystem>(
                 }
                 None => PropertyResult {
                     id: id.into(),
-                    outcome: if complete { Outcome::Pass } else { Outcome::Unknown },
+                    outcome: if complete {
+                        Outcome::Pass
+                    } else {
+                        Outcome::Unknown
+                    },
                     detail: if complete {
                         "forbidden state is unreachable".into()
                     } else {
@@ -565,16 +572,12 @@ fn check_property<S: TransitionSystem>(
             }
         }
         Property::DeadlockFree => {
-            let deadlock = graph
-                .states
-                .iter()
-                .enumerate()
-                .position(|(i, s)| {
-                    graph.processed[i]
-                        && !graph.had_boundary[i]
-                        && graph.edges[i].is_empty()
-                        && !system.is_finished(s)
-                });
+            let deadlock = graph.states.iter().enumerate().position(|(i, s)| {
+                graph.processed[i]
+                    && !graph.had_boundary[i]
+                    && graph.edges[i].is_empty()
+                    && !system.is_finished(s)
+            });
             match deadlock {
                 Some(idx) => {
                     let mut d = make_diagnostic(
@@ -588,18 +591,24 @@ fn check_property<S: TransitionSystem>(
                         complete,
                     );
                     d.repair_hints.push(
-                        "check lock acquisition order, channel capacity, and missing notify/join".into(),
+                        "check lock acquisition order, channel capacity, and missing notify/join"
+                            .into(),
                     );
                     diagnostics.push(d);
                     PropertyResult {
                         id: id.into(),
                         outcome: Outcome::Fail,
-                        detail: "a reachable state has no enabled step and unfinished threads".into(),
+                        detail: "a reachable state has no enabled step and unfinished threads"
+                            .into(),
                     }
                 }
                 None => PropertyResult {
                     id: id.into(),
-                    outcome: if complete { Outcome::Pass } else { Outcome::Unknown },
+                    outcome: if complete {
+                        Outcome::Pass
+                    } else {
+                        Outcome::Unknown
+                    },
                     detail: if complete {
                         "no deadlock state reachable".into()
                     } else {
@@ -652,12 +661,12 @@ fn check_property<S: TransitionSystem>(
                         id: id.into(),
                         outcome,
                         detail: if outcome == Outcome::Fail {
-                            format!("goal '{}' is not reachable in any execution", goal.description())
-                        } else {
                             format!(
-                                "goal '{}' not found; search incomplete",
+                                "goal '{}' is not reachable in any execution",
                                 goal.description()
                             )
+                        } else {
+                            format!("goal '{}' not found; search incomplete", goal.description())
                         },
                     }
                 }
@@ -684,10 +693,7 @@ fn check_property<S: TransitionSystem>(
                     final_instances: Vec::new(),
                     blocked: Vec::new(),
                     cir_statements: Vec::new(),
-                    proven_facts: vec![format!(
-                        "explored {} reachable states",
-                        graph.states.len()
-                    )],
+                    proven_facts: vec![format!("explored {} reachable states", graph.states.len())],
                     repair_hints: vec!["make the goal reachable before requiring AG EF".into()],
                 });
                 return PropertyResult {
@@ -723,7 +729,11 @@ fn check_property<S: TransitionSystem>(
                 }
                 None => PropertyResult {
                     id: id.into(),
-                    outcome: if complete { Outcome::Pass } else { Outcome::Unknown },
+                    outcome: if complete {
+                        Outcome::Pass
+                    } else {
+                        Outcome::Unknown
+                    },
                     detail: if complete {
                         "every reachable state can reach the goal".into()
                     } else {
@@ -793,7 +803,10 @@ fn make_diagnostic<S: TransitionSystem>(
         blocked,
         cir_statements,
         proven_facts: vec![
-            format!("reached a counterexample state after {} step(s)", graph.depth[idx]),
+            format!(
+                "reached a counterexample state after {} step(s)",
+                graph.depth[idx]
+            ),
             format!("explored {} reachable states", graph.states.len()),
         ],
         repair_hints: Vec::new(),
@@ -977,7 +990,8 @@ pub fn verify_program(
     let monitor = crate::sem::monitor::MonitorConfig::from_predicates(contract.predicates());
     let report = match engine {
         EngineKind::Interpreter => {
-            let e = crate::interp::Interpreter::with_monitor(&sem, contract.bounds.clone(), monitor);
+            let e =
+                crate::interp::Interpreter::with_monitor(&sem, contract.bounds.clone(), monitor);
             verify(&e, &contract)
         }
         EngineKind::Petri => {

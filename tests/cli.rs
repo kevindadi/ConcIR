@@ -50,7 +50,10 @@ fn e6_legacy_budget_is_read_and_validated() {
     // Invalid budget: usage error.
     assert_eq!(run(&["repair", model, contract, patches, "abc"]).0, 2);
     // Extra argument: usage error.
-    assert_eq!(run(&["repair", model, contract, patches, "1", "extra"]).0, 2);
+    assert_eq!(
+        run(&["repair", model, contract, patches, "1", "extra"]).0,
+        2
+    );
 }
 
 #[test]
@@ -152,8 +155,15 @@ use concir::ast::Program;
 use concir::explore::contract::ContractSpec;
 use concir::repair::search::{run_search, RepairStrategy, SearchConfig};
 
-fn write_artifact(name: &str, cfg: &SearchConfig, contract_json: &str) -> (PathBuf, serde_json::Value) {
-    let p: Program = serde_json::from_str(&std::fs::read_to_string("tests/repro_bench/two_cycles.json").unwrap()).unwrap();
+fn write_artifact(
+    name: &str,
+    cfg: &SearchConfig,
+    contract_json: &str,
+) -> (PathBuf, serde_json::Value) {
+    let p: Program = serde_json::from_str(
+        &std::fs::read_to_string("tests/repro_bench/two_cycles.json").unwrap(),
+    )
+    .unwrap();
     let spec: ContractSpec = serde_json::from_str(contract_json).unwrap();
     let report = run_search(&p, &spec, cfg);
     let artifact = report.artifact_with_config(&p, &spec, cfg);
@@ -163,8 +173,7 @@ fn write_artifact(name: &str, cfg: &SearchConfig, contract_json: &str) -> (PathB
     (path, v)
 }
 
-const TWO_CYCLES_CONTRACT: &str =
-    include_str!("repro_bench/two_cycles_contract.json");
+const TWO_CYCLES_CONTRACT: &str = include_str!("repro_bench/two_cycles_contract.json");
 
 fn replay_expect_fail(v: &serde_json::Value, name: &str) {
     let path = tmp(&format!("{name}.json"));
@@ -299,7 +308,12 @@ fn f4_budget_blocked_attempt_is_recorded_and_replays() {
         .args(["replay", path.to_str().unwrap()])
         .output()
         .unwrap();
-    assert_eq!(out.status.code().unwrap_or(-1), 0, "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        out.status.code().unwrap_or(-1),
+        0,
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 #[test]
@@ -311,11 +325,48 @@ fn f_positive_artifacts_replay() {
     let denied_json = serde_json::to_string(&denied).unwrap();
 
     let singles: [(&str, SearchConfig, &str); 5] = [
-        ("reused", SearchConfig { strategy: RepairStrategy::Composite, ..SearchConfig::default() }, TWO_CYCLES_CONTRACT),
-        ("denied", SearchConfig { strategy: RepairStrategy::Composite, ..SearchConfig::default() }, &denied_json),
-        ("unknown", SearchConfig { strategy: RepairStrategy::Composite, ..SearchConfig::default() }, include_str!("repro_round2/tiny_bounds_contract.json")),
-        ("budget_zero", SearchConfig { strategy: RepairStrategy::Diagnostic, verification_budget: 0, ..SearchConfig::default() }, TWO_CYCLES_CONTRACT),
-        ("cand_budget", SearchConfig { strategy: RepairStrategy::Composite, candidate_budget: 1, ..SearchConfig::default() }, TWO_CYCLES_CONTRACT),
+        (
+            "reused",
+            SearchConfig {
+                strategy: RepairStrategy::Composite,
+                ..SearchConfig::default()
+            },
+            TWO_CYCLES_CONTRACT,
+        ),
+        (
+            "denied",
+            SearchConfig {
+                strategy: RepairStrategy::Composite,
+                ..SearchConfig::default()
+            },
+            &denied_json,
+        ),
+        (
+            "unknown",
+            SearchConfig {
+                strategy: RepairStrategy::Composite,
+                ..SearchConfig::default()
+            },
+            include_str!("repro_round2/tiny_bounds_contract.json"),
+        ),
+        (
+            "budget_zero",
+            SearchConfig {
+                strategy: RepairStrategy::Diagnostic,
+                verification_budget: 0,
+                ..SearchConfig::default()
+            },
+            TWO_CYCLES_CONTRACT,
+        ),
+        (
+            "cand_budget",
+            SearchConfig {
+                strategy: RepairStrategy::Composite,
+                candidate_budget: 1,
+                ..SearchConfig::default()
+            },
+            TWO_CYCLES_CONTRACT,
+        ),
     ];
     for (name, cfg, cj) in singles {
         let (path, _) = write_artifact(name, &cfg, cj);
@@ -598,21 +649,33 @@ fn h1_h2_boundary_matrix_artifacts_replay() {
 fn h2_terminal_flag_tampering_is_rejected() {
     let model = "tests/repro_bench/preserved_unfixable.json";
     // 1. Wrong truncation: a real depth truncation erased.
-    let b_depth1 = artifact_value(model, unfix_contract(), &unfix_cfg(RepairStrategy::Composite, 1, 4));
+    let b_depth1 = artifact_value(
+        model,
+        unfix_contract(),
+        &unfix_cfg(RepairStrategy::Composite, 1, 4),
+    );
     assert_eq!(b_depth1["truncation"], "max-depth");
     let mut wrong_truncation = b_depth1.clone();
     wrong_truncation["truncation"] = serde_json::Value::Null;
     replay_expect_fail(&wrong_truncation, "wrong_truncation");
 
     // 2. Fake truncation: an untruncated record labelled truncated.
-    let b_default = artifact_value(model, unfix_contract(), &unfix_cfg(RepairStrategy::Composite, 4, 4));
+    let b_default = artifact_value(
+        model,
+        unfix_contract(),
+        &unfix_cfg(RepairStrategy::Composite, 4, 4),
+    );
     assert!(b_default["truncation"].is_null());
     let mut fake_truncation = b_default.clone();
     fake_truncation["truncation"] = serde_json::json!("max-depth");
     replay_expect_fail(&fake_truncation, "fake_truncation");
 
     // 3. Wrong priority: depth and edits both reached, stop reason swapped.
-    let b_both1 = artifact_value(model, unfix_contract(), &unfix_cfg(RepairStrategy::Composite, 1, 1));
+    let b_both1 = artifact_value(
+        model,
+        unfix_contract(),
+        &unfix_cfg(RepairStrategy::Composite, 1, 1),
+    );
     assert_eq!(b_both1["stop_reason"], "max-depth");
     assert_eq!(b_both1["truncation"], "max-depth");
     let mut wrong_priority = b_both1.clone();

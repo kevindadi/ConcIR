@@ -122,14 +122,26 @@ pub fn run_repair(
 
         // Unified, provider-independent permission check.
         if let Err(e) = patch::check_allowed(&spec.allowed_scope, &candidate) {
-            rounds.push(reject(round, &candidate, &format!("disallowed: {e}"), None, None));
+            rounds.push(reject(
+                round,
+                &candidate,
+                &format!("disallowed: {e}"),
+                None,
+                None,
+            ));
             continue;
         }
 
         let (patched, diff) = match patch::apply(&current, &candidate) {
             Ok(v) => v,
             Err(e) => {
-                rounds.push(reject(round, &candidate, &format!("patch rejected: {e}"), None, None));
+                rounds.push(reject(
+                    round,
+                    &candidate,
+                    &format!("patch rejected: {e}"),
+                    None,
+                    None,
+                ));
                 continue;
             }
         };

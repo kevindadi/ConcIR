@@ -89,12 +89,7 @@ impl LockOrderEnumerator {
                     if is_control_target(f, &a.sid) || is_control_target(f, &b.sid) {
                         continue;
                     }
-                    targets.push((
-                        m.name.clone(),
-                        f.name.clone(),
-                        a.sid.clone(),
-                        b.sid.clone(),
-                    ));
+                    targets.push((m.name.clone(), f.name.clone(), a.sid.clone(), b.sid.clone()));
                 }
             }
         }
@@ -130,8 +125,7 @@ impl CandidateProvider for LockOrderEnumerator {
                 original_hash: hash,
                 changes: vec![PatchChange::SwapStatements { a, b }],
                 provenance: vec![SourceRelation {
-                    description: "unify lock acquisition order for adjacent mutex locks"
-                        .into(),
+                    description: "unify lock acquisition order for adjacent mutex locks".into(),
                 }],
             });
         }
@@ -172,12 +166,7 @@ impl LockOrderCompositeEnumerator {
                     if ra == rb || is_control_target(f, &a.sid) || is_control_target(f, &b.sid) {
                         continue;
                     }
-                    targets.push((
-                        m.name.clone(),
-                        f.name.clone(),
-                        a.sid.clone(),
-                        b.sid.clone(),
-                    ));
+                    targets.push((m.name.clone(), f.name.clone(), a.sid.clone(), b.sid.clone()));
                 }
             }
         }
@@ -250,12 +239,15 @@ fn lock_pair_fqns(
 ) -> Option<(String, String)> {
     let f = program.lookup_function(module, function)?.1;
     let lock_at = |sid: &str| -> Option<String> {
-        f.body.iter().find(|s| s.sid == sid).and_then(|s| match &s.op {
-            Op::MutexLock { resource } => program
-                .lookup_resource(module, resource)
-                .map(|(o, r)| crate::fqn::fqn(&o.name, &r.name)),
-            _ => None,
-        })
+        f.body
+            .iter()
+            .find(|s| s.sid == sid)
+            .and_then(|s| match &s.op {
+                Op::MutexLock { resource } => program
+                    .lookup_resource(module, resource)
+                    .map(|(o, r)| crate::fqn::fqn(&o.name, &r.name)),
+                _ => None,
+            })
     };
     Some((lock_at(a)?, lock_at(b)?))
 }
@@ -284,8 +276,8 @@ pub struct FileCandidateProvider {
 impl FileCandidateProvider {
     pub fn from_file(path: impl Into<PathBuf>) -> Result<Self, String> {
         let path = path.into();
-        let text = std::fs::read_to_string(&path)
-            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
         Self::from_json(&text)
     }
 
@@ -304,10 +296,7 @@ impl FileCandidateProvider {
                 provenance: s.provenance,
             })
             .collect();
-        Ok(FileCandidateProvider {
-            patches,
-            cursor: 0,
-        })
+        Ok(FileCandidateProvider { patches, cursor: 0 })
     }
 }
 

@@ -264,7 +264,10 @@ fn main() {
                         "rounds": report.rounds,
                         "accepted_patch": report.accepted,
                     });
-                    println!("{}", serde_json::to_string_pretty(&json).expect("serialize"));
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&json).expect("serialize")
+                    );
                     process::exit(repair_exit(report.outcome));
                 }
             }
@@ -282,7 +285,8 @@ fn main() {
                     }
                     "--candidate-budget" => {
                         i += 1;
-                        config.candidate_budget = parse_usize_arg(args.get(i), "--candidate-budget");
+                        config.candidate_budget =
+                            parse_usize_arg(args.get(i), "--candidate-budget");
                     }
                     "--verification-budget" => {
                         i += 1;
@@ -295,16 +299,11 @@ fn main() {
                     }
                     "--max-total-edits" => {
                         i += 1;
-                        config.max_total_edits =
-                            parse_usize_arg(args.get(i), "--max-total-edits");
+                        config.max_total_edits = parse_usize_arg(args.get(i), "--max-total-edits");
                     }
                     "--artifact" => {
                         i += 1;
-                        artifact_path = Some(
-                            args.get(i)
-                                .cloned()
-                                .unwrap_or_else(|| usage()),
-                        );
+                        artifact_path = Some(args.get(i).cloned().unwrap_or_else(|| usage()));
                     }
                     _ => usage(),
                 }
@@ -347,8 +346,7 @@ fn main() {
                 match args[i].as_str() {
                     "--artifact" => {
                         i += 1;
-                        artifact_path =
-                            Some(args.get(i).cloned().unwrap_or_else(|| usage()));
+                        artifact_path = Some(args.get(i).cloned().unwrap_or_else(|| usage()));
                     }
                     _ => usage(),
                 }

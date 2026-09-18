@@ -69,7 +69,10 @@ fn contract_json() -> &'static str {
     }"#
 }
 
-fn verify_outcome(sp: &concir::sem::program::SemProgram, src: &str) -> concir::sem::outcome::Outcome {
+fn verify_outcome(
+    sp: &concir::sem::program::SemProgram,
+    src: &str,
+) -> concir::sem::outcome::Outcome {
     let spec: ContractSpec = serde_json::from_str(src).unwrap();
     let contract = spec.resolve(sp).unwrap();
     let b = contract.bounds.clone();

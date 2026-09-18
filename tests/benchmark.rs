@@ -17,7 +17,11 @@ fn repaired_case_exports_and_reverifies() {
         for strategy in [RepairStrategy::Composite, RepairStrategy::Diagnostic] {
             let ok = export_and_reverify(case, strategy)
                 .unwrap_or_else(|| panic!("{case}/{:?} produced no accepted program", strategy));
-            assert!(ok, "{case}/{:?}: exported program did not re-verify", strategy);
+            assert!(
+                ok,
+                "{case}/{:?}: exported program did not re-verify",
+                strategy
+            );
         }
     }
 }

@@ -140,8 +140,12 @@ fn overlapping_calls_do_not_cross_returns() {
     let sp = lower(OVERLAPPING_CALLS);
     let it = Interpreter::new(&sp, bounds());
     let r = explore(&it, &bounds());
-    let ra = sp.resolve_resource(concir::sem::ids::ModuleId(0), "ra").unwrap();
-    let rb = sp.resolve_resource(concir::sem::ids::ModuleId(0), "rb").unwrap();
+    let ra = sp
+        .resolve_resource(concir::sem::ids::ModuleId(0), "ra")
+        .unwrap();
+    let rb = sp
+        .resolve_resource(concir::sem::ids::ModuleId(0), "rb")
+        .unwrap();
     let mut finished_state = false;
     for s in &r.states {
         if let Some(v) = s.store.vars.get(&ra) {
@@ -200,8 +204,12 @@ const CROSS_MODULE: &str = r#"{
 #[test]
 fn same_named_resources_in_different_modules_do_not_collide() {
     let sp = lower(CROSS_MODULE);
-    let ax = sp.resolve_resource(concir::sem::ids::ModuleId(0), "x").unwrap();
-    let bx = sp.resolve_resource(concir::sem::ids::ModuleId(0), "b::x").unwrap();
+    let ax = sp
+        .resolve_resource(concir::sem::ids::ModuleId(0), "x")
+        .unwrap();
+    let bx = sp
+        .resolve_resource(concir::sem::ids::ModuleId(0), "b::x")
+        .unwrap();
     assert_ne!(ax, bx);
     let contract = r#"{
       "name": "cross",
@@ -520,7 +528,10 @@ fn ef_holds_but_agef_fails() {
 
 #[test]
 fn normal_termination_is_not_reported_as_deadlock() {
-    let rep = report(include_str!("../examples/producer_consumer.json"), DEADLOCK_FREE);
+    let rep = report(
+        include_str!("../examples/producer_consumer.json"),
+        DEADLOCK_FREE,
+    );
     assert_eq!(rep.outcome, Outcome::Pass);
 }
 

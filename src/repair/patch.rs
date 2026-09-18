@@ -67,7 +67,11 @@ impl std::fmt::Display for PatchError {
 impl std::error::Error for PatchError {}
 
 /// FNV-1a 64 hex over the serialized target function.
-pub fn function_hash(program: &Program, module: &str, function: &str) -> Result<String, PatchError> {
+pub fn function_hash(
+    program: &Program,
+    module: &str,
+    function: &str,
+) -> Result<String, PatchError> {
     let f = find_function(program, module, function)?;
     let json = serde_json::to_string(f).map_err(|e| PatchError::IllegalChange(e.to_string()))?;
     let mut h: u64 = 0xcbf29ce484222325;
@@ -155,7 +159,9 @@ fn apply_swap(f: &mut Function, a: &str, b: &str) -> Result<(), PatchError> {
         .position(|s| &s.sid == b)
         .ok_or_else(|| PatchError::UnknownSid(b.to_string()))?;
     if ia == ib {
-        return Err(PatchError::IllegalChange("swap of a statement with itself".into()));
+        return Err(PatchError::IllegalChange(
+            "swap of a statement with itself".into(),
+        ));
     }
     // Both must be lock acquisitions and adjacent, with no control target on
     // either sid. This keeps the swap semantics-preserving apart from order.
@@ -186,12 +192,9 @@ pub fn is_control_target(f: &Function, sid: &str) -> bool {
         Op::Branch {
             then, else_target, ..
         } => then == sid || else_target == sid,
-        Op::Switch { cases, default, .. } => {
-            cases.values().any(|t| t == sid) || default == sid
-        }
+        Op::Switch { cases, default, .. } => cases.values().any(|t| t == sid) || default == sid,
         Op::Select { branches, default } => {
-            branches.iter().any(|b| &b.target == sid)
-                || default.as_deref() == Some(sid)
+            branches.iter().any(|b| &b.target == sid) || default.as_deref() == Some(sid)
         }
         _ => false,
     })

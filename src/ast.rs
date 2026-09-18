@@ -232,9 +232,7 @@ impl Serialize for ComplexBaseType {
             ComplexBaseType::Enum(variants) => map.serialize_entry("Enum", variants)?,
             ComplexBaseType::Struct(fields) => map.serialize_entry("Struct", fields)?,
             ComplexBaseType::Array(def) => map.serialize_entry("Array", def)?,
-            ComplexBaseType::BoundedInt { lo, hi } => {
-                map.serialize_entry("Int", &(*lo, *hi))?
-            }
+            ComplexBaseType::BoundedInt { lo, hi } => map.serialize_entry("Int", &(*lo, *hi))?,
         }
         map.end()
     }

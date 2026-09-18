@@ -21,8 +21,9 @@ use crate::sem::system::{
 use crate::sem::value::{within_type, Value};
 
 use super::net::{
-    build, default_locals, Binding, MutexToken, NetAlloc, NetFrame, NetFrameView, NetOp, NetRetAddr,
-    NetScope, NetState, NetStore, NetThread, NetToken, PetriNet, PlaceId, PlaceKey, Transition,
+    build, default_locals, Binding, MutexToken, NetAlloc, NetFrame, NetFrameView, NetOp,
+    NetRetAddr, NetScope, NetState, NetStore, NetThread, NetToken, PetriNet, PlaceId, PlaceKey,
+    Transition,
 };
 
 pub struct PetriEngine<'a> {
@@ -132,7 +133,8 @@ impl<'a> PetriEngine<'a> {
 
     /// Place a control token, keeping `frame.pc` in sync with the control place.
     fn place_control(&self, state: &mut NetState, pid: PlaceId, thread: ThreadId, frame: FrameId) {
-        if let Some(PlaceKey::Control { sid, .. }) = self.net.places.get(pid as usize).map(|p| &p.key)
+        if let Some(PlaceKey::Control { sid, .. }) =
+            self.net.places.get(pid as usize).map(|p| &p.key)
         {
             if let Some(f) = state.store.frames.get_mut(&frame) {
                 f.pc = *sid;
@@ -226,7 +228,11 @@ impl<'a> PetriEngine<'a> {
         state.store.finished.insert(thread);
         self.record_completion(state, function);
 
-        let scope = state.store.threads.get(&thread).and_then(|t| t.parent_scope);
+        let scope = state
+            .store
+            .threads
+            .get(&thread)
+            .and_then(|t| t.parent_scope);
         if let Some(scope) = scope {
             let empty = match state.store.scopes.get_mut(&scope) {
                 Some(sc) => {
@@ -250,8 +256,13 @@ impl<'a> PetriEngine<'a> {
                     sid: owner_sid,
                 };
                 if let Some(pid) = self.place(&key) {
-                    if state.take_token(pid, &NetToken::ScopeWait { thread: owner, frame: owner_frame })
-                    {
+                    if state.take_token(
+                        pid,
+                        &NetToken::ScopeWait {
+                            thread: owner,
+                            frame: owner_frame,
+                        },
+                    ) {
                         if let Some(dest) = self.ctrl(owner_function, owner_sid + 1) {
                             self.place_control(state, dest, owner, owner_frame);
                         }
@@ -293,7 +304,9 @@ impl<'a> PetriEngine<'a> {
                 PlaceKey::JoinWait { function, .. } => *function,
                 _ => continue,
             };
-            let Some(pid) = self.place(&key) else { continue };
+            let Some(pid) = self.place(&key) else {
+                continue;
+            };
             let tokens: Vec<NetToken> = state.place_tokens(pid).to_vec();
             for token in tokens {
                 let (jt, jf) = match &token {
@@ -310,7 +323,13 @@ impl<'a> PetriEngine<'a> {
                     .frames
                     .get(&jf)
                     .and_then(|fr| fr.handles.get(handle))
-                    .and_then(|h| state.store.threads.get(&jt).and_then(|t| t.handle_children.get(h)))
+                    .and_then(|h| {
+                        state
+                            .store
+                            .threads
+                            .get(&jt)
+                            .and_then(|t| t.handle_children.get(h))
+                    })
                     .copied();
                 if child == Some(thread) {
                     state.take_token(pid, &token);
@@ -409,10 +428,13 @@ impl<'a> PetriEngine<'a> {
                         disabled!();
                     }
                 }
-                next.store.frame_mut(frame).locals.insert(match target {
-                    SlotRef::Local(s) => *s,
-                    _ => 0,
-                }, v);
+                next.store.frame_mut(frame).locals.insert(
+                    match target {
+                        SlotRef::Local(s) => *s,
+                        _ => 0,
+                    },
+                    v,
+                );
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, control.unwrap().0, control.unwrap().1);
             }
@@ -423,7 +445,9 @@ impl<'a> PetriEngine<'a> {
                     BackendError::invalid("E900", format!("Var {resource} has no value"))
                 })?;
                 if let Some(dst) = dst {
-                    if !self.write_dst(&mut next, frame, *dst, v)? { disabled!(); }
+                    if !self.write_dst(&mut next, frame, *dst, v)? {
+                        disabled!();
+                    }
                 }
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, control.unwrap().0, control.unwrap().1);
@@ -446,7 +470,9 @@ impl<'a> PetriEngine<'a> {
                 let v = next.read_data(pid).cloned().ok_or_else(|| {
                     BackendError::invalid("E900", format!("Atomic {resource} has no value"))
                 })?;
-                if !self.write_dst(&mut next, frame, *dst, v)? { disabled!(); }
+                if !self.write_dst(&mut next, frame, *dst, v)? {
+                    disabled!();
+                }
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, control.unwrap().0, control.unwrap().1);
             }
@@ -479,7 +505,9 @@ impl<'a> PetriEngine<'a> {
                 let old = next.read_data(pid).cloned().ok_or_else(|| {
                     BackendError::invalid("E900", format!("Atomic {resource} has no value"))
                 })?;
-                if !self.write_dst(&mut next, frame, *dst, old.clone())? { disabled!(); }
+                if !self.write_dst(&mut next, frame, *dst, old.clone())? {
+                    disabled!();
+                }
                 if old == exp {
                     next.set_data(pid, des);
                 }
@@ -536,10 +564,7 @@ impl<'a> PetriEngine<'a> {
                     FireBind::Wait(token) => token.clone(),
                     _ => disabled!(),
                 };
-                let (thread, frame) = (
-                    token.thread().unwrap(),
-                    token.frame().unwrap(),
-                );
+                let (thread, frame) = (token.thread().unwrap(), token.frame().unwrap());
                 let mtx = self.place(&PlaceKey::Mutex(*resource)).unwrap();
                 if !matches!(next.read_mutex(mtx), Some(MutexToken::Free)) {
                     disabled!();
@@ -586,7 +611,11 @@ impl<'a> PetriEngine<'a> {
                     _ => disabled!(),
                 };
                 let (wt, wf, lock) = match &wait {
-                    NetToken::CondvarWait { thread, frame, lock } => (*thread, *frame, *lock),
+                    NetToken::CondvarWait {
+                        thread,
+                        frame,
+                        lock,
+                    } => (*thread, *frame, *lock),
                     _ => disabled!(),
                 };
                 let cv = self.place(&PlaceKey::Condvar(*condvar)).unwrap();
@@ -594,7 +623,13 @@ impl<'a> PetriEngine<'a> {
                     disabled!();
                 }
                 let lw = self.place(&PlaceKey::LockWait(lock)).unwrap();
-                next.put(lw, NetToken::LockWait { thread: wt, frame: wf });
+                next.put(
+                    lw,
+                    NetToken::LockWait {
+                        thread: wt,
+                        frame: wf,
+                    },
+                );
                 self.set_blocked(&mut next, wt, PlaceKey::LockWait(lock));
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, thread, frame);
@@ -602,7 +637,11 @@ impl<'a> PetriEngine<'a> {
             NetOp::CondvarNotifyMiss { condvar } => {
                 let (thread, frame) = control.unwrap();
                 let cv = self.place(&PlaceKey::Condvar(*condvar)).unwrap();
-                if !next.place_tokens(cv).iter().all(|t| !matches!(t, NetToken::CondvarWait { .. })) {
+                if !next
+                    .place_tokens(cv)
+                    .iter()
+                    .all(|t| !matches!(t, NetToken::CondvarWait { .. }))
+                {
                     disabled!();
                 }
                 let out = t.next.unwrap();
@@ -618,10 +657,21 @@ impl<'a> PetriEngine<'a> {
                     .cloned()
                     .collect();
                 for token in waiters {
-                    if let NetToken::CondvarWait { thread: wt, frame: wf, lock } = &token {
+                    if let NetToken::CondvarWait {
+                        thread: wt,
+                        frame: wf,
+                        lock,
+                    } = &token
+                    {
                         next.take_token(cv, &token);
                         let lw = self.place(&PlaceKey::LockWait(*lock)).unwrap();
-                        next.put(lw, NetToken::LockWait { thread: *wt, frame: *wf });
+                        next.put(
+                            lw,
+                            NetToken::LockWait {
+                                thread: *wt,
+                                frame: *wf,
+                            },
+                        );
                         self.set_blocked(&mut next, *wt, PlaceKey::LockWait(*lock));
                     }
                 }
@@ -630,7 +680,9 @@ impl<'a> PetriEngine<'a> {
             }
             NetOp::SemAcquire { resource, count } => {
                 if *count <= 0 {
-                    return Err(BackendError::invalid("E904", "semaphore count must be positive").at(&at));
+                    return Err(
+                        BackendError::invalid("E904", "semaphore count must be positive").at(&at),
+                    );
                 }
                 let (thread, frame) = control.unwrap();
                 let sem = self.place(&PlaceKey::Semaphore(*resource)).unwrap();
@@ -664,7 +716,9 @@ impl<'a> PetriEngine<'a> {
             }
             NetOp::SemRelease { resource, count } => {
                 if *count <= 0 {
-                    return Err(BackendError::invalid("E904", "semaphore count must be positive").at(&at));
+                    return Err(
+                        BackendError::invalid("E904", "semaphore count must be positive").at(&at),
+                    );
                 }
                 let (thread, frame) = control.unwrap();
                 let sem = self.place(&PlaceKey::Semaphore(*resource)).unwrap();
@@ -686,7 +740,11 @@ impl<'a> PetriEngine<'a> {
                     _ => disabled!(),
                 };
                 let (thread, frame, need) = match &token {
-                    NetToken::SemWait { thread, frame, count } => (*thread, *frame, *count),
+                    NetToken::SemWait {
+                        thread,
+                        frame,
+                        count,
+                    } => (*thread, *frame, *count),
                     _ => disabled!(),
                 };
                 let sem = self.place(&PlaceKey::Semaphore(*resource)).unwrap();
@@ -711,9 +769,7 @@ impl<'a> PetriEngine<'a> {
                 let stmt = current_stmt(self.program, &next, frame);
                 let value_expr = match &stmt {
                     SemOp::ChannelSend { value, .. } => value.clone(),
-                    _ => {
-                        return Err(BackendError::invalid("E999", "SendRegister on non-send"))
-                    }
+                    _ => return Err(BackendError::invalid("E999", "SendRegister on non-send")),
                 };
                 let v = self.eval(&next, frame, &value_expr, &at)?;
                 if !self.payload_ok(*channel, &v) {
@@ -765,7 +821,9 @@ impl<'a> PetriEngine<'a> {
                 }
                 if let Some(dst) = recv_dst(self.program, &next, rf) {
                     if dst != SlotRef::Discard {
-                        if !self.write_dst(&mut next, rf, dst, v)? { disabled!(); }
+                        if !self.write_dst(&mut next, rf, dst, v)? {
+                            disabled!();
+                        }
                     }
                 }
                 self.wake_control_next(&mut next, &wait);
@@ -780,7 +838,11 @@ impl<'a> PetriEngine<'a> {
                     None => disabled!(),
                 };
                 let (st, sf, value) = match &wait {
-                    NetToken::SendWait { thread, frame, value } => (*thread, *frame, value.clone()),
+                    NetToken::SendWait {
+                        thread,
+                        frame,
+                        value,
+                    } => (*thread, *frame, value.clone()),
                     _ => disabled!(),
                 };
                 if !self.payload_ok(*channel, &value) {
@@ -792,7 +854,9 @@ impl<'a> PetriEngine<'a> {
                 }
                 if let Some(dst) = recv_dst(self.program, &next, frame) {
                     if dst != SlotRef::Discard {
-                        if !self.write_dst(&mut next, frame, dst, value)? { disabled!(); }
+                        if !self.write_dst(&mut next, frame, dst, value)? {
+                            disabled!();
+                        }
                     }
                 }
                 self.wake_control_next(&mut next, &wait);
@@ -806,7 +870,11 @@ impl<'a> PetriEngine<'a> {
                     _ => disabled!(),
                 };
                 let (st, sf, value) = match &send_token {
-                    NetToken::SendWait { thread, frame, value } => (*thread, *frame, value.clone()),
+                    NetToken::SendWait {
+                        thread,
+                        frame,
+                        value,
+                    } => (*thread, *frame, value.clone()),
                     _ => disabled!(),
                 };
                 let (rt, rf) = match &recv_token {
@@ -818,18 +886,25 @@ impl<'a> PetriEngine<'a> {
                 }
                 let send_place = self.place(&PlaceKey::ChannelSend(*channel)).unwrap();
                 let recv_place = self.place(&PlaceKey::ChannelRecv(*channel)).unwrap();
-                if !next.take_token(send_place, &send_token) || !next.take_token(recv_place, &recv_token) {
+                if !next.take_token(send_place, &send_token)
+                    || !next.take_token(recv_place, &recv_token)
+                {
                     disabled!();
                 }
                 let dst = recv_dst(self.program, &next, rf);
                 if let Some(dst) = dst {
                     if dst != SlotRef::Discard {
-                        if !self.write_dst(&mut next, rf, dst, value)? { disabled!(); }
+                        if !self.write_dst(&mut next, rf, dst, value)? {
+                            disabled!();
+                        }
                     }
                 }
                 // Both sides resume after their wait statements.
                 self.put_control_next(&mut next, &send_token)?;
-                let recv_token2 = NetToken::RecvWait { thread: rt, frame: rf };
+                let recv_token2 = NetToken::RecvWait {
+                    thread: rt,
+                    frame: rf,
+                };
                 self.put_control_next(&mut next, &recv_token2)?;
                 let _ = (st, sf, rt);
             }
@@ -839,7 +914,13 @@ impl<'a> PetriEngine<'a> {
                 let ch = self.place(&PlaceKey::Channel(*channel)).unwrap();
                 let available = next
                     .read_data(ch)
-                    .and_then(|v| if let Value::Array(a) = v { Some(a.len()) } else { None })
+                    .and_then(|v| {
+                        if let Value::Array(a) = v {
+                            Some(a.len())
+                        } else {
+                            None
+                        }
+                    })
                     .unwrap_or(0);
                 if available >= cap {
                     disabled!();
@@ -862,7 +943,13 @@ impl<'a> PetriEngine<'a> {
                 let ch = self.place(&PlaceKey::Channel(*channel)).unwrap();
                 let available = next
                     .read_data(ch)
-                    .and_then(|v| if let Value::Array(a) = v { Some(a.len()) } else { None })
+                    .and_then(|v| {
+                        if let Value::Array(a) = v {
+                            Some(a.len())
+                        } else {
+                            None
+                        }
+                    })
                     .unwrap_or(0);
                 if available < cap {
                     disabled!();
@@ -894,7 +981,9 @@ impl<'a> PetriEngine<'a> {
                     _ => None,
                 };
                 let Some(v) = popped else { disabled!() };
-                if !self.write_dst(&mut next, frame, *dst, v)? { disabled!(); }
+                if !self.write_dst(&mut next, frame, *dst, v)? {
+                    disabled!();
+                }
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, thread, frame);
             }
@@ -903,7 +992,13 @@ impl<'a> PetriEngine<'a> {
                 let ch = self.place(&PlaceKey::Channel(*channel)).unwrap();
                 let empty = next
                     .read_data(ch)
-                    .and_then(|v| if let Value::Array(a) = v { Some(a.is_empty()) } else { None })
+                    .and_then(|v| {
+                        if let Value::Array(a) = v {
+                            Some(a.is_empty())
+                        } else {
+                            None
+                        }
+                    })
                     .unwrap_or(true);
                 if !empty {
                     disabled!();
@@ -918,14 +1013,24 @@ impl<'a> PetriEngine<'a> {
                     _ => disabled!(),
                 };
                 let (thread, frame, value) = match &token {
-                    NetToken::SendWait { thread, frame, value } => (*thread, *frame, value.clone()),
+                    NetToken::SendWait {
+                        thread,
+                        frame,
+                        value,
+                    } => (*thread, *frame, value.clone()),
                     _ => disabled!(),
                 };
                 let cap = self.program.resource(*channel).capacity;
                 let ch = self.place(&PlaceKey::Channel(*channel)).unwrap();
                 let available = next
                     .read_data(ch)
-                    .and_then(|v| if let Value::Array(a) = v { Some(a.len()) } else { None })
+                    .and_then(|v| {
+                        if let Value::Array(a) = v {
+                            Some(a.len())
+                        } else {
+                            None
+                        }
+                    })
                     .unwrap_or(0);
                 if available >= cap {
                     disabled!();
@@ -970,7 +1075,9 @@ impl<'a> PetriEngine<'a> {
                 let dst = recv_dst(self.program, &next, frame);
                 if let Some(dst) = dst {
                     if dst != SlotRef::Discard {
-                        if !self.write_dst(&mut next, frame, dst, v)? { disabled!(); }
+                        if !self.write_dst(&mut next, frame, dst, v)? {
+                            disabled!();
+                        }
                     }
                 }
                 self.put_control_next(&mut next, &token)?;
@@ -1005,7 +1112,11 @@ impl<'a> PetriEngine<'a> {
                 let out = t.next.unwrap();
                 self.place_control(&mut next, out, thread, frame);
             }
-            NetOp::SwitchCase { var, label, target: _ } => {
+            NetOp::SwitchCase {
+                var,
+                label,
+                target: _,
+            } => {
                 let (thread, frame) = control.unwrap();
                 let v = self.eval(&next, frame, var, &at)?;
                 if !value_matches_label(&v, label) {
@@ -1115,7 +1226,8 @@ impl<'a> PetriEngine<'a> {
                 next.store.alloc.next_scope += 1;
                 let mut remaining = BTreeSet::new();
                 for func in funcs {
-                    let Some(child) = self.create_thread(&mut next, *func, Some(scope), boundary)?
+                    let Some(child) =
+                        self.create_thread(&mut next, *func, Some(scope), boundary)?
                     else {
                         disabled!();
                     };
@@ -1149,23 +1261,35 @@ impl<'a> PetriEngine<'a> {
                         })
                         .unwrap();
                     next.put(sw, NetToken::ScopeWait { thread, frame });
-                    self.set_blocked(&mut next, thread, PlaceKey::ScopeWait {
-                        function: owner_function,
-                        sid: owner_sid,
-                    });
+                    self.set_blocked(
+                        &mut next,
+                        thread,
+                        PlaceKey::ScopeWait {
+                            function: owner_function,
+                            sid: owner_sid,
+                        },
+                    );
                 }
             }
             NetOp::JoinReady { handle } => {
                 let (thread, frame) = control.unwrap();
-                let hid = next.store.frame(frame)
+                let hid = next
+                    .store
+                    .frame(frame)
                     .handles
                     .get(handle)
                     .copied()
                     .ok_or_else(|| {
-                        BackendError::invalid("E402", format!("join handle '{handle}' never spawned"))
-                            .at(&at)
+                        BackendError::invalid(
+                            "E402",
+                            format!("join handle '{handle}' never spawned"),
+                        )
+                        .at(&at)
                     })?;
-                let child = next.store.threads[&thread].handle_children.get(&hid).copied();
+                let child = next.store.threads[&thread]
+                    .handle_children
+                    .get(&hid)
+                    .copied();
                 let Some(c) = child else { disabled!() };
                 if !next.store.finished.contains(&c) {
                     disabled!();
@@ -1185,15 +1309,23 @@ impl<'a> PetriEngine<'a> {
             }
             NetOp::JoinBlock { handle } => {
                 let (thread, frame) = control.unwrap();
-                let hid = next.store.frame(frame)
+                let hid = next
+                    .store
+                    .frame(frame)
                     .handles
                     .get(handle)
                     .copied()
                     .ok_or_else(|| {
-                        BackendError::invalid("E402", format!("join handle '{handle}' never spawned"))
-                            .at(&at)
+                        BackendError::invalid(
+                            "E402",
+                            format!("join handle '{handle}' never spawned"),
+                        )
+                        .at(&at)
                     })?;
-                let child = next.store.threads[&thread].handle_children.get(&hid).copied();
+                let child = next.store.threads[&thread]
+                    .handle_children
+                    .get(&hid)
+                    .copied();
                 match child {
                     Some(c) if next.store.finished.contains(&c) => disabled!(),
                     Some(_) => {}
@@ -1218,7 +1350,11 @@ impl<'a> PetriEngine<'a> {
                     None => None,
                 };
                 // Check the callee's declared return type before unwinding.
-                let returned = self.program.function(next.store.frame(frame).function).returns.clone();
+                let returned = self
+                    .program
+                    .function(next.store.frame(frame).function)
+                    .returns
+                    .clone();
                 if let (Some(ret), Some(v)) = (&returned, &val) {
                     if !within_type(v, &ret.ty) {
                         disabled!();
@@ -1230,7 +1366,9 @@ impl<'a> PetriEngine<'a> {
                 let caller = *next.store.threads[&thread].stack.last().unwrap();
                 if let Some(ret) = &callee.ret {
                     if let Some(v) = val {
-                        if !self.write_dst(&mut next, caller, ret.dst, v)? { disabled!(); }
+                        if !self.write_dst(&mut next, caller, ret.dst, v)? {
+                            disabled!();
+                        }
                     }
                     let caller_pc = ret.pc_next;
                     let caller_fn = next.store.frame(caller).function;
@@ -1405,7 +1543,7 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
             NetThread {
                 entry_function: entry,
                 stack: Vec::new(),
-                    handle_children: Default::default(),
+                handle_children: Default::default(),
                 parent_scope: None,
                 blocked_at: None,
             },
@@ -1453,11 +1591,9 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                             _ => continue,
                         };
                         let bind = FireBind::Control { thread, frame };
-                        if let Some(s) =
-                            self.fire(state, t, &bind, &mut enabled.boundary)?
-                        {
-                            let label = StepLabel::new(t.origin.clone())
-                                .with_binding(thread, frame);
+                        if let Some(s) = self.fire(state, t, &bind, &mut enabled.boundary)? {
+                            let label =
+                                StepLabel::new(t.origin.clone()).with_binding(thread, frame);
                             enabled.steps.push(Step { label, state: s });
                         }
                     }
@@ -1468,12 +1604,10 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                     let tokens: Vec<NetToken> = state.place_tokens(*pid).to_vec();
                     for token in tokens {
                         let bind = FireBind::Wait(token);
-                        if let Some(s) =
-                            self.fire(state, t, &bind, &mut enabled.boundary)?
-                        {
+                        if let Some(s) = self.fire(state, t, &bind, &mut enabled.boundary)? {
                             let (thread, frame) = binding_ids(&bind);
-                            let label = StepLabel::new(t.origin.clone())
-                                .with_binding(thread, frame);
+                            let label =
+                                StepLabel::new(t.origin.clone()).with_binding(thread, frame);
                             enabled.steps.push(Step { label, state: s });
                         }
                     }
@@ -1483,12 +1617,10 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                     let front_b = state.place_tokens(*b).first().cloned();
                     if let (Some(ta), Some(tb)) = (front_a, front_b) {
                         let bind = FireBind::Pair(ta, tb);
-                        if let Some(s) =
-                            self.fire(state, t, &bind, &mut enabled.boundary)?
-                        {
+                        if let Some(s) = self.fire(state, t, &bind, &mut enabled.boundary)? {
                             let (thread, frame) = binding_ids(&bind);
-                            let label = StepLabel::new(t.origin.clone())
-                                .with_binding(thread, frame);
+                            let label =
+                                StepLabel::new(t.origin.clone()).with_binding(thread, frame);
                             enabled.steps.push(Step { label, state: s });
                         }
                     }
@@ -1513,11 +1645,9 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                                 frame,
                                 wait: wait.clone(),
                             };
-                            if let Some(s) =
-                                self.fire(state, t, &bind, &mut enabled.boundary)?
-                            {
-                                let label = StepLabel::new(t.origin.clone())
-                                    .with_binding(thread, frame);
+                            if let Some(s) = self.fire(state, t, &bind, &mut enabled.boundary)? {
+                                let label =
+                                    StepLabel::new(t.origin.clone()).with_binding(thread, frame);
                                 enabled.steps.push(Step { label, state: s });
                             }
                         }
@@ -1543,11 +1673,9 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                                 frame,
                                 wait: wait.clone(),
                             };
-                            if let Some(s) =
-                                self.fire(state, t, &bind, &mut enabled.boundary)?
-                            {
-                                let label = StepLabel::new(t.origin.clone())
-                                    .with_binding(thread, frame);
+                            if let Some(s) = self.fire(state, t, &bind, &mut enabled.boundary)? {
+                                let label =
+                                    StepLabel::new(t.origin.clone()).with_binding(thread, frame);
                                 enabled.steps.push(Step { label, state: s });
                             }
                         }
@@ -1597,21 +1725,27 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                     BlockKind::ChannelSend,
                     Some(*c),
                     None,
-                    self.place(key).map(|p| state.place_tokens(p).len()).unwrap_or(0),
+                    self.place(key)
+                        .map(|p| state.place_tokens(p).len())
+                        .unwrap_or(0),
                     "channel send blocked".to_string(),
                 ),
                 PlaceKey::ChannelRecv(c) => (
                     BlockKind::ChannelRecv,
                     Some(*c),
                     None,
-                    self.place(key).map(|p| state.place_tokens(p).len()).unwrap_or(0),
+                    self.place(key)
+                        .map(|p| state.place_tokens(p).len())
+                        .unwrap_or(0),
                     "channel receive blocked".to_string(),
                 ),
                 PlaceKey::SemWait(r) => (
                     BlockKind::Semaphore,
                     Some(*r),
                     None,
-                    self.place(key).map(|p| state.place_tokens(p).len()).unwrap_or(0),
+                    self.place(key)
+                        .map(|p| state.place_tokens(p).len())
+                        .unwrap_or(0),
                     "waiting for semaphore permits".to_string(),
                 ),
                 PlaceKey::JoinWait { .. } => (
@@ -1678,19 +1812,37 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
             Predicate::True => true,
             Predicate::False => false,
             Predicate::VarEq { resource, value } => read_var(*resource) == Some(value),
-            Predicate::VarCmp { resource, op, value } => read_var(*resource)
+            Predicate::VarCmp {
+                resource,
+                op,
+                value,
+            } => read_var(*resource)
                 .and_then(|v| compare_values(*op, v, value))
                 .unwrap_or(false),
             Predicate::FunctionCompleted { func } => {
-                state.store.completed_functions.get(func).copied().unwrap_or(0) >= 1
+                state
+                    .store
+                    .completed_functions
+                    .get(func)
+                    .copied()
+                    .unwrap_or(0)
+                    >= 1
             }
             Predicate::FunctionCompletedAtLeast { func, n } => {
-                state.store.completed_functions.get(func).copied().unwrap_or(0) >= *n
+                state
+                    .store
+                    .completed_functions
+                    .get(func)
+                    .copied()
+                    .unwrap_or(0)
+                    >= *n
             }
             Predicate::ScopeCompleted { func, sid } => {
                 state.store.completed_scopes.contains(&(*func, *sid))
             }
-            Predicate::StatementReached { func, sid } => state.store.reached.contains(&(*func, *sid)),
+            Predicate::StatementReached { func, sid } => {
+                state.store.reached.contains(&(*func, *sid))
+            }
             Predicate::MutexFree(r) => self
                 .place(&PlaceKey::Mutex(*r))
                 .and_then(|p| state.read_mutex(p))
@@ -1723,7 +1875,8 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
 
     fn state_key(&self, state: &NetState) -> String {
         render_net(&self.net, state, &|v| v.key())
-    }}
+    }
+}
 
 fn render_net(net: &PetriNet, state: &NetState, enc: &dyn Fn(&Value) -> String) -> String {
     let mut out = String::new();
@@ -1823,10 +1976,16 @@ fn render_net(net: &PetriNet, state: &NetState, enc: &dyn Fn(&Value) -> String) 
             "thread {} entry=f{} stack=[{}] finished={} children=[{}] scope={}\n",
             tname(*tid),
             t.entry_function.0,
-            t.stack.iter().map(|f| fname(*f)).collect::<Vec<_>>().join(","),
+            t.stack
+                .iter()
+                .map(|f| fname(*f))
+                .collect::<Vec<_>>()
+                .join(","),
             state.store.finished.contains(tid),
             kids.join(","),
-            t.parent_scope.map(|s| sname(s)).unwrap_or_else(|| "-".into())
+            t.parent_scope
+                .map(|s| sname(s))
+                .unwrap_or_else(|| "-".into())
         ));
     }
     for sc in state.store.scopes.values() {
@@ -1843,9 +2002,7 @@ fn render_net(net: &PetriNet, state: &NetState, enc: &dyn Fn(&Value) -> String) 
     }
     out.push_str(&format!(
         "completed fn={:?} scopes={:?} reached={:?}\n",
-        state.store.completed_functions,
-        state.store.completed_scopes,
-        state.store.reached
+        state.store.completed_functions, state.store.completed_scopes, state.store.reached
     ));
     out
 }

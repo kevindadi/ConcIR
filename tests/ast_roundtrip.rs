@@ -39,7 +39,11 @@ fn program_with_all_complex_types_round_trips() {
     // The bounded Int must be a single-key object, matching the input schema.
     let v: serde_json::Value = serde_json::from_str(&json).unwrap();
     let base = &v["modules"][0]["resources"][2]["base"];
-    assert_eq!(base, &serde_json::json!({"Int": [0, 5]}), "bounded Int schema");
+    assert_eq!(
+        base,
+        &serde_json::json!({"Int": [0, 5]}),
+        "bounded Int schema"
+    );
     assert_eq!(
         &v["modules"][0]["resources"][6]["base"],
         &serde_json::json!({"Struct": {"x": "Int", "y": "Bool"}})

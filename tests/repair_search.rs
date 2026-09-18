@@ -97,7 +97,12 @@ fn two_cycles_root_fails() {
 #[test]
 fn single_strategy_cannot_fix_two_cycles() {
     let report = run_search(&program(), &spec(), &config(RepairStrategy::Single));
-    assert_ne!(report.outcome, RepairOutcome::Repaired, "{:?}", report.nodes);
+    assert_ne!(
+        report.outcome,
+        RepairOutcome::Repaired,
+        "{:?}",
+        report.nodes
+    );
     assert_eq!(report.outcome, RepairOutcome::NoAcceptableCandidate);
 }
 
@@ -117,10 +122,17 @@ fn composite_and_diagnostic_fix_two_cycles() {
             "{strategy:?} should need two edits"
         );
         // The two edits touch different functions.
-        let fns: Vec<&str> = report.patch_chain.iter().map(|e| e.function.as_str()).collect();
+        let fns: Vec<&str> = report
+            .patch_chain
+            .iter()
+            .map(|e| e.function.as_str())
+            .collect();
         assert_ne!(fns[0], fns[1], "two independent cycles need two functions");
         // Every intermediate node is a real verified program.
-        assert!(report.nodes.iter().any(|n| n.report.outcome == Outcome::Fail));
+        assert!(report
+            .nodes
+            .iter()
+            .any(|n| n.report.outcome == Outcome::Fail));
         // The accepted program re-verifies from its exported JSON.
         let patched = report.accepted_program.as_ref().unwrap();
         let json = serde_json::to_string(patched).unwrap();
@@ -139,8 +151,14 @@ fn search_is_deterministic() {
     assert_eq!(a.proposals, b.proposals);
     assert_eq!(a.verifications, b.verifications);
     assert_eq!(
-        a.patch_chain.iter().map(|e| format!("{}:{}", e.function, e.changes.len())).collect::<Vec<_>>(),
-        b.patch_chain.iter().map(|e| format!("{}:{}", e.function, e.changes.len())).collect::<Vec<_>>()
+        a.patch_chain
+            .iter()
+            .map(|e| format!("{}:{}", e.function, e.changes.len()))
+            .collect::<Vec<_>>(),
+        b.patch_chain
+            .iter()
+            .map(|e| format!("{}:{}", e.function, e.changes.len()))
+            .collect::<Vec<_>>()
     );
     assert_eq!(a.nodes.len(), b.nodes.len());
 }
@@ -181,17 +199,16 @@ fn budget_exhaustion_is_reported() {
 fn already_satisfied_program_needs_no_patch() {
     // A single-cycle program is fixed by JSON; use a program with consistent
     // lock order and the same contract shape.
-    let ok = TWO_CYCLES
-        .replace(
-            r#"{"sid": "s1", "kind": "mutex_lock", "resource": "b"},
+    let ok = TWO_CYCLES.replace(
+        r#"{"sid": "s1", "kind": "mutex_lock", "resource": "b"},
         {"sid": "s2", "kind": "mutex_lock", "resource": "a"},
         {"sid": "s3", "kind": "mutex_unlock", "resource": "a"},
         {"sid": "s4", "kind": "mutex_unlock", "resource": "b"}"#,
-            r#"{"sid": "s1", "kind": "mutex_lock", "resource": "a"},
+        r#"{"sid": "s1", "kind": "mutex_lock", "resource": "a"},
         {"sid": "s2", "kind": "mutex_lock", "resource": "b"},
         {"sid": "s3", "kind": "mutex_unlock", "resource": "b"},
         {"sid": "s4", "kind": "mutex_unlock", "resource": "a"}"#,
-        );
+    );
     let ok = ok.replace(
         r#"{"sid": "s1", "kind": "mutex_lock", "resource": "d"},
         {"sid": "s2", "kind": "mutex_lock", "resource": "c"},
@@ -247,7 +264,10 @@ fn counterexample_replays_with_concrete_bindings() {
             .unwrap_or_else(|| panic!("step {i} is not enabled with the recorded binding"));
         state = step.state;
     }
-    assert!(!engine.is_finished(&state), "replayed state must not be finished");
+    assert!(
+        !engine.is_finished(&state),
+        "replayed state must not be finished"
+    );
     assert!(
         engine.successors(&state).unwrap().steps.is_empty(),
         "replayed state must be the deadlock"
@@ -300,9 +320,17 @@ fn e5_depth_and_edits_truncation_are_reported() {
 fn e2_bounds_come_from_the_frozen_contract() {
     // A tiny contract bound makes the root Unknown; the search must not run at
     // the default scale.
-    let report = run_search(&program(), &spec_with_max_states(1), &config(RepairStrategy::Composite));
+    let report = run_search(
+        &program(),
+        &spec_with_max_states(1),
+        &config(RepairStrategy::Composite),
+    );
     assert_eq!(report.outcome, RepairOutcome::AnalysisUnknown);
-    assert!(report.states_explored <= 2, "got {}", report.states_explored);
+    assert!(
+        report.states_explored <= 2,
+        "got {}",
+        report.states_explored
+    );
     assert!(report.verifications <= 1);
 }
 
@@ -338,7 +366,9 @@ fn e4_attempts_and_nodes_have_consistent_identity() {
                 );
             }
             "reused" => {
-                let node = a.reused_node.expect("reused attempt references an existing node");
+                let node = a
+                    .reused_node
+                    .expect("reused attempt references an existing node");
                 assert_eq!(
                     report.nodes[node].program_fingerprint,
                     *a.program_fingerprint.as_ref().unwrap()
@@ -398,7 +428,10 @@ fn e8_artifact_replays_and_rejects_tampering() {
         node["parent"] = serde_json::json!(999);
     }
     let tampered = serde_json::to_string(&value).unwrap();
-    assert!(replay_artifact(&tampered).is_err(), "bad parent must be rejected");
+    assert!(
+        replay_artifact(&tampered).is_err(),
+        "bad parent must be rejected"
+    );
 }
 
 #[test]
@@ -419,7 +452,12 @@ fn e1_complex_types_survive_search_export() {
             .push(serde_json::from_value(json).unwrap());
     }
     let report = run_search(&p, &single_spec, &config(RepairStrategy::Diagnostic));
-    assert_eq!(report.outcome, RepairOutcome::Repaired, "{:?}", report.nodes);
+    assert_eq!(
+        report.outcome,
+        RepairOutcome::Repaired,
+        "{:?}",
+        report.nodes
+    );
     let accepted = report.accepted_program.unwrap();
     let json = serde_json::to_string(&accepted).unwrap();
     let reparsed: Program = serde_json::from_str(&json).expect("complex-type export must reload");

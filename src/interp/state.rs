@@ -324,7 +324,9 @@ impl MachineState {
     }
 
     pub fn current_frame(&self, tid: ThreadId) -> &Frame {
-        let fid = self.current_frame_id(tid).expect("runnable thread has a frame");
+        let fid = self
+            .current_frame_id(tid)
+            .expect("runnable thread has a frame");
         self.frame(fid)
     }
 
