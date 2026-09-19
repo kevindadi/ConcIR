@@ -159,6 +159,52 @@ impl<'a> Interpreter<'a> {
         Ok(true)
     }
 
+    /// Apply a `return` (explicit or the implicit return at a function's end).
+    /// Returns `Ok(false)` when the step is disabled (return type or caller
+    /// destination domain violation), so the caller emits no successor.
+    fn apply_return(
+        &self,
+        next: &mut MachineState,
+        tid: ThreadId,
+        fid: FrameId,
+        function_id: FunctionId,
+        function: &crate::sem::program::SemFunction,
+        val: Option<Value>,
+    ) -> BackendResult<bool> {
+        // First check the callee's own declared return type, then the caller's
+        // destination; both must hold before any unwinding, write, completion,
+        // or wake-up.
+        if let (Some(ret), Some(v)) = (&function.returns, &val) {
+            if !within_type(v, &ret.ty) {
+                return Ok(false);
+            }
+        }
+        if next.threads[&tid].stack.len() > 1 {
+            let stack_len = next.threads[&tid].stack.len();
+            let caller = next.threads[&tid].stack[stack_len - 2];
+            let callee_frame = next.frame(fid).clone();
+            if let (Some(ret), Some(v)) = (&callee_frame.ret, &val) {
+                if !self.dst_type_ok(next, caller, ret.dst, v) {
+                    return Ok(false);
+                }
+            }
+            next.threads.get_mut(&tid).unwrap().stack.pop();
+            next.store.frames.remove(&fid);
+            if let Some(ret) = &callee_frame.ret {
+                if let Some(v) = val {
+                    next.write_dst(caller, ret.dst, v)?;
+                }
+                next.frame_mut(caller).pc = ret.pc_next;
+            }
+            self.record_completion(next, function_id);
+        } else {
+            next.threads.get_mut(&tid).unwrap().stack.pop();
+            next.store.frames.remove(&fid);
+            self.finish_thread(next, tid, function_id);
+        }
+        Ok(true)
+    }
+
     fn finish_thread(&self, state: &mut MachineState, tid: ThreadId, function: FunctionId) {
         if let Some(t) = state.threads.get_mut(&tid) {
             t.status = ThreadStatus::Finished;
@@ -341,10 +387,12 @@ impl<'a> Interpreter<'a> {
         let pc = next.frame(fid).pc;
         let function = self.program.function(function_id);
         if pc >= function.body.len() {
-            return Err(BackendError::invalid(
-                "E602",
-                format!("thread {tid} fell off the end of '{}'", function.name),
-            ));
+            // Falling off the end is an implicit `return` (design §3).
+            if !self.apply_return(&mut next, tid, fid, function_id, function, None)? {
+                return Ok(Vec::new());
+            }
+            let label = self.step_label(function_id, pc, tid, fid);
+            return Ok(vec![Step { label, state: next }]);
         }
         next.reached.insert((function_id, pc));
         let stmt = &function.body[pc];
@@ -874,38 +922,8 @@ impl<'a> Interpreter<'a> {
                     Some(e) => Some(self.eval(&next, fid, e, &at)?),
                     None => None,
                 };
-                // First check the callee's own declared return type, then the
-                // caller's destination; both must hold before any unwinding,
-                // write, completion, or wake-up.
-                if let (Some(ret), Some(v)) = (&function.returns, &val) {
-                    if !within_type(v, &ret.ty) {
-                        return Ok(Vec::new());
-                    }
-                }
-                if next.threads[&tid].stack.len() > 1 {
-                    let stack_len = next.threads[&tid].stack.len();
-                    let caller = next.threads[&tid].stack[stack_len - 2];
-                    let callee_frame = next.frame(fid).clone();
-                    // Validate the caller destination *before* unwinding, so a
-                    // domain violation disables the whole step.
-                    if let (Some(ret), Some(v)) = (&callee_frame.ret, &val) {
-                        if !self.dst_type_ok(&next, caller, ret.dst, v) {
-                            return Ok(Vec::new());
-                        }
-                    }
-                    next.threads.get_mut(&tid).unwrap().stack.pop();
-                    next.store.frames.remove(&fid);
-                    if let Some(ret) = &callee_frame.ret {
-                        if let Some(v) = val {
-                            next.write_dst(caller, ret.dst, v)?;
-                        }
-                        next.frame_mut(caller).pc = ret.pc_next;
-                    }
-                    self.record_completion(&mut next, function_id);
-                } else {
-                    next.threads.get_mut(&tid).unwrap().stack.pop();
-                    next.store.frames.remove(&fid);
-                    self.finish_thread(&mut next, tid, function_id);
+                if !self.apply_return(&mut next, tid, fid, function_id, function, val)? {
+                    return Ok(Vec::new());
                 }
             }
             SemOp::Unsupported { construct } => {

@@ -8,6 +8,7 @@ use crate::env::NameEnv;
 pub fn check(program: &Program, diags: &mut Vec<Diagnostic>) {
     for (mi, m) in program.modules.iter().enumerate() {
         for (fi, f) in m.functions.iter().enumerate() {
+            check_fall_off_end(m, f, mi, fi, diags);
             if f.body.is_empty() {
                 continue;
             }
@@ -80,6 +81,44 @@ fn check_reachability(
             );
         }
     }
+}
+
+/// E114: falling off the end of a function body is an implicit `return`
+/// (doc/backend-design.md §3). This is a warning, not an error, so existing
+/// models that rely on the implicit return stay valid but are told explicitly.
+fn check_fall_off_end(
+    m: &Module,
+    f: &Function,
+    mi: usize,
+    fi: usize,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let guaranteed = match f.body.last() {
+        None => false,
+        Some(stmt) => matches!(
+            stmt.op,
+            Op::Return { .. } | Op::Goto { .. } | Op::Branch { .. } | Op::Switch { .. }
+        ),
+    };
+    if guaranteed {
+        return;
+    }
+    let where_ = match f.body.last() {
+        None => format!("function '{}' has an empty body", f.name),
+        Some(stmt) => format!(
+            "function '{}' ends at '{}' without an explicit return/goto/branch/switch",
+            f.name, stmt.sid
+        ),
+    };
+    diags.push(
+        Diagnostic::warning(
+            "E114",
+            format!("{where_}; control falls off the end, which is an implicit return"),
+        )
+        .with_path(Program::fn_path(mi, fi))
+        .with_location(Program::fn_location(m, f))
+        .with_fix("add an explicit return, or rely on the documented implicit return"),
+    );
 }
 
 /// E602: missing return — every path must end with a return

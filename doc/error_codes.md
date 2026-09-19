@@ -38,7 +38,8 @@ Unknown `kind` tags and leftover fields from the old block shape
 | E110 | DuplicateType     |  error   | two `types` entries in the same module share a name, or the name is not an identifier |
 | E111 | UndefinedType     |  error   | a named type used as `base` / param / local / alias is not declared and not imported |
 | E112 | TypeNameReserved  |  error   | a module type is named `Bool`, `Int`, `Float`, or `String` |
-| E113 | TypeAliasCycle    |  error   | a named type aliases itself (directly or through other aliases) |
+| E113 | TypeAliasCycle    |  error   | a named type aliases itself (directly or through other aliases)
+| E114 | FallOffEnd        |  warning | the last statement of a function is not `return`/`goto`/`branch`/`switch` (or the body is empty); control falls off the end, which is an implicit `return` (design §3) |
 
 ## E2xx — Type errors
 

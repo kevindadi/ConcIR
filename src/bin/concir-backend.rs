@@ -56,6 +56,9 @@ fn usage() -> ! {
          concir-backend replay  <artifact.json>\n  \
          concir-backend bench   [--artifact out.json]\n  \
          concir-backend support <program.json>\n  \
+         concir-backend schema\n  \
+         concir-backend codegen <program.json> --out <dir>\n  \
+         concir-backend conform <program.json> <trace.jsonl>\n  \
          concir-backend repair-context <program.json> <contract.json> [--artifact out.json]\n  \
          concir-backend evaluate-patch <context.json> <candidate.json> [--artifact out.json]\n\n\
          flags for --strategy: --candidate-budget N --verification-budget N\n  \
@@ -73,6 +76,22 @@ fn read(path: &str) -> String {
             process::exit(EXIT_USAGE);
         }
     }
+}
+
+/// Add `binary_sha256` and `git_rev` to a JSON object output so experiment
+/// records are bound to the producing binary.
+fn versioned(mut value: serde_json::Value) -> serde_json::Value {
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert(
+            "binary_sha256".into(),
+            serde_json::Value::String(concir::hash::binary_sha256()),
+        );
+        obj.insert(
+            "git_rev".into(),
+            serde_json::Value::String(concir::hash::git_rev().to_string()),
+        );
+    }
+    value
 }
 
 fn parse_program(path: &str) -> Program {
@@ -204,7 +223,10 @@ fn main() {
                     }
                     println!(
                         "{}",
-                        serde_json::to_string_pretty(&generated.map).expect("serialize")
+                        serde_json::to_string_pretty(&versioned(
+                            serde_json::to_value(&generated.map).expect("serialize")
+                        ))
+                        .expect("serialize")
                     );
                 }
                 Err(e) => {
@@ -244,7 +266,10 @@ fn main() {
             let result = concir::conform::conform(&sem, &events);
             println!(
                 "{}",
-                serde_json::to_string_pretty(&result).expect("serialize")
+                serde_json::to_string_pretty(&versioned(
+                    serde_json::to_value(&result).expect("serialize")
+                ))
+                .expect("serialize")
             );
             if result.status != "conformant" {
                 process::exit(EXIT_FAIL);
@@ -323,7 +348,10 @@ fn main() {
             let report = verify_program(&program, &spec, engine);
             println!(
                 "{}",
-                serde_json::to_string_pretty(&report).expect("serialize")
+                serde_json::to_string_pretty(&versioned(
+                    serde_json::to_value(&report).expect("serialize")
+                ))
+                .expect("serialize")
             );
             let code = outcome_exit(report.outcome);
             if code != 0 {

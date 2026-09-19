@@ -546,6 +546,31 @@ pub fn build(program: &SemProgram) -> PetriNet {
         for (si, stmt) in f.body.iter().enumerate() {
             build_stmt(&mut b, f, si, stmt);
         }
+        // Falling off the end of a function body is an implicit `return`
+        // (see doc/backend-design.md §3). Add the return transitions at the
+        // fall-through control place; they are inert when the last statement
+        // always transfers control (return/goto/exhaustive switch).
+        let input = b.ctrl(f.id, f.body.len());
+        let origin = crate::sem::outcome::TransitionOrigin {
+            module: f.module,
+            function: f.id,
+            sid: None,
+            phase: Phase::Statement,
+        };
+        b.add(
+            NetOp::ReturnInner { value: None },
+            Binding::Control(input),
+            None,
+            Vec::new(),
+            origin.clone(),
+        );
+        b.add(
+            NetOp::ReturnFinal { value: None },
+            Binding::Control(input),
+            None,
+            Vec::new(),
+            origin,
+        );
     }
 
     let resource_ids: Vec<ResourceId> = program.resources().iter().map(|r| r.id).collect();

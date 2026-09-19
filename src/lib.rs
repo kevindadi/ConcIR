@@ -7,6 +7,7 @@ pub mod explore;
 pub mod export;
 pub mod expr;
 pub mod fqn;
+pub mod hash;
 pub mod interp;
 pub mod petri;
 pub mod repair;

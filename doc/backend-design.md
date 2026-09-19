@@ -150,6 +150,12 @@ all interleavings. A single run follows one deterministic schedule.
   a new `FrameId`, bind the callee's modeled params (positional, declaration
   order), push it. The callee's `Frame.ret_to = Some(RetAddr { caller_pc_next,
   dst })` where `dst` is resolved in the **caller's** scope.
+- **Falling off the end of a function body is an implicit `return` (no return
+  value).** The reference interpreter and the Petri translation agree on this:
+  the Petri net adds a return transition at each function's fall-through control
+  place (inert when the last statement always transfers control). The static
+  validator reports `E114 FallOffEnd` as a **warning** when the last statement is
+  not `return`/`goto`/`branch`/`switch` (including an empty body).
 - `return`: the returned expression is evaluated, then checked against the
   callee's **own declared `returns` type** (recursively, including composite
   types), and independently against the caller's `dst`. If either check fails
