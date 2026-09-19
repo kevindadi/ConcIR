@@ -238,7 +238,16 @@ impl<'a> Gen<'a> {
     }
 
     fn field(&self, r: crate::sem::ids::ResourceId) -> String {
-        format!("r_{}", sanitize(&self.program.resource(r).name))
+        let res = self.program.resource(r);
+        format!("r_{}__{}", sanitize(self.program.module_name(res.module)),
+                sanitize(&res.name))
+    }
+
+    /// Cross-module path to a generated function.
+    fn fn_ref(&self, f: crate::sem::ids::FunctionId) -> String {
+        let func = self.program.function(f);
+        format!("crate::{}::cf_{}", sanitize(self.program.module_name(func.module)),
+                sanitize(&func.name))
     }
 
     #[allow(unused)]
@@ -358,12 +367,7 @@ pub fn generate(program: &SemProgram) -> Result<Generated, String> {
     for f in program.functions() {
         modules.insert(f.module);
     }
-    if modules.len() != 1 {
-        return Err(format!(
-            "codegen supports a single module, found {}",
-            modules.len()
-        ));
-    }
+    let _ = modules; // multi-module is supported
     let mut g = Gen::new(program);
 
     // Header + Shared struct.
@@ -394,23 +398,35 @@ pub fn generate(program: &SemProgram) -> Result<Generated, String> {
     g.emit("}");
     g.emit("");
 
-    // Function bodies.
-    for func in program.functions() {
-        if func.is_nobody {
-            let name = format!("cf_{}", sanitize(&func.name));
-            let placeholder = g.hole(&func.name, "", "()");
-            g.emit(format!(
-                "fn {name}(_shared: Shared, _tag: &str) {{ let _: () = {placeholder}; }}"
-            ));
-            g.emit("");
-            continue;
+    // Function bodies, one `mod` per CIR module.
+    let mut module_order: Vec<crate::sem::ids::ModuleId> = Vec::new();
+    for f in program.functions() {
+        if !module_order.contains(&f.module) {
+            module_order.push(f.module);
         }
-        generate_function(&mut g, func)?;
+    }
+    for m in module_order {
+        g.emit(format!("pub(crate) mod {} {{", sanitize(program.module_name(m))));
+        for func in program.functions().iter().filter(|f| f.module == m) {
+            if func.is_nobody {
+                let name = format!("cf_{}", sanitize(&func.name));
+                let placeholder = g.hole(&func.name, "", "()");
+                g.emit(format!(
+                    "    pub(crate) fn {name}(_shared: crate::Shared, _tag: &str) {{ let _: () = {placeholder}; }}"
+                ));
+                g.emit("");
+                continue;
+            }
+            generate_function(&mut g, func)?;
+        }
+        g.emit("}");
+        g.emit("");
     }
 
     // Rust main.
     let entry = program.function(program.entry());
-    let entry_name = format!("cf_{}", sanitize(&entry.name));
+    let entry_name = format!("crate::{}::cf_{}", sanitize(program.module_name(entry.module)),
+                             sanitize(&entry.name));
     g.emit("fn main() {");
     g.emit("    let shared = Shared {");
     for r in program.resources() {
@@ -465,7 +481,7 @@ fn cargo_toml() -> String {
 
 fn generate_function(g: &mut Gen, func: &crate::sem::program::SemFunction) -> Result<(), String> {
     let name = format!("cf_{}", sanitize(&func.name));
-    g.emit(format!("fn {name}(shared: Shared, tag: &str) {{"));
+    g.emit(format!("    pub(crate) fn {name}(shared: crate::Shared, tag: &str) {{"));
     // slot declarations
     for (i, slot) in func.slots.iter().enumerate() {
         let ty = rust_ty(&slot.ty)?;
@@ -526,7 +542,7 @@ fn render_op(
     guards: &[String],
 ) -> Result<(), String> {
     let next = idx + 1;
-    let ev = format!("                cir_trace::ev(tag, {sid:?});");
+    let ev = format!("                crate::cir_trace::ev(tag, {sid:?});");
     if is_observable(op) && event_at_attempt(op) {
         g.emit(&ev);
     }
@@ -652,7 +668,7 @@ fn render_op(
             g.emit("                {");
             g.emit("                    let mut __hs = Vec::new();");
             for (i, f) in funcs.iter().enumerate() {
-                let cf = format!("cf_{}", sanitize(&g.program.function(*f).name));
+                let cf = g.fn_ref(*f);
                 let t = tags
                     .get(i)
                     .cloned()
@@ -676,7 +692,7 @@ fn render_op(
                 function: func.name.clone(),
                 tags: tags.clone(),
             });
-            let cf = format!("cf_{}", sanitize(&g.program.function(*child).name));
+            let cf = g.fn_ref(*child);
             let t = tags.first().cloned().unwrap_or_else(|| format!("t{sid}"));
             let h = format!("_h_{}", sanitize(handle));
             g.emit("                {");
@@ -697,7 +713,7 @@ fn render_op(
             args,
             dst,
         } => {
-            let cf = format!("cf_{}", sanitize(&g.program.function(*callee).name));
+            let cf = g.fn_ref(*callee);
             for a in args {
                 let _ = g.render_expr(&func.name, sid, a);
             }
