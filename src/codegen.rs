@@ -320,6 +320,8 @@ pub fn event_at_attempt(op: &SemOp) -> bool {
             | SemOp::CondvarNotify { .. }
             | SemOp::CondvarNotifyAll { .. }
             | SemOp::SemaphoreRelease { .. }
+            | SemOp::ChannelSend { .. }
+            | SemOp::ChannelRecv { .. }
             | SemOp::Spawn { .. }
             | SemOp::Scope { .. }
             | SemOp::Join { .. }
@@ -767,7 +769,6 @@ fn render_op(
             let f = g.field(*channel);
             let e = g.render_expr(&func.name, sid, value);
             g.emit(format!("                shared.{f}.send({e});"));
-            g.emit(&ev);
             g.emit(format!("                pc = {next};"));
         }
         SemOp::ChannelRecv { channel, dst } => {
@@ -777,7 +778,6 @@ fn render_op(
             } else {
                 g.emit(format!("                let _ = shared.{f}.recv();"));
             }
-            g.emit(&ev);
             g.emit(format!("                pc = {next};"));
         }
         SemOp::Unsupported { construct } => {
