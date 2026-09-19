@@ -27,6 +27,18 @@ const TRACE_RUNTIME: &str = r#"// Generated cir_trace runtime (std only).
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
+thread_local! {
+    static TAG: std::cell::RefCell<String> = std::cell::RefCell::new("t0".to_string());
+}
+
+pub fn tag_str() -> String {
+    TAG.with(|t| t.borrow().clone())
+}
+
+pub fn set_tag(tag: &str) {
+    TAG.with(|t| *t.borrow_mut() = tag.to_string());
+}
+
 static EVENTS: OnceLock<Mutex<Vec<(String, String)>>> = OnceLock::new();
 
 pub fn ev(tag: &str, sid: &str) {

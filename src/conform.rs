@@ -98,6 +98,7 @@ fn event_capable(
     program: &SemProgram,
     state: &MachineState,
     step: &crate::sem::system::Step<MachineState>,
+    attempt_all: bool,
 ) -> bool {
     let Some(idx) = step.label.origin.sid else {
         return false;
@@ -107,6 +108,13 @@ fn event_capable(
     };
     if !is_observable(op) || !matches!(step.label.origin.phase, Phase::Statement) {
         return false;
+    }
+    if attempt_all {
+        return step
+            .label
+            .thread
+            .map(|t| thread_runnable(state, t))
+            .unwrap_or(false);
     }
     if event_at_attempt(op) {
         step.label
@@ -125,6 +133,7 @@ fn lenient_skippable(
     program: &SemProgram,
     state: &MachineState,
     step: &crate::sem::system::Step<MachineState>,
+    attempt_all: bool,
 ) -> bool {
     let Some(idx) = step.label.origin.sid else {
         return false;
@@ -134,7 +143,7 @@ fn lenient_skippable(
     };
     matches!(step.label.origin.phase, Phase::Statement)
         && matches!(op, SemOp::MutexUnlock { .. })
-        && event_capable(program, state, step)
+        && event_capable(program, state, step, attempt_all)
 }
 
 fn new_tags_for_step(
@@ -173,6 +182,7 @@ fn advance(
     tid: ThreadId,
     sid: &str,
     lenient: bool,
+    attempt_all: bool,
 ) -> Result<Vec<(MachineState, BTreeMap<String, ThreadId>, crate::sem::ids::FunctionId)>, Vec<String>> {
     let mut closure: Vec<(MachineState, BTreeMap<String, ThreadId>)> =
         vec![(start.clone(), start_tags.clone())];
@@ -190,8 +200,8 @@ fn advance(
             Err(_) => continue,
         };
         for step in &enabled.steps {
-            if event_capable(program, &state, step)
-                && !(lenient && lenient_skippable(program, &state, step))
+            if event_capable(program, &state, step, attempt_all)
+                && !(lenient && lenient_skippable(program, &state, step, attempt_all))
             {
                 continue;
             }
@@ -214,7 +224,9 @@ fn advance(
             Err(_) => continue,
         };
         for step in &enabled.steps {
-            if !event_capable(program, state, step) || step.label.thread != Some(tid) {
+            if !event_capable(program, state, step, attempt_all)
+                || step.label.thread != Some(tid)
+            {
                 continue;
             }
             let Some(idx) = step.label.origin.sid else {
@@ -238,7 +250,9 @@ fn advance(
         for (state, _) in &closure {
             if let Ok(enabled) = it.successors(state) {
                 for step in &enabled.steps {
-                    if event_capable(program, state, step) && step.label.thread == Some(tid) {
+                    if event_capable(program, state, step, attempt_all)
+                        && step.label.thread == Some(tid)
+                    {
                         if let Some(i) = step.label.origin.sid {
                             if let Some(s) = sid_of(program, step.label.origin.function, i) {
                                 if !expected.contains(&s) {
@@ -260,6 +274,7 @@ fn silent_expand(
     it: &Interpreter,
     frontier: &[(MachineState, BTreeMap<String, ThreadId>)],
     lenient: bool,
+    attempt_all: bool,
 ) -> Vec<(MachineState, BTreeMap<String, ThreadId>)> {
     let mut out: Vec<(MachineState, BTreeMap<String, ThreadId>)> = frontier.to_vec();
     let mut visited: HashSet<String> = HashSet::new();
@@ -278,8 +293,8 @@ fn silent_expand(
             Err(_) => continue,
         };
         for step in &enabled.steps {
-            if event_capable(program, &state, step)
-                && !(lenient && lenient_skippable(program, &state, step))
+            if event_capable(program, &state, step, attempt_all)
+                && !(lenient && lenient_skippable(program, &state, step, attempt_all))
             {
                 continue;
             }
@@ -297,7 +312,7 @@ fn silent_expand(
 }
 
 pub fn conform(program: &SemProgram, trace: &[(String, String)]) -> Conformance {
-    conform_options(program, trace, false)
+    conform_options(program, trace, false, false)
 }
 
 /// `lenient_unlock` is the extraction-mode relaxation: the model may take a
@@ -307,6 +322,7 @@ pub fn conform_options(
     program: &SemProgram,
     trace: &[(String, String)],
     lenient_unlock: bool,
+    attempt_events: bool,
 ) -> Conformance {
     let total = observable_sids(program).len();
     let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -333,7 +349,7 @@ pub fn conform_options(
     let mut frontier: Vec<(MachineState, BTreeMap<String, ThreadId>)> = vec![(initial, tags0)];
 
     for (k, (tag, sid)) in trace.iter().enumerate() {
-        frontier = silent_expand(program, &it, &frontier, lenient_unlock);
+        frontier = silent_expand(program, &it, &frontier, lenient_unlock, attempt_events);
         let known = program
             .functions()
             .iter()
@@ -361,7 +377,7 @@ pub fn conform_options(
                 continue;
             };
             tag_known = true;
-            match advance(program, &it, state, map, tid, sid, lenient_unlock) {
+            match advance(program, &it, state, map, tid, sid, lenient_unlock, attempt_events) {
                 Ok(results) => {
                     for (s, m, f) in results {
                         matched_functions.insert(f);

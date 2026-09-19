@@ -58,7 +58,7 @@ fn usage() -> ! {
          concir-backend support <program.json>\n  \
          concir-backend schema\n  \
          concir-backend codegen <program.json> --out <dir>\n  \
-         concir-backend conform <program.json> <trace.jsonl> [--lenient-unlock]\n  \
+         concir-backend conform <program.json> <trace.jsonl> [--lenient-unlock] [--attempt-events]\n  \
          concir-backend repair-context <program.json> <contract.json> [--artifact out.json]\n  \
          concir-backend evaluate-patch <context.json> <candidate.json> [--artifact out.json]\n\n\
          flags for --strategy: --candidate-budget N --verification-budget N\n  \
@@ -239,6 +239,7 @@ fn main() {
             let path = args.get(2).unwrap_or_else(|| usage());
             let trace_path = args.get(3).unwrap_or_else(|| usage());
             let lenient_unlock = args.iter().any(|a| a == "--lenient-unlock");
+            let attempt_events = args.iter().any(|a| a == "--attempt-events");
             let program = parse_program(path);
             let sem = match program::lower(&program) {
                 Ok(s) => s,
@@ -264,7 +265,7 @@ fn main() {
                 let sid = v.get("sid").and_then(|x| x.as_str()).unwrap_or("");
                 events.push((t.to_string(), sid.to_string()));
             }
-            let result = concir::conform::conform_options(&sem, &events, lenient_unlock);
+            let result = concir::conform::conform_options(&sem, &events, lenient_unlock, attempt_events);
             println!(
                 "{}",
                 serde_json::to_string_pretty(&versioned(

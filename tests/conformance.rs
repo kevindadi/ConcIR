@@ -104,7 +104,7 @@ fn lenient_unlock_allows_missing_unlock_events() {
         ("ts1_2", "s1"),
     ]);
     assert_eq!(conform(&sem, &no_unlocks).status, "violation");
-    let relaxed = conform_options(&sem, &no_unlocks, true);
+    let relaxed = conform_options(&sem, &no_unlocks, true, false);
     assert_eq!(relaxed.status, "conformant", "{relaxed:?}");
 }
 

@@ -58,6 +58,7 @@ fn lc_offset(starts: &[usize], lc: proc_macro2::LineColumn) -> usize {
 
 #[derive(Debug, Clone)]
 struct Site {
+    orig: usize,
     pos: usize,
     op: String,
     receiver: String,
@@ -65,6 +66,7 @@ struct Site {
 
 #[derive(Debug, Clone)]
 struct SpawnSite {
+    event_site: usize,
     tag: String,
     body_insert: usize,
     body_end: usize,
@@ -93,19 +95,20 @@ impl Collector {
             .join(" ")
     }
 
-    fn record(&mut self, expr_span: Span, op: &str) {
+    fn record(&mut self, expr_span: Span, op: &str) -> usize {
         let fallback = lc_offset(&self.starts, expr_span.start());
         let pos = self.stmt_stack.last().copied().unwrap_or(fallback);
+        let orig = self.sites.len();
         self.sites.push(Site {
+            orig,
             pos,
             op: op.to_string(),
             receiver: self.receiver_text(expr_span),
         });
+        orig
     }
 
-    fn tag_closure(&mut self, closure: &ExprClosure) {
-        self.spawn_count += 1;
-        let tag = format!("t{}", self.spawn_count);
+    fn tag_closure(&mut self, closure: &ExprClosure, event_site: usize) {
         let (body_insert, body_end, is_block) = match &*closure.body {
             Expr::Block(block) => {
                 let open =
@@ -121,7 +124,8 @@ impl Collector {
             }
         };
         self.spawns.push(SpawnSite {
-            tag,
+            event_site,
+            tag: String::new(),
             body_insert,
             body_end,
             is_block,
@@ -152,9 +156,9 @@ impl<'ast> Visit<'ast> for Collector {
         if let Some(op) = op_for(&method) {
             self.record(node.receiver.span(), op);
         } else if method == "spawn" {
-            self.record(node.span(), "spawn");
+            let site = self.record(node.span(), "spawn");
             if let Some(Expr::Closure(c)) = node.args.first() {
-                self.tag_closure(c);
+                self.tag_closure(c, site);
             }
         }
         syn::visit::visit_expr_method_call(self, node);
@@ -167,12 +171,14 @@ impl<'ast> Visit<'ast> for Collector {
         };
         match last.as_deref() {
             Some("spawn") => {
-                self.record(node.span(), "spawn");
+                let site = self.record(node.span(), "spawn");
                 if let Some(Expr::Closure(c)) = node.args.first() {
-                    self.tag_closure(c);
+                    self.tag_closure(c, site);
                 }
             }
-            Some("scope") => self.record(node.span(), "scope"),
+            Some("scope") => {
+                self.record(node.span(), "scope");
+            }
             _ => {}
         }
         syn::visit::visit_expr_call(self, node);
@@ -327,8 +333,11 @@ fn main() {
 
     let mut inserts: BTreeMap<usize, Vec<String>> = BTreeMap::new();
     let mut labels = Vec::new();
+    let mut orig_label: std::collections::HashMap<usize, String> =
+        std::collections::HashMap::new();
     for (n, site) in sites.iter().enumerate() {
         let label = format!("L{}", n + 1);
+        orig_label.insert(site.orig, label.clone());
         let thread = collector
             .spawns
             .iter()
@@ -348,7 +357,11 @@ fn main() {
         ));
     }
 
-    for spawn in &collector.spawns {
+    for spawn in &mut collector.spawns {
+        spawn.tag = orig_label
+            .get(&spawn.event_site)
+            .map(|l| format!("t{l}"))
+            .unwrap_or_else(|| "t0".to_string());
         let statement = format!("cir_trace::set_tag(\"{}\"); ", spawn.tag);
         if spawn.is_block {
             inserts.entry(spawn.body_insert).or_default().push(statement);
@@ -359,6 +372,18 @@ fn main() {
                 .push(format!("{{ {statement}"));
             inserts.entry(spawn.body_end).or_default().push("}".to_string());
         }
+    }
+
+    // Thread attribution needs the final spawn tags (derived from labels).
+    for item in labels.iter_mut() {
+        let pos = item.4;
+        item.3 = collector
+            .spawns
+            .iter()
+            .filter(|s| s.body_insert <= pos && pos < s.body_end)
+            .min_by_key(|s| s.body_end.saturating_sub(s.body_insert))
+            .map(|s| s.tag.clone())
+            .unwrap_or_else(|| "t0".to_string());
     }
 
     if let Some(close) = collector.main_close {
