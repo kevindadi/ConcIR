@@ -410,3 +410,16 @@ the state cannot progress or cannot reach the goal:
 `repair_hints` is templated from the doom state (no LLM): a lock/semaphore cycle
 gives the two edges; a condvar wait names the condvar and the expected notifier;
 an unreachable goal attached to a stuck state also carries the doom summary.
+
+### Channel events in conformance
+
+`channel_send` / `channel_recv` emit `cir_trace::ev` **after** the call returns,
+so the event is a *completed* step (same class as lock/acquire). For a
+zero-capacity rendezvous the two completion events may appear in either order
+depending on which side's runtime call returns first; `conform` keeps every
+candidate binding in its frontier, so both orders are accepted **when the
+reference model exposes separate completion steps for the two sides**. The
+reference interpreter attributes the pairing to the second arriver and resumes
+the first waiter afterwards, so the emitted order must match that; a
+receiver-returns-first runtime (e.g. an mpsc-style rendezvous) is a genuine
+divergence and is reported as a violation rather than excused.
