@@ -170,6 +170,20 @@ pub enum PredicateSpec {
     MutexHeld {
         resource: String,
     },
+    /// Some thread executing `function` holds every `resources` entry.
+    HoldsAll {
+        function: String,
+        resources: Vec<String>,
+    },
+    /// At most one holder of `resource`.
+    MutexExclusive {
+        resource: String,
+    },
+    /// No thread executing `function` holds all `resources`.
+    NeverHoldsAll {
+        function: String,
+        resources: Vec<String>,
+    },
     ChannelEmpty {
         resource: String,
     },
@@ -522,6 +536,58 @@ impl PredicateSpec {
                 let rid = resolve_resource(program, default_module, resource)?;
                 expect_kind(program, rid, resource, &[ResKind::Mutex])?;
                 Predicate::MutexHeld(rid)
+            }
+            PredicateSpec::HoldsAll {
+                function,
+                resources,
+            } => {
+                let fid = resolve_function(program, default_module, function)?;
+                let mut rids = Vec::new();
+                for name in resources {
+                    let rid = resolve_resource(program, default_module, name)?;
+                    expect_kind(
+                        program,
+                        rid,
+                        name,
+                        &[ResKind::Mutex, ResKind::Semaphore],
+                    )?;
+                    rids.push(rid);
+                }
+                Predicate::HoldsAll {
+                    func: fid,
+                    resources: rids,
+                }
+            }
+            PredicateSpec::MutexExclusive { resource } => {
+                let rid = resolve_resource(program, default_module, resource)?;
+                expect_kind(
+                    program,
+                    rid,
+                    resource,
+                    &[ResKind::Mutex, ResKind::Semaphore],
+                )?;
+                Predicate::MutexExclusive(rid)
+            }
+            PredicateSpec::NeverHoldsAll {
+                function,
+                resources,
+            } => {
+                let fid = resolve_function(program, default_module, function)?;
+                let mut rids = Vec::new();
+                for name in resources {
+                    let rid = resolve_resource(program, default_module, name)?;
+                    expect_kind(
+                        program,
+                        rid,
+                        name,
+                        &[ResKind::Mutex, ResKind::Semaphore],
+                    )?;
+                    rids.push(rid);
+                }
+                Predicate::NeverHoldsAll {
+                    func: fid,
+                    resources: rids,
+                }
             }
             PredicateSpec::ChannelEmpty { resource } => {
                 let rid = resolve_resource(program, default_module, resource)?;

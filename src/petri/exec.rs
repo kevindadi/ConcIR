@@ -1491,6 +1491,30 @@ fn value_matches_label(v: &Value, label: &str) -> bool {
 
 // Small compatibility helpers for thread identity in NetThread.
 
+impl<'a> PetriEngine<'a> {
+    /// Whether `tid` holds `r` (mutex token held by `tid`; semaphore permits
+    /// below the initial count, since permit ownership is not per thread).
+    fn net_thread_holds(&self, state: &NetState, tid: ThreadId, r: ResourceId) -> bool {
+        use crate::sem::program::ResKind;
+        match self.program.resource(r).kind {
+            ResKind::Mutex => self
+                .place(&PlaceKey::Mutex(r))
+                .and_then(|p| state.marking.get(&p))
+                .map(|toks| {
+                    toks.iter()
+                        .any(|x| matches!(x, NetToken::Mutex(MutexToken::Held(h)) if *h == tid))
+                })
+                .unwrap_or(false),
+            ResKind::Semaphore => self
+                .place(&PlaceKey::Semaphore(r))
+                .and_then(|p| state.read_data(p))
+                .map(|v| matches!(v, Value::Int(n) if *n < self.program.resource(r).permits))
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
+}
+
 impl<'a> TransitionSystem for PetriEngine<'a> {
     type State = NetState;
 
@@ -1945,6 +1969,47 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                 .and_then(|p| state.read_data(p))
                 .map(|v| matches!(v, Value::Array(a) if a.len() >= *len))
                 .unwrap_or(false),
+            Predicate::HoldsAll { func, resources } => {
+                state.store.threads.iter().any(|(tid, t)| {
+                    let executes = t.stack.iter().any(|fid| {
+                        state
+                            .store
+                            .frames
+                            .get(fid)
+                            .map(|f| f.function == *func)
+                            .unwrap_or(false)
+                    });
+                    executes
+                        && resources
+                            .iter()
+                            .all(|r| self.net_thread_holds(state, *tid, *r))
+                })
+            }
+            Predicate::MutexExclusive(r) => match self.program.resource(*r).kind {
+                crate::sem::program::ResKind::Mutex => true,
+                crate::sem::program::ResKind::Semaphore => self
+                    .place(&PlaceKey::Semaphore(*r))
+                    .and_then(|p| state.read_data(p))
+                    .map(|v| matches!(v, Value::Int(n) if *n >= 0))
+                    .unwrap_or(true),
+                _ => false,
+            },
+            Predicate::NeverHoldsAll { func, resources } => {
+                !state.store.threads.iter().any(|(tid, t)| {
+                    let executes = t.stack.iter().any(|fid| {
+                        state
+                            .store
+                            .frames
+                            .get(fid)
+                            .map(|f| f.function == *func)
+                            .unwrap_or(false)
+                    });
+                    executes
+                        && resources
+                            .iter()
+                            .all(|r| self.net_thread_holds(state, *tid, *r))
+                })
+            }
             Predicate::Not(p) => !self.satisfied(state, p),
             Predicate::And(ps) => ps.iter().all(|p| self.satisfied(state, p)),
             Predicate::Or(ps) => ps.iter().any(|p| self.satisfied(state, p)),

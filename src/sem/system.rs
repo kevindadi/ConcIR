@@ -47,6 +47,21 @@ pub enum Predicate {
     },
     MutexFree(ResourceId),
     MutexHeld(ResourceId),
+    /// Some thread currently executing `func` (at any frame depth) holds every
+    /// resource in `resources` (mutex held by that thread; a semaphore counts
+    /// as held while permits are below its initial count).
+    HoldsAll {
+        func: FunctionId,
+        resources: Vec<ResourceId>,
+    },
+    /// At most one holder of `resource` at a time (mutex invariant, or a
+    /// non-negative semaphore count).
+    MutexExclusive(ResourceId),
+    /// No thread executing `func` holds all of `resources` (forbids nesting).
+    NeverHoldsAll {
+        func: FunctionId,
+        resources: Vec<ResourceId>,
+    },
     ChannelEmpty(ResourceId),
     ChannelAtLeast {
         resource: ResourceId,
@@ -92,6 +107,15 @@ impl Predicate {
             Predicate::StatementReached { func, sid } => format!("reached(f{func}@{sid})"),
             Predicate::MutexFree(r) => format!("free(r{r})"),
             Predicate::MutexHeld(r) => format!("held(r{r})"),
+            Predicate::HoldsAll { func, resources } => {
+                let rs: Vec<String> = resources.iter().map(|r| format!("r{r}")).collect();
+                format!("holds_all(f{func}, [{}])", rs.join(", "))
+            }
+            Predicate::MutexExclusive(r) => format!("mutex_exclusive(r{r})"),
+            Predicate::NeverHoldsAll { func, resources } => {
+                let rs: Vec<String> = resources.iter().map(|r| format!("r{r}")).collect();
+                format!("never_holds_all(f{func}, [{}])", rs.join(", "))
+            }
             Predicate::ChannelEmpty(r) => format!("channel_empty(r{r})"),
             Predicate::ChannelAtLeast { resource, len } => {
                 format!("channel_len(r{resource}) >= {len}")

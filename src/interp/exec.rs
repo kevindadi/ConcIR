@@ -159,6 +159,28 @@ impl<'a> Interpreter<'a> {
         Ok(true)
     }
 
+    /// Whether `tid` holds resource `r` (mutex owned by `tid`; a semaphore is
+    /// "held" while permits are below its initial count, since permit ownership
+    /// is not tracked per thread).
+    fn thread_holds(
+        &self,
+        state: &MachineState,
+        tid: ThreadId,
+        r: crate::sem::ids::ResourceId,
+    ) -> bool {
+        use crate::sem::program::ResKind;
+        match self.program.resource(r).kind {
+            ResKind::Mutex => {
+                matches!(state.store.mutexes.get(&r), Some(MutexState::Held(h)) if *h == tid)
+            }
+            ResKind::Semaphore => {
+                state.store.semaphores.get(&r).copied().unwrap_or(0)
+                    < self.program.resource(r).permits
+            }
+            _ => false,
+        }
+    }
+
     /// Apply a `return` (explicit or the implicit return at a function's end).
     /// Returns `Ok(false)` when the step is disabled (return type or caller
     /// destination domain violation), so the caller emits no successor.
@@ -1437,6 +1459,35 @@ impl<'a> TransitionSystem for Interpreter<'a> {
                 .get(resource)
                 .map(|c| c.buffer.len() >= *len)
                 .unwrap_or(false),
+            Predicate::HoldsAll { func, resources } => state.threads.values().any(|t| {
+                let executes = t.stack.iter().any(|fid| {
+                    state
+                        .store
+                        .frames
+                        .get(fid)
+                        .map(|f| f.function == *func)
+                        .unwrap_or(false)
+                });
+                executes && resources.iter().all(|r| self.thread_holds(state, t.id, *r))
+            }),
+            Predicate::MutexExclusive(r) => match self.program.resource(*r).kind {
+                crate::sem::program::ResKind::Mutex => true,
+                crate::sem::program::ResKind::Semaphore => {
+                    state.store.semaphores.get(r).copied().unwrap_or(0) >= 0
+                }
+                _ => false,
+            },
+            Predicate::NeverHoldsAll { func, resources } => !state.threads.values().any(|t| {
+                let executes = t.stack.iter().any(|fid| {
+                    state
+                        .store
+                        .frames
+                        .get(fid)
+                        .map(|f| f.function == *func)
+                        .unwrap_or(false)
+                });
+                executes && resources.iter().all(|r| self.thread_holds(state, t.id, *r))
+            }),
             Predicate::Not(p) => !self.satisfied(state, p),
             Predicate::And(ps) => ps.iter().all(|p| self.satisfied(state, p)),
             Predicate::Or(ps) => ps.iter().any(|p| self.satisfied(state, p)),

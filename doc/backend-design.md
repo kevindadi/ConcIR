@@ -482,6 +482,15 @@ and it retains the symbolic `ContractSpec` it was resolved from.
 - **Deadlock**: a reachable state where no thread can step, at least one thread
   is not `Finished`, and no boundary was hit from that state.
 - **EF goal**: some reachable state satisfies the goal.
+- **`holds_all`**: there is a thread currently executing a named function (at
+  any frame depth) that holds every listed resource at once (a mutex is held by
+  that thread; a semaphore counts as held while permits are below its initial
+  count). This expresses a design intent such as "the worker enters a critical
+  section holding both locks", so a patch that simply deletes the nested
+  critical section fails the preserved `holds_all` goal.
+- **`mutex_exclusive`**: at most one holder of a resource (a mutex invariant, or
+  a non-negative semaphore count). `never_holds_all`: no thread executing the
+  named function holds all listed resources (forbids nesting).
 - **AG EF goal**: every reachable state can still reach the goal. Implemented
   exactly as: build the full reachable graph; compute backwards the set of
   states that can reach a goal state; report a reachable state outside it.
