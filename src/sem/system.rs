@@ -133,6 +133,35 @@ pub struct BlockedRecord {
     pub detail: String,
 }
 
+/// What a thread is waiting on, rendered by name.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DoomWait {
+    pub kind: String,
+    pub resource: Option<String>,
+}
+
+/// One thread's position and resources in a stuck ("doom") state.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DoomThread {
+    pub thread: u32,
+    pub entry_function: String,
+    /// `module::function` of the current frame.
+    pub function: String,
+    /// `sid` of the statement the thread is at, when it is a real statement.
+    pub at_sid: Option<String>,
+    /// Held mutex resources (FQNs).
+    pub holds: Vec<String>,
+    pub waiting_on: Option<DoomWait>,
+}
+
+/// A human-readable summary of why a state cannot progress (or cannot reach a
+/// goal): per-thread holds/waiting plus the currently free mutexes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DoomState {
+    pub threads: Vec<DoomThread>,
+    pub free_resources: Vec<String>,
+}
+
 /// Current position of one execution instance.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InstanceState {
@@ -181,6 +210,11 @@ pub trait TransitionSystem {
     /// Current positions of all execution instances (for diagnostics).
     fn instances(&self, _state: &Self::State) -> Vec<InstanceState> {
         Vec::new()
+    }
+
+    /// Per-thread holds/waiting plus free mutexes, for readable diagnostics.
+    fn doom_snapshot(&self, _state: &Self::State) -> DoomState {
+        DoomState::default()
     }
 
     /// Evaluate a predicate against a state.

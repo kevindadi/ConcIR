@@ -1798,6 +1798,88 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
         out
     }
 
+    fn doom_snapshot(&self, state: &NetState) -> crate::sem::system::DoomState {
+        use crate::sem::system::{DoomState, DoomThread, DoomWait};
+        let fqn = |r: ResourceId| -> String {
+            let res = self.program.resource(r);
+            crate::fqn::fqn(self.program.module_name(res.module), &res.name)
+        };
+        let mut free: Vec<String> = Vec::new();
+        for place in &self.net.places {
+            if let PlaceKey::Mutex(r) = place.key {
+                if state
+                    .marking
+                    .get(&place.id)
+                    .map(|toks| toks.iter().any(|t| matches!(t, NetToken::Mutex(MutexToken::Free))))
+                    .unwrap_or(false)
+                {
+                    free.push(fqn(r));
+                }
+            }
+        }
+        free.sort();
+        let mut threads = Vec::new();
+        for (tid, t) in &state.store.threads {
+            let mut holds: Vec<String> = Vec::new();
+            for place in &self.net.places {
+                if let PlaceKey::Mutex(r) = place.key {
+                    if state
+                        .marking
+                        .get(&place.id)
+                        .map(|toks| {
+                            toks.iter().any(
+                                |x| matches!(x, NetToken::Mutex(MutexToken::Held(h)) if h == tid),
+                            )
+                        })
+                        .unwrap_or(false)
+                    {
+                        holds.push(fqn(r));
+                    }
+                }
+            }
+            holds.sort();
+            let (function, at_sid) = match state.store.current_frame(*tid) {
+                Some(fid) => {
+                    let fr = state.store.frame(fid);
+                    let func = self.program.function(fr.function);
+                    (
+                        crate::fqn::fqn(self.program.module_name(func.module), &func.name),
+                        func.body.get(fr.pc).map(|s| s.sid.clone()),
+                    )
+                }
+                None => {
+                    let func = self.program.function(t.entry_function);
+                    (
+                        crate::fqn::fqn(self.program.module_name(func.module), &func.name),
+                        None,
+                    )
+                }
+            };
+            let waiting_on = t.blocked_at.as_ref().map(|key| match key {
+                PlaceKey::LockWait(r) => DoomWait { kind: "mutex".into(), resource: Some(fqn(*r)) },
+                PlaceKey::SemWait(r) => DoomWait { kind: "semaphore".into(), resource: Some(fqn(*r)) },
+                PlaceKey::ChannelSend(r) => DoomWait { kind: "channel_send".into(), resource: Some(fqn(*r)) },
+                PlaceKey::ChannelRecv(r) => DoomWait { kind: "channel_recv".into(), resource: Some(fqn(*r)) },
+                PlaceKey::Condvar(r) => DoomWait { kind: "condvar".into(), resource: Some(fqn(*r)) },
+                PlaceKey::JoinWait { .. } => DoomWait { kind: "join".into(), resource: None },
+                PlaceKey::ScopeWait { .. } => DoomWait { kind: "scope".into(), resource: None },
+                _ => DoomWait { kind: "unknown".into(), resource: None },
+            });
+            threads.push(DoomThread {
+                thread: tid.0 as u32,
+                entry_function: {
+                    let func = self.program.function(t.entry_function);
+                    crate::fqn::fqn(self.program.module_name(func.module), &func.name)
+                },
+                function,
+                at_sid,
+                holds,
+                waiting_on,
+            });
+        }
+        DoomState { threads, free_resources: free }
+    }
+
     fn satisfied(&self, state: &NetState, predicate: &Predicate) -> bool {
         let read_var = |r: ResourceId| -> Option<&Value> {
             if let Some(pid) = self.place(&PlaceKey::Var(r)) {

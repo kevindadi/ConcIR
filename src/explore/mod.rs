@@ -16,7 +16,9 @@ use crate::sem::outcome::{
     BackendError, BoundaryEvent, BoundaryKind, Invalid, Outcome, StepLabel, Unsupported,
 };
 use crate::sem::program::SemProgram;
-use crate::sem::system::{BlockedRecord, InstanceState, Step, TransitionSystem};
+use crate::sem::system::{
+    BlockedRecord, DoomState, DoomThread, InstanceState, Step, TransitionSystem,
+};
 
 use contract::{ContractError, ContractSpec, Preserved, Property, VerificationContract};
 
@@ -41,6 +43,12 @@ pub struct DiagnosticRecord {
     pub proven_facts: Vec<String>,
     /// Heuristic repair suggestions (never treated as proven).
     pub repair_hints: Vec<String>,
+    /// Name-rendered counterexample steps (`module::function::sid`).
+    #[serde(default)]
+    pub counterexample_names: Vec<String>,
+    /// Who holds/waits on what in the counterexample state.
+    #[serde(default)]
+    pub doom_state: DoomState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -394,6 +402,8 @@ pub fn verify<S: TransitionSystem>(
                         repair_hints: vec![
                             "restore the statement/thread that established this behaviour".into(),
                         ],
+                        counterexample_names: Vec::new(),
+                        doom_state: Default::default(),
                     });
                 }
                 results.push(PropertyResult {
@@ -639,6 +649,11 @@ fn check_property<S: TransitionSystem>(
                         Outcome::Unknown
                     };
                     if outcome == Outcome::Fail {
+                        let (ce_names, doom_state, mut hints) =
+                            doom_view(system, graph, best_doom_index(system, graph));
+                        hints.push(
+                            "a goal that is unreachable cannot be fixed by reordering; check whether the goal is ever produced".into(),
+                        );
                         diagnostics.push(DiagnosticRecord {
                             property: id.into(),
                             outcome,
@@ -652,9 +667,9 @@ fn check_property<S: TransitionSystem>(
                                 "exhaustively explored {} reachable states",
                                 graph.states.len()
                             )],
-                            repair_hints: vec![
-                                "a goal that is unreachable cannot be fixed by reordering; check whether the goal is ever produced".into(),
-                            ],
+                            repair_hints: hints,
+                            counterexample_names: ce_names,
+                            doom_state,
                         });
                     }
                     PropertyResult {
@@ -681,6 +696,9 @@ fn check_property<S: TransitionSystem>(
                 .map(|(i, _)| i)
                 .collect();
             if goal_states.is_empty() {
+                let (ce_names, doom_state, mut hints) =
+                    doom_view(system, graph, best_doom_index(system, graph));
+                hints.push("make the goal reachable before requiring AG EF".into());
                 diagnostics.push(DiagnosticRecord {
                     property: id.into(),
                     outcome: Outcome::Fail,
@@ -694,7 +712,9 @@ fn check_property<S: TransitionSystem>(
                     blocked: Vec::new(),
                     cir_statements: Vec::new(),
                     proven_facts: vec![format!("explored {} reachable states", graph.states.len())],
-                    repair_hints: vec!["make the goal reachable before requiring AG EF".into()],
+                    repair_hints: hints,
+                    counterexample_names: ce_names,
+                    doom_state,
                 });
                 return PropertyResult {
                     id: id.into(),
@@ -793,12 +813,17 @@ fn make_diagnostic<S: TransitionSystem>(
         .iter()
         .map(|i| cir_ref(program, i.function, i.sid))
         .collect();
+    let ce = counterexample(graph, idx);
+    let ce_names = ce.iter().map(|label| render_step_label(program, label)).collect();
+    let doom_state = system.doom_snapshot(state);
+    let mut hints = Vec::new();
+    hints.extend(doom_hints(&doom_state));
     DiagnosticRecord {
         property: id.into(),
         outcome,
         message: message.into(),
         complete,
-        counterexample: counterexample(graph, idx),
+        counterexample: ce,
         final_instances: instances,
         blocked,
         cir_statements,
@@ -809,8 +834,104 @@ fn make_diagnostic<S: TransitionSystem>(
             ),
             format!("explored {} reachable states", graph.states.len()),
         ],
-        repair_hints: Vec::new(),
+        repair_hints: hints,
+        counterexample_names: ce_names,
+        doom_state,
     }
+}
+
+/// Reachable state with the most blocked threads, if any (for a doom summary).
+fn best_doom_index<S: TransitionSystem>(system: &S, graph: &Graph<S::State>) -> Option<usize> {
+    (0..graph.states.len())
+        .max_by_key(|&i| system.blocked(&graph.states[i]).len())
+        .filter(|&i| !system.blocked(&graph.states[i]).is_empty())
+}
+
+/// `(counterexample names, doom state, hints)` for an optional state index.
+fn doom_view<S: TransitionSystem>(
+    system: &S,
+    graph: &Graph<S::State>,
+    idx: Option<usize>,
+) -> (Vec<String>, DoomState, Vec<String>) {
+    match idx {
+        Some(i) => {
+            let doom = system.doom_snapshot(&graph.states[i]);
+            let names = counterexample(graph, i)
+                .iter()
+                .map(|l| {
+                    let f = system.program().function(l.origin.function);
+                    let sid = l
+                        .origin
+                        .sid
+                        .and_then(|j| f.body.get(j))
+                        .map(|s| s.sid.as_str())
+                        .unwrap_or("-");
+                    format!("{}::{}::{}", system.program().module_name(f.module), f.name, sid)
+                })
+                .collect();
+            let hints = doom_hints(&doom);
+            (names, doom, hints)
+        }
+        None => (Vec::new(), DoomState::default(), Vec::new()),
+    }
+}
+
+/// `module::function::sid` for a step label.
+fn render_step_label(program: &SemProgram, label: &StepLabel) -> String {
+    let f = program.function(label.origin.function);
+    let sid = label
+        .origin
+        .sid
+        .and_then(|i| f.body.get(i))
+        .map(|s| s.sid.as_str())
+        .unwrap_or("-");
+    format!("{}::{}::{}", program.module_name(f.module), f.name, sid)
+}
+
+/// Templated hints derived from the doom state (lock/semaphore cycles, waits).
+fn doom_hints(doom: &DoomState) -> Vec<String> {
+    let mut hints = Vec::new();
+    let waiters: std::collections::HashMap<&str, &DoomThread> = doom
+        .threads
+        .iter()
+        .filter_map(|t| t.waiting_on.as_ref().and_then(|w| w.resource.as_deref()).map(|r| (r, t)))
+        .collect();
+    for t in &doom.threads {
+        let Some(wait) = &t.waiting_on else { continue };
+        let Some(wait_res) = wait.resource.as_deref() else { continue };
+        for held in &t.holds {
+            if let Some(other) = waiters.get(held.as_str()) {
+                let other_holds = other.holds.iter().any(|h| h == wait_res);
+                if other_holds {
+                    hints.push(format!(
+                        "thread {} (at {}) holds {} and waits on {}; thread {} (at {}) holds {} \
+                         and waits on {} — unify the acquisition order, or release {} before \
+                         waiting on {}",
+                        t.entry_function,
+                        t.at_sid.as_deref().unwrap_or("-"),
+                        held,
+                        wait_res,
+                        other.entry_function,
+                        other.at_sid.as_deref().unwrap_or("-"),
+                        wait_res,
+                        held,
+                        held,
+                        wait_res,
+                    ));
+                }
+            }
+        }
+        if wait.kind == "condvar" {
+            hints.push(format!(
+                "thread {} (at {}) is waiting on condvar {}; ensure some runnable thread reaches \
+                 the matching notify after the predicate is set",
+                t.entry_function,
+                t.at_sid.as_deref().unwrap_or("-"),
+                wait_res,
+            ));
+        }
+    }
+    hints
 }
 
 fn cir_ref(program: &SemProgram, function: FunctionId, sid: Option<usize>) -> CirStatementRef {

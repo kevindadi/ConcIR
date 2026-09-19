@@ -385,3 +385,28 @@ Output: `{"status":"conformant"|"violation"|"unknown_sid", "events":n,
 "event_index":k, "expected":[...], "got":sid, "coverage":{"sids_seen":m,
 "sids_total":M}}`. A conformant trace proves every observed execution is a model
 execution; it is not a correctness proof.
+
+## Diagnostics: names and doom state
+
+A FAIL diagnostic reports, in addition to the name-rendered counterexample
+(`counterexample_names`, `module::function::sid`), a `doom_state` summarising why
+the state cannot progress or cannot reach the goal:
+
+```json
+"doom_state": {
+  "threads": [
+    {"thread": 1, "entry_function": "main::a", "function": "main::a", "at_sid": "s4",
+     "holds": ["main::a"], "waiting_on": {"kind": "mutex", "resource": "main::b"}},
+    {"thread": 2, "entry_function": "main::b", "function": "main::b", "at_sid": "s4",
+     "holds": ["main::b"], "waiting_on": {"kind": "mutex", "resource": "main::a"}}
+  ],
+  "free_resources": []
+},
+"repair_hints": [
+  "thread main::a (at s4) holds main::a and waits on main::b; thread main::b (at s4) ..."
+]
+```
+
+`repair_hints` is templated from the doom state (no LLM): a lock/semaphore cycle
+gives the two edges; a condvar wait names the condvar and the expected notifier;
+an unreachable goal attached to a stuck state also carries the doom summary.

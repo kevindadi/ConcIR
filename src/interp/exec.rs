@@ -1330,6 +1330,69 @@ impl<'a> TransitionSystem for Interpreter<'a> {
         out
     }
 
+    fn doom_snapshot(&self, state: &MachineState) -> crate::sem::system::DoomState {
+        use crate::sem::system::{DoomState, DoomThread, DoomWait};
+        let mut free: Vec<String> = state
+            .store
+            .mutexes
+            .iter()
+            .filter(|(_, m)| matches!(m, MutexState::Free))
+            .map(|(r, _)| self.rname(*r))
+            .collect();
+        free.sort();
+        let mut threads = Vec::new();
+        for t in state.threads.values() {
+            let holds: Vec<String> = state
+                .store
+                .mutexes
+                .iter()
+                .filter(|(_, m)| matches!(m, MutexState::Held(h) if *h == t.id))
+                .map(|(r, _)| self.rname(*r))
+                .collect();
+            let (function, at_sid) = match t.current_frame() {
+                Some(fid) => {
+                    let f = state.frame(fid);
+                    let func = self.program.function(f.function);
+                    (
+                        crate::fqn::fqn(self.program.module_name(func.module), &func.name),
+                        func.body.get(f.pc).map(|s| s.sid.clone()),
+                    )
+                }
+                None => (
+                    crate::fqn::fqn(
+                        self.program.module_name(self.program.function(t.entry_function).module),
+                        &self.program.function(t.entry_function).name,
+                    ),
+                    None,
+                ),
+            };
+            let waiting_on = match &t.status {
+                ThreadStatus::Blocked(reason) => Some(match reason {
+                    BlockReason::Lock(r) => DoomWait { kind: "mutex".into(), resource: Some(self.rname(*r)) },
+                    BlockReason::Semaphore(r) => DoomWait { kind: "semaphore".into(), resource: Some(self.rname(*r)) },
+                    BlockReason::Condvar(cv, _) => DoomWait { kind: "condvar".into(), resource: Some(self.rname(*cv)) },
+                    BlockReason::ChannelSend(c) => DoomWait { kind: "channel_send".into(), resource: Some(self.rname(*c)) },
+                    BlockReason::ChannelRecv(c) => DoomWait { kind: "channel_recv".into(), resource: Some(self.rname(*c)) },
+                    BlockReason::Join(_) => DoomWait { kind: "join".into(), resource: None },
+                    BlockReason::Scope(_) => DoomWait { kind: "scope".into(), resource: None },
+                }),
+                _ => None,
+            };
+            threads.push(DoomThread {
+                thread: t.id.0 as u32,
+                entry_function: crate::fqn::fqn(
+                    self.program.module_name(self.program.function(t.entry_function).module),
+                    &self.program.function(t.entry_function).name,
+                ),
+                function,
+                at_sid,
+                holds,
+                waiting_on,
+            });
+        }
+        DoomState { threads, free_resources: free }
+    }
+
     fn satisfied(&self, state: &MachineState, predicate: &Predicate) -> bool {
         match predicate {
             Predicate::True => true,
