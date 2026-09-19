@@ -118,6 +118,25 @@ fn event_capable(
     }
 }
 
+/// In extraction mode the annotated Rust has no explicit unlock event (Rust
+/// guards drop implicitly), so a model `mutex_unlock` statement may be taken
+/// silently. Codegen mode never sets this, so the strict rule still applies.
+fn lenient_skippable(
+    program: &SemProgram,
+    state: &MachineState,
+    step: &crate::sem::system::Step<MachineState>,
+) -> bool {
+    let Some(idx) = step.label.origin.sid else {
+        return false;
+    };
+    let Some(op) = op_of(program, step.label.origin.function, idx) else {
+        return false;
+    };
+    matches!(step.label.origin.phase, Phase::Statement)
+        && matches!(op, SemOp::MutexUnlock { .. })
+        && event_capable(program, state, step)
+}
+
 fn new_tags_for_step(
     program: &SemProgram,
     before: &MachineState,
@@ -153,6 +172,7 @@ fn advance(
     start_tags: &BTreeMap<String, ThreadId>,
     tid: ThreadId,
     sid: &str,
+    lenient: bool,
 ) -> Result<Vec<(MachineState, BTreeMap<String, ThreadId>, crate::sem::ids::FunctionId)>, Vec<String>> {
     let mut closure: Vec<(MachineState, BTreeMap<String, ThreadId>)> =
         vec![(start.clone(), start_tags.clone())];
@@ -170,7 +190,9 @@ fn advance(
             Err(_) => continue,
         };
         for step in &enabled.steps {
-            if event_capable(program, &state, step) {
+            if event_capable(program, &state, step)
+                && !(lenient && lenient_skippable(program, &state, step))
+            {
                 continue;
             }
             let mut nm = map.clone();
@@ -237,6 +259,7 @@ fn silent_expand(
     program: &SemProgram,
     it: &Interpreter,
     frontier: &[(MachineState, BTreeMap<String, ThreadId>)],
+    lenient: bool,
 ) -> Vec<(MachineState, BTreeMap<String, ThreadId>)> {
     let mut out: Vec<(MachineState, BTreeMap<String, ThreadId>)> = frontier.to_vec();
     let mut visited: HashSet<String> = HashSet::new();
@@ -255,7 +278,9 @@ fn silent_expand(
             Err(_) => continue,
         };
         for step in &enabled.steps {
-            if event_capable(program, &state, step) {
+            if event_capable(program, &state, step)
+                && !(lenient && lenient_skippable(program, &state, step))
+            {
                 continue;
             }
             let mut nm = map.clone();
@@ -272,6 +297,17 @@ fn silent_expand(
 }
 
 pub fn conform(program: &SemProgram, trace: &[(String, String)]) -> Conformance {
+    conform_options(program, trace, false)
+}
+
+/// `lenient_unlock` is the extraction-mode relaxation: the model may take a
+/// `mutex_unlock` statement silently (no `cir_trace` event), matching Rust's
+/// implicit guard drop. It is off for codegen-mode conformance.
+pub fn conform_options(
+    program: &SemProgram,
+    trace: &[(String, String)],
+    lenient_unlock: bool,
+) -> Conformance {
     let total = observable_sids(program).len();
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let it = Interpreter::new(program, AnalysisBounds::default());
@@ -297,7 +333,7 @@ pub fn conform(program: &SemProgram, trace: &[(String, String)]) -> Conformance 
     let mut frontier: Vec<(MachineState, BTreeMap<String, ThreadId>)> = vec![(initial, tags0)];
 
     for (k, (tag, sid)) in trace.iter().enumerate() {
-        frontier = silent_expand(program, &it, &frontier);
+        frontier = silent_expand(program, &it, &frontier, lenient_unlock);
         let known = program
             .functions()
             .iter()
@@ -325,7 +361,7 @@ pub fn conform(program: &SemProgram, trace: &[(String, String)]) -> Conformance 
                 continue;
             };
             tag_known = true;
-            match advance(program, &it, state, map, tid, sid) {
+            match advance(program, &it, state, map, tid, sid, lenient_unlock) {
                 Ok(results) => {
                     for (s, m, f) in results {
                         matched_functions.insert(f);

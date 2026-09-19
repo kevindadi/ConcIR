@@ -2,7 +2,7 @@
 
 use concir::ast::Program;
 use concir::codegen::{generate, is_observable};
-use concir::conform::conform;
+use concir::conform::{conform, conform_options};
 use concir::sem::program;
 
 const ABBA_FIXED: &str = r#"
@@ -91,6 +91,21 @@ fn conform_reports_unknown_sid() {
     let bad = trace(&[("t0", "s1"), ("ts1_1", "s9")]);
     let result = conform(&sem, &bad);
     assert_eq!(result.status, "unknown_sid");
+}
+
+#[test]
+fn lenient_unlock_allows_missing_unlock_events() {
+    let sem = lowered();
+    // t1 locks a then b; t2 then locks a. Without unlock events this is only
+    // legal in extraction mode, where a guard drop is implicit.
+    let no_unlocks = trace(&[
+        ("t0", "s1"),
+        ("ts1_1", "s1"), ("ts1_1", "s2"),
+        ("ts1_2", "s1"),
+    ]);
+    assert_eq!(conform(&sem, &no_unlocks).status, "violation");
+    let relaxed = conform_options(&sem, &no_unlocks, true);
+    assert_eq!(relaxed.status, "conformant", "{relaxed:?}");
 }
 
 #[test]
