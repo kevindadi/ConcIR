@@ -51,6 +51,22 @@ fn line_starts(src: &str) -> Vec<usize> {
     starts
 }
 
+fn leading_header_len(src: &str) -> usize {
+    // Inner doc comments (`//!`) and inner attributes (`#![...]`) must stay at
+    // the very top of the file, so `mod cir_trace;` is inserted after them.
+    let mut offset = 0;
+    for line in src.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("//!") || trimmed.starts_with("#![") || trimmed.trim().is_empty()
+        {
+            offset += line.len();
+        } else {
+            break;
+        }
+    }
+    offset
+}
+
 fn lc_offset(starts: &[usize], lc: proc_macro2::LineColumn) -> usize {
     let line = lc.line.saturating_sub(1).min(starts.len().saturating_sub(1));
     starts[line] + lc.column
@@ -394,13 +410,15 @@ fn main() {
     }
 
     // Prepend `mod cir_trace;` if absent, shifting every insertion point.
-    let prefix = if src.contains("mod cir_trace") {
-        ""
+    let mut annotated = src.clone();
+    let base = if src.contains("mod cir_trace") {
+        0
     } else {
-        "mod cir_trace;\n"
+        let at = leading_header_len(&src);
+        let decl = "mod cir_trace;\n";
+        annotated = format!("{}{}{}", &src[..at], decl, &src[at..]);
+        decl.len()
     };
-    let base = prefix.len();
-    let mut annotated = format!("{prefix}{src}");
     let starts = collector.starts.clone();
     let mut points: Vec<(usize, Vec<String>)> = inserts.into_iter().collect();
     points.sort_by(|a, b| b.0.cmp(&a.0));
