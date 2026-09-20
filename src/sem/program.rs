@@ -330,7 +330,15 @@ pub fn lower(program: &Program) -> BackendResult<SemProgram> {
         for f in &m.functions {
             let fid = lowerer
                 .function_by_fqn(&fqn::fqn(&m.name, &f.name))
-                .expect("header registered");
+                .ok_or_else(|| {
+                    BackendError::invalid(
+                        "E102",
+                        format!(
+                            "function '{}::{}' is not registered (duplicate or empty name)",
+                            m.name, f.name
+                        ),
+                    )
+                })?;
             let lowered = lower_function_body(program, m, f, fid, &mut lowerer)?;
             lowerer.functions[fid.index()] = lowered;
         }
