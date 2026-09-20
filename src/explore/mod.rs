@@ -383,6 +383,12 @@ pub fn verify<S: TransitionSystem>(
                     Outcome::Unknown
                 };
                 if outcome == Outcome::Fail {
+                    let mut hints = vec![
+                        "restore the statement/thread that established this behaviour".to_string(),
+                    ];
+                    if let Some(hint) = holds_all_hint(program, goal) {
+                        hints.push(hint);
+                    }
                     diagnostics.push(DiagnosticRecord {
                         property: pid.clone(),
                         outcome,
@@ -399,9 +405,7 @@ pub fn verify<S: TransitionSystem>(
                             "explored {} reachable states",
                             graph.states.len()
                         )],
-                        repair_hints: vec![
-                            "restore the statement/thread that established this behaviour".into(),
-                        ],
+                        repair_hints: hints,
                         counterexample_names: Vec::new(),
                         doom_state: Default::default(),
                     });
@@ -1121,4 +1125,33 @@ pub fn verify_program(
         }
     };
     finish_meta(report)
+}
+
+/// Machine-generated repair hint for `holds_all` / `never_holds_all`
+/// preservation failures (no task names; function/resource names only).
+fn holds_all_hint(
+    program: &crate::sem::program::SemProgram,
+    goal: &crate::sem::system::Predicate,
+) -> Option<String> {
+    use crate::sem::system::Predicate;
+    let names = |resources: &[crate::sem::ids::ResourceId]| {
+        resources
+            .iter()
+            .map(|r| program.resource(*r).name.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    match goal {
+        Predicate::HoldsAll { func, resources } => Some(format!(
+            "The design requires a reachable state in which `{}` holds all of [{}] simultaneously; no such state exists in this revision. Keep the nested acquisition; fix the defect by acquisition order, scope, or handshake instead of releasing early.",
+            program.function(*func).name,
+            names(resources)
+        )),
+        Predicate::NeverHoldsAll { func, resources } => Some(format!(
+            "The design requires that no state exists in which `{}` holds all of [{}] simultaneously, but such a state is reachable in this revision. Break the nesting by acquisition order, scope, or handshake rather than adding unrelated statements.",
+            program.function(*func).name,
+            names(resources)
+        )),
+        _ => None,
+    }
 }
