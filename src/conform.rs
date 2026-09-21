@@ -311,6 +311,55 @@ fn silent_expand(
     out
 }
 
+/// Runtime op name for an observable statement (matches `cir_trace` v2 events).
+fn op_name(op: &SemOp) -> &'static str {
+    match op {
+        SemOp::MutexLock { .. } => "mutex_lock",
+        SemOp::MutexUnlock { .. } => "mutex_unlock",
+        SemOp::CondvarWait { .. } => "condvar_wait",
+        SemOp::CondvarNotify { .. } => "condvar_notify",
+        SemOp::CondvarNotifyAll { .. } => "condvar_notify_all",
+        SemOp::SemaphoreAcquire { .. } => "sem_acquire",
+        SemOp::SemaphoreRelease { .. } => "sem_release",
+        SemOp::ChannelSend { .. } => "channel_send",
+        SemOp::ChannelRecv { .. } => "channel_recv",
+        SemOp::Spawn { .. } => "spawn",
+        SemOp::Scope { .. } => "scope",
+        SemOp::Join { .. } => "join",
+        _ => "other",
+    }
+}
+
+/// (op, resource) signature of an observable statement, for v2 op/resource
+/// binding. Spawn uses the child function FQN as the resource.
+fn observable_sig(program: &SemProgram, f: crate::sem::ids::FunctionId, idx: usize)
+    -> Option<(String, String)> {
+    let fun = program.function(f);
+    let op = fun.body.get(idx)?.op.clone();
+    if !is_observable(&op) {
+        return None;
+    }
+    let resource = match &op {
+        SemOp::MutexLock { resource } | SemOp::MutexUnlock { resource }
+        | SemOp::CondvarWait { condvar: resource, .. }
+        | SemOp::CondvarNotify { condvar: resource }
+        | SemOp::CondvarNotifyAll { condvar: resource }
+        | SemOp::SemaphoreAcquire { resource, .. }
+        | SemOp::SemaphoreRelease { resource, .. }
+        | SemOp::ChannelSend { channel: resource, .. }
+        | SemOp::ChannelRecv { channel: resource, .. } => {
+            let res = program.resource(*resource);
+            crate::fqn::fqn(program.module_name(res.module), &res.name)
+        }
+        SemOp::Spawn { func, .. } => {
+            let cf = program.function(*func);
+            crate::fqn::fqn(program.module_name(cf.module), &cf.name)
+        }
+        _ => String::new(),
+    };
+    Some((op_name(&op).to_string(), resource))
+}
+
 pub fn conform(program: &SemProgram, trace: &[(String, String)]) -> Conformance {
     conform_options(program, trace, false, false)
 }
@@ -321,6 +370,21 @@ pub fn conform(program: &SemProgram, trace: &[(String, String)]) -> Conformance 
 pub fn conform_options(
     program: &SemProgram,
     trace: &[(String, String)],
+    lenient_unlock: bool,
+    attempt_events: bool,
+) -> Conformance {
+    let full: Vec<(String, String, String, String)> = trace
+        .iter()
+        .map(|(t, s)| (t.clone(), s.clone(), String::new(), String::new()))
+        .collect();
+    conform_events(program, &full, lenient_unlock, attempt_events)
+}
+
+/// v2: each event carries (tag, sid, op, resource); op/resource are checked
+/// against the model statement when present.
+pub fn conform_events(
+    program: &SemProgram,
+    trace: &[(String, String, String, String)],
     lenient_unlock: bool,
     attempt_events: bool,
 ) -> Conformance {
@@ -348,12 +412,40 @@ pub fn conform_options(
     tags0.insert("t0".into(), ThreadId(0));
     let mut frontier: Vec<(MachineState, BTreeMap<String, ThreadId>)> = vec![(initial, tags0)];
 
-    for (k, (tag, sid)) in trace.iter().enumerate() {
+    for (k, (tag, sid, op, resource)) in trace.iter().enumerate() {
         frontier = silent_expand(program, &it, &frontier, lenient_unlock, attempt_events);
         let known = program
             .functions()
             .iter()
             .any(|f| f.body.iter().any(|s| is_observable(&s.op) && s.sid == *sid));
+        if known && !op.is_empty() {
+            // v2 op/resource binding: the event's operation must match the model.
+            let mut sigs: Vec<(String, String)> = Vec::new();
+            for f in program.functions() {
+                for (i, st) in f.body.iter().enumerate() {
+                    if st.sid == *sid {
+                        if let Some(sig) = observable_sig(program, f.id, i) {
+                            sigs.push(sig);
+                        }
+                    }
+                }
+            }
+            let op_ok = sigs.iter().any(|(o, _)| o == op);
+            let res_ok = sigs.iter().any(|(o, r)| o == op && (resource.is_empty() || r == resource));
+            if !op_ok || !res_ok {
+                let kind = if op_ok { "resource" } else { "order" };
+                return Conformance {
+                    status: "violation".into(),
+                    events: trace.len(),
+                    event_index: Some(k),
+                    expected: sigs.iter().map(|(o, r)| format!("{o}:{r}")).collect(),
+                    got: Some(format!("{op}:{resource}")),
+                    coverage: Coverage { sids_seen: seen.len(), sids_total: total },
+                    detail: Some(format!(
+                        "kind={kind}: event {op} on {resource:?} does not match sid {sid}")),
+                };
+            }
+        }
         if !known {
             return Conformance {
                 status: "unknown_sid".into(),

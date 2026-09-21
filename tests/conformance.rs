@@ -54,7 +54,10 @@ fn trace(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
 fn codegen_emits_trace_calls_and_sid_map() {
     let sem = lowered();
     let generated = generate(&sem).expect("codegen");
-    assert!(generated.main_rs.contains("cir_trace::ev(tag, \"s1\")"));
+    // v2: operation-bound events (no standalone `ev` in generated code).
+    assert!(generated.main_rs.contains("cir_trace::scope(tag, \"s1\")"));
+    assert!(generated.main_rs.contains("cir_trace::lock(&shared."));
+    assert!(!generated.main_rs.contains("cir_trace::ev(tag"));
     assert!(generated.main_rs.contains("// @cir s1"));
     assert!(generated.map.sids.contains_key("main::s1"));
     assert!(generated.map.holes.is_empty());

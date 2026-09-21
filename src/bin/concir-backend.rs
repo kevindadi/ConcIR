@@ -248,7 +248,7 @@ fn main() {
                     process::exit(EXIT_INVALID);
                 }
             };
-            let mut events: Vec<(String, String)> = Vec::new();
+            let mut events: Vec<(String, String, String, String)> = Vec::new();
             for line in read(trace_path).lines() {
                 let line = line.trim();
                 if line.is_empty() {
@@ -263,9 +263,11 @@ fn main() {
                 };
                 let t = v.get("t").and_then(|x| x.as_str()).unwrap_or("");
                 let sid = v.get("sid").and_then(|x| x.as_str()).unwrap_or("");
-                events.push((t.to_string(), sid.to_string()));
+                let op = v.get("op").and_then(|x| x.as_str()).unwrap_or("");
+                let res = v.get("r").and_then(|x| x.as_str()).unwrap_or("");
+                events.push((t.to_string(), sid.to_string(), op.to_string(), res.to_string()));
             }
-            let result = concir::conform::conform_options(&sem, &events, lenient_unlock, attempt_events);
+            let result = concir::conform::conform_events(&sem, &events, lenient_unlock, attempt_events);
             println!(
                 "{}",
                 serde_json::to_string_pretty(&versioned(

@@ -23,7 +23,7 @@ use crate::sem::ids::SlotRef;
 use crate::sem::program::{ResKind, SemOp, SemProgram};
 use crate::sem::value::Value;
 
-const TRACE_RUNTIME: &str = r#"// Generated cir_trace runtime (std only).
+const TRACE_RUNTIME: &str = r#"// Generated cir_trace runtime v2 (std only, operation-bound events).
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
@@ -39,11 +39,18 @@ pub fn set_tag(tag: &str) {
     TAG.with(|t| *t.borrow_mut() = tag.to_string());
 }
 
-static EVENTS: OnceLock<Mutex<Vec<(String, String)>>> = OnceLock::new();
+static EVENTS: OnceLock<Mutex<Vec<(String, String, String, String)>>> = OnceLock::new();
 
-pub fn ev(tag: &str, sid: &str) {
+/// Record an operation-bound event: (tag, op, resource, sid).
+pub fn record(tag: &str, op: &str, resource: &str, sid: &str) {
     let m = EVENTS.get_or_init(|| Mutex::new(Vec::new()));
-    m.lock().unwrap().push((tag.to_string(), sid.to_string()));
+    m.lock().unwrap().push((tag.to_string(), op.to_string(),
+                            resource.to_string(), sid.to_string()));
+}
+
+/// Legacy standalone annotation (disabled in codegen v2; kept for tooling).
+pub fn ev(tag: &str, sid: &str) {
+    record(tag, "ev", "", sid);
 }
 
 pub fn finish() {
@@ -51,11 +58,61 @@ pub fn finish() {
         let m = EVENTS.get_or_init(|| Mutex::new(Vec::new()));
         let guard = m.lock().unwrap();
         let mut out = String::new();
-        for (t, s) in guard.iter() {
-            out.push_str(&format!("{{\"t\":\"{}\",\"sid\":\"{}\"}}\n", t, s));
+        for (t, op, r, s) in guard.iter() {
+            out.push_str(&format!(
+                "{{\"t\":\"{}\",\"sid\":\"{}\",\"op\":\"{}\",\"r\":\"{}\"}}\n",
+                t, s, op, r));
         }
         let _ = std::fs::write(path, out);
     }
+}
+
+// ---- operation-bound helpers -------------------------------------------
+
+pub fn lock<'a, T>(m: &'a Mutex<T>, tag: &str, resource: &str, sid: &str)
+    -> std::sync::MutexGuard<'a, T> {
+    let g = m.lock().unwrap();
+    record(tag, "mutex_lock", resource, sid);
+    g
+}
+
+pub fn unlock<T>(g: Option<std::sync::MutexGuard<'_, T>>, tag: &str,
+                 resource: &str, sid: &str) {
+    record(tag, "mutex_unlock", resource, sid);
+    drop(g);
+}
+
+pub fn condvar_wait<'a, T>(cv: &Condvar, g: std::sync::MutexGuard<'a, T>,
+                           tag: &str, resource: &str, sid: &str)
+    -> std::sync::MutexGuard<'a, T> {
+    let g = cv.wait(g).unwrap();
+    record(tag, "condvar_wait", resource, sid);
+    g
+}
+
+pub fn notify_one(cv: &Condvar, tag: &str, resource: &str, sid: &str) {
+    record(tag, "condvar_notify", resource, sid);
+    cv.notify_one();
+}
+
+pub fn notify_all(cv: &Condvar, tag: &str, resource: &str, sid: &str) {
+    record(tag, "condvar_notify_all", resource, sid);
+    cv.notify_all();
+}
+
+pub fn scope(tag: &str, sid: &str) {
+    record(tag, "scope", "", sid);
+}
+
+pub fn spawn<F>(tag: &str, child: &str, sid: &str, f: F) -> std::thread::JoinHandle<()>
+where F: FnOnce() + Send + 'static {
+    record(tag, "spawn", child, sid);
+    std::thread::spawn(f)
+}
+
+pub fn join(h: std::thread::JoinHandle<()>, tag: &str, child: &str, sid: &str) {
+    record(tag, "join", child, sid);
+    h.join().unwrap();
 }
 
 pub struct Semaphore {
@@ -78,6 +135,14 @@ impl Semaphore {
         let mut c = self.count.lock().unwrap();
         *c += n;
         self.cv.notify_all();
+    }
+    pub fn acquire_sid(&self, n: i64, tag: &str, resource: &str, sid: &str) {
+        self.acquire(n);
+        record(tag, "sem_acquire", resource, sid);
+    }
+    pub fn release_sid(&self, n: i64, tag: &str, resource: &str, sid: &str) {
+        record(tag, "sem_release", resource, sid);
+        self.release(n);
     }
 }
 
@@ -122,6 +187,14 @@ impl<T: Send> Channel<T> {
         let v = b.pop_front().unwrap();
         self.send_cv.notify_one();
         v
+    }
+    pub fn send_sid(&self, v: T, tag: &str, resource: &str, sid: &str) {
+        record(tag, "channel_send", resource, sid);
+        self.send(v);
+    }
+    pub fn recv_sid(&self, tag: &str, resource: &str, sid: &str) -> T {
+        record(tag, "channel_recv", resource, sid);
+        self.recv()
     }
 }
 "#;
@@ -247,6 +320,16 @@ impl<'a> Gen<'a> {
             self.lines.push(l.to_string());
         }
         start
+    }
+
+    fn resource_fqn(&self, r: crate::sem::ids::ResourceId) -> String {
+        let res = self.program.resource(r);
+        crate::fqn::fqn(self.program.module_name(res.module), &res.name)
+    }
+
+    fn function_fqn(&self, f: crate::sem::ids::FunctionId) -> String {
+        let fun = self.program.function(f);
+        crate::fqn::fqn(self.program.module_name(fun.module), &fun.name)
     }
 
     fn field(&self, r: crate::sem::ids::ResourceId) -> String {
@@ -556,10 +639,6 @@ fn render_op(
     guards: &[String],
 ) -> Result<(), String> {
     let next = idx + 1;
-    let ev = format!("                crate::cir_trace::ev(tag, {sid:?});");
-    if is_observable(op) && event_at_attempt(op) {
-        g.emit(&ev);
-    }
     match op {
         SemOp::Nop => {
             g.emit(format!("                pc = {next};"));
@@ -599,45 +678,59 @@ fn render_op(
         }
         SemOp::MutexLock { resource } => {
             let f = g.field(*resource);
+            let rq = g.resource_fqn(*resource);
             g.emit(format!(
-                "                _g_{f} = Some(shared.{f}.lock().unwrap());"
+                "                _g_{f} = Some(crate::cir_trace::lock(&shared.{f}, tag, {rq:?}, {sid:?}));"
             ));
-            g.emit(&ev);
             g.emit(format!("                pc = {next};"));
         }
         SemOp::MutexUnlock { resource } => {
             let f = g.field(*resource);
-            g.emit(format!("                drop(_g_{f}.take());"));
+            let rq = g.resource_fqn(*resource);
+            g.emit(format!(
+                "                crate::cir_trace::unlock(_g_{f}.take(), tag, {rq:?}, {sid:?});"
+            ));
             g.emit(format!("                pc = {next};"));
         }
         SemOp::CondvarWait { condvar, lock } => {
             let c = g.field(*condvar);
             let l = g.field(*lock);
+            let rq = g.resource_fqn(*condvar);
             g.emit(format!(
-                "                _g_{l} = Some(shared.{c}.wait(_g_{l}.take().expect(\"wait without lock\")).unwrap());"
+                "                _g_{l} = Some(crate::cir_trace::condvar_wait(&shared.{c}, _g_{l}.take().expect(\"wait without lock\"), tag, {rq:?}, {sid:?}));"
             ));
-            g.emit(&ev);
             g.emit(format!("                pc = {next};"));
         }
         SemOp::CondvarNotify { condvar } => {
             let c = g.field(*condvar);
-            g.emit(format!("                shared.{c}.notify_one();"));
+            let rq = g.resource_fqn(*condvar);
+            g.emit(format!(
+                "                crate::cir_trace::notify_one(&shared.{c}, tag, {rq:?}, {sid:?});"
+            ));
             g.emit(format!("                pc = {next};"));
         }
         SemOp::CondvarNotifyAll { condvar } => {
             let c = g.field(*condvar);
-            g.emit(format!("                shared.{c}.notify_all();"));
+            let rq = g.resource_fqn(*condvar);
+            g.emit(format!(
+                "                crate::cir_trace::notify_all(&shared.{c}, tag, {rq:?}, {sid:?});"
+            ));
             g.emit(format!("                pc = {next};"));
         }
         SemOp::SemaphoreAcquire { resource, count } => {
             let f = g.field(*resource);
-            g.emit(format!("                shared.{f}.acquire({count});"));
-            g.emit(&ev);
+            let rq = g.resource_fqn(*resource);
+            g.emit(format!(
+                "                shared.{f}.acquire_sid({count}, tag, {rq:?}, {sid:?});"
+            ));
             g.emit(format!("                pc = {next};"));
         }
         SemOp::SemaphoreRelease { resource, count } => {
             let f = g.field(*resource);
-            g.emit(format!("                shared.{f}.release({count});"));
+            let rq = g.resource_fqn(*resource);
+            g.emit(format!(
+                "                shared.{f}.release_sid({count}, tag, {rq:?}, {sid:?});"
+            ));
             g.emit(format!("                pc = {next};"));
         }
         SemOp::Goto { target } => {
@@ -679,6 +772,7 @@ fn render_op(
                 function: func.name.clone(),
                 tags: tags.clone(),
             });
+            g.emit(format!("                crate::cir_trace::scope(tag, {sid:?});"));
             g.emit("                {");
             g.emit("                    let mut __hs = Vec::new();");
             for (i, f) in funcs.iter().enumerate() {
@@ -709,17 +803,20 @@ fn render_op(
             let cf = g.fn_ref(*child);
             let t = tags.first().cloned().unwrap_or_else(|| format!("t{sid}"));
             let h = format!("_h_{}", sanitize(handle));
+            let child_fqn = g.function_fqn(*child);
             g.emit("                {");
             g.emit("                    let __sh = shared.clone();");
             g.emit(format!(
-                "                    let {h} = std::thread::spawn(move || {cf}(__sh, {t:?}));"
+                "                    let {h} = crate::cir_trace::spawn(tag, {child_fqn:?}, {sid:?}, move || {cf}(__sh, {t:?}));"
             ));
             g.emit("                }");
             g.emit(format!("                pc = {next};"));
         }
         SemOp::Join { handle } => {
             let h = format!("_h_{}", sanitize(handle));
-            g.emit(format!("                {h}.join().unwrap();"));
+            g.emit(format!(
+                "                crate::cir_trace::join({h}, tag, \"\", {sid:?});"
+            ));
             g.emit(format!("                pc = {next};"));
         }
         SemOp::Call {
@@ -779,16 +876,24 @@ fn render_op(
         }
         SemOp::ChannelSend { channel, value } => {
             let f = g.field(*channel);
+            let rq = g.resource_fqn(*channel);
             let e = g.render_expr(&func.name, sid, value);
-            g.emit(format!("                shared.{f}.send({e});"));
+            g.emit(format!(
+                "                shared.{f}.send_sid({e}, tag, {rq:?}, {sid:?});"
+            ));
             g.emit(format!("                pc = {next};"));
         }
         SemOp::ChannelRecv { channel, dst } => {
             let f = g.field(*channel);
+            let rq = g.resource_fqn(*channel);
             if let SlotRef::Local(i) = dst {
-                g.emit(format!("                _l{i} = shared.{f}.recv();"));
+                g.emit(format!(
+                    "                _l{i} = shared.{f}.recv_sid(tag, {rq:?}, {sid:?});"
+                ));
             } else {
-                g.emit(format!("                let _ = shared.{f}.recv();"));
+                g.emit(format!(
+                    "                let _ = shared.{f}.recv_sid(tag, {rq:?}, {sid:?});"
+                ));
             }
             g.emit(format!("                pc = {next};"));
         }
