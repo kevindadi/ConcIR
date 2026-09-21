@@ -107,6 +107,9 @@ fn contract_resources(value: &Value, out: &mut BTreeSet<String>) {
             if let Some(Value::String(r)) = map.get("resource") {
                 out.insert(r.clone());
             }
+            if let Some(Value::String(f)) = map.get("function") {
+                out.insert(f.clone());
+            }
             if let Some(Value::Array(items)) = map.get("resources") {
                 for item in items {
                     if let Some(s) = item.as_str() {
@@ -364,15 +367,16 @@ fn replay(events: &[TraceEvent], map: &BTreeMap<String, Option<String>>) -> Vec<
                     *state.chan.entry(name).or_insert(0) -= 1;
                 }
             }
-            "join" => {
+            // A finished trace implies `main` returned, so a joined (or still
+            // joined) worker has completed. Spawn/join/complete are bound by
+            // the runtime resource name; the harness maps them onto the
+            // contract's function FQNs.
+            "spawn" | "join" | "complete" => {
                 if let Some(name) = mapped {
                     state.completed.insert(name);
                 }
-                state.completed.insert(ev.sid.clone());
-            }
-            "complete" => {
-                if let Some(name) = mapped {
-                    state.completed.insert(name);
+                if !ev.sid.is_empty() {
+                    state.completed.insert(ev.sid.clone());
                 }
             }
             _ => {}

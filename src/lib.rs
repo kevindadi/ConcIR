@@ -8,6 +8,7 @@ pub mod export;
 pub mod expr;
 pub mod fqn;
 pub mod hash;
+pub mod instrument;
 pub mod interp;
 pub mod monitor;
 pub mod petri;

@@ -303,6 +303,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let mut input: Option<String> = None;
     let mut out_dir: Option<String> = None;
+    let mut wrappers = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -310,8 +311,14 @@ fn main() {
                 out_dir = args.get(i + 1).cloned();
                 i += 2;
             }
+            "--wrappers" => {
+                wrappers = true;
+                i += 1;
+            }
             "--help" | "-h" => {
-                eprintln!("usage: concir-instrument <input.rs> --out <dir>");
+                eprintln!(
+                    "usage: concir-instrument <input.rs> --out <dir> [--wrappers]"
+                );
                 process::exit(0);
             }
             other => {
@@ -328,6 +335,45 @@ fn main() {
         eprintln!("error reading '{input}': {e}");
         process::exit(2);
     });
+    if wrappers {
+        let out_dir = out_dir.as_str();
+        match concir::instrument::wrap(&src) {
+            Ok(w) => {
+                let out = std::path::Path::new(out_dir);
+                fs::create_dir_all(out).unwrap_or_else(|e| {
+                    eprintln!("cannot create '{out_dir}': {e}");
+                    process::exit(2);
+                });
+                fs::write(out.join("annotated.rs"), &w.annotated).expect("write annotated.rs");
+                fs::write(out.join("cir_trace.rs"), &w.runtime).expect("write cir_trace.rs");
+                let resources = serde_json::json!({
+                    "schema_version": "cir-resources-v1",
+                    "source": input,
+                    "resources": w.resources,
+                    "limitations": w.limitations,
+                });
+                fs::write(
+                    out.join("resources.json"),
+                    serde_json::to_string_pretty(&resources).expect("serialize") + "\n",
+                )
+                .expect("write resources.json");
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "mode": "wrappers",
+                        "annotated": out.join("annotated.rs").display().to_string(),
+                        "resources": resources["resources"].as_array().map(|a| a.len()).unwrap_or(0),
+                        "limitations": resources["limitations"],
+                    })
+                );
+            }
+            Err(e) => {
+                eprintln!("instrument v2 failed: {e}");
+                process::exit(2);
+            }
+        }
+        return;
+    }
     let file: File = syn::parse_file(&src).unwrap_or_else(|e| {
         eprintln!("parse error: {e}");
         process::exit(2);
