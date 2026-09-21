@@ -59,6 +59,7 @@ fn usage() -> ! {
          concir-backend schema\n  \
          concir-backend codegen <program.json> --out <dir>\n  \
          concir-backend conform <program.json> <trace.jsonl> [--lenient-unlock] [--attempt-events]\n  \
+         concir-backend monitor --contract <contract.json> [--resources <resources.json>] --traces <dir> [--mapping <mapping.json>]\n  \
          concir-backend repair-context <program.json> <contract.json> [--artifact out.json]\n  \
          concir-backend evaluate-patch <context.json> <candidate.json> [--artifact out.json]\n\n\
          flags for --strategy: --candidate-budget N --verification-budget N\n  \
@@ -276,6 +277,55 @@ fn main() {
                 .expect("serialize")
             );
             if result.status != "conformant" {
+                process::exit(EXIT_FAIL);
+            }
+        }
+        "monitor" => {
+            let contract_path = flag_value(&args, "--contract").unwrap_or_else(|| usage());
+            let traces_path = flag_value(&args, "--traces").unwrap_or_else(|| usage());
+            let contract: serde_json::Value = match serde_json::from_str(&read(&contract_path)) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("contract parse error: {e}");
+                    process::exit(EXIT_USAGE);
+                }
+            };
+            let parse_value = |path: &str| -> serde_json::Value {
+                match serde_json::from_str(&read(path)) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("JSON parse error in '{path}': {e}");
+                        process::exit(EXIT_USAGE);
+                    }
+                }
+            };
+            let mut rust_names = match flag_value(&args, "--resources") {
+                Some(p) => concir::monitor::load_resources(&parse_value(&p)),
+                None => Vec::new(),
+            };
+            let overrides = match flag_value(&args, "--mapping") {
+                Some(p) => concir::monitor::load_overrides(&parse_value(&p)),
+                None => std::collections::BTreeMap::new(),
+            };
+            let traces = match concir::monitor::load_traces(std::path::Path::new(&traces_path)) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("cannot load traces: {e}");
+                    process::exit(EXIT_USAGE);
+                }
+            };
+            if rust_names.is_empty() {
+                rust_names = concir::monitor::resources_from_traces(&traces);
+            }
+            let report = concir::monitor::monitor(&contract, &rust_names, &overrides, &traces);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&versioned(
+                    serde_json::to_value(&report).expect("serialize")
+                ))
+                .expect("serialize")
+            );
+            if report.status == "fail" {
                 process::exit(EXIT_FAIL);
             }
         }
