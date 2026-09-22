@@ -346,6 +346,39 @@ pub fn lower(program: &Program) -> BackendResult<SemProgram> {
 
     let protection = lower_protection(program, &lowerer)?;
 
+    // Target check (W1xx): `std::sync::Condvar` binds to a single mutex, so a
+    // condition variable waited on with more than one distinct lock is not
+    // supported in the Rust target.
+    {
+        use std::collections::{BTreeMap, BTreeSet};
+        let mut locks: BTreeMap<ResourceId, BTreeSet<ResourceId>> = BTreeMap::new();
+        for f in &lowerer.functions {
+            for st in &f.body {
+                if let SemOp::CondvarWait { condvar, lock } = &st.op {
+                    locks.entry(*condvar).or_default().insert(*lock);
+                }
+            }
+        }
+        for (condvar, ls) in &locks {
+            if ls.len() > 1 {
+                let name = lowerer
+                    .resources
+                    .iter()
+                    .find(|r| r.id == *condvar)
+                    .map(|r| r.name.clone())
+                    .unwrap_or_else(|| "?".to_string());
+                lowerer.unsupported.push(Unsupported::new(
+                    "condvar_multiple_locks",
+                    format!(
+                        "condition variable '{name}' is waited on with {} different \
+                         locks; the Rust target binds a Condvar to one mutex",
+                        ls.len()
+                    ),
+                ));
+            }
+        }
+    }
+
     Ok(SemProgram {
         module_names: lowerer.module_names,
         functions: lowerer.functions,
