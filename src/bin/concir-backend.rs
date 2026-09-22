@@ -58,7 +58,7 @@ fn usage() -> ! {
          concir-backend support <program.json>\n  \
          concir-backend schema\n  \
          concir-backend codegen <program.json> --out <dir>\n  \
-         concir-backend conform <program.json> <trace.jsonl> [--lenient-unlock] [--attempt-events]\n  \
+         concir-backend conform <program.json> <trace.jsonl> [--lenient-unlock] [--attempt-events] [--op-resource]\n  \
          concir-backend monitor --contract <contract.json> [--resources <resources.json>] --traces <dir> [--mapping <mapping.json>]\n  \
          concir-backend repair-context <program.json> <contract.json> [--artifact out.json]\n  \
          concir-backend evaluate-patch <context.json> <candidate.json> [--artifact out.json]\n\n\
@@ -241,6 +241,7 @@ fn main() {
             let trace_path = args.get(3).unwrap_or_else(|| usage());
             let lenient_unlock = args.iter().any(|a| a == "--lenient-unlock");
             let attempt_events = args.iter().any(|a| a == "--attempt-events");
+            let op_resource = args.iter().any(|a| a == "--op-resource");
             let program = parse_program(path);
             let sem = match program::lower(&program) {
                 Ok(s) => s,
@@ -268,7 +269,8 @@ fn main() {
                 let res = v.get("r").and_then(|x| x.as_str()).unwrap_or("");
                 events.push((t.to_string(), sid.to_string(), op.to_string(), res.to_string()));
             }
-            let result = concir::conform::conform_events(&sem, &events, lenient_unlock, attempt_events);
+            let result = concir::conform::conform_events(&sem, &events, lenient_unlock,
+                                                         attempt_events, op_resource);
             println!(
                 "{}",
                 serde_json::to_string_pretty(&versioned(

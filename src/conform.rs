@@ -99,6 +99,7 @@ fn event_capable(
     state: &MachineState,
     step: &crate::sem::system::Step<MachineState>,
     attempt_all: bool,
+    silent_spawn: bool,
 ) -> bool {
     let Some(idx) = step.label.origin.sid else {
         return false;
@@ -107,6 +108,11 @@ fn event_capable(
         return false;
     };
     if !is_observable(op) || !matches!(step.label.origin.phase, Phase::Statement) {
+        return false;
+    }
+    if silent_spawn
+        && matches!(op, SemOp::Spawn { .. } | SemOp::Scope { .. } | SemOp::Join { .. })
+    {
         return false;
     }
     if attempt_all {
@@ -134,6 +140,7 @@ fn lenient_skippable(
     state: &MachineState,
     step: &crate::sem::system::Step<MachineState>,
     attempt_all: bool,
+    silent_spawn: bool,
 ) -> bool {
     let Some(idx) = step.label.origin.sid else {
         return false;
@@ -143,7 +150,7 @@ fn lenient_skippable(
     };
     matches!(step.label.origin.phase, Phase::Statement)
         && matches!(op, SemOp::MutexUnlock { .. })
-        && event_capable(program, state, step, attempt_all)
+        && event_capable(program, state, step, attempt_all, silent_spawn)
 }
 
 fn new_tags_for_step(
@@ -172,17 +179,68 @@ fn new_tags_for_step(
         .collect()
 }
 
+/// What an event is matched against: a specific `sid` (codegen mode) or an
+/// `(op, resource)` pair (free-Rust mode, where the instrumenter's sids are
+/// synthetic and cannot be compared to model sids).
+#[derive(Clone, Debug)]
+enum Target {
+    Sid(String),
+    OpRes(String, String),
+}
+
+/// Resource-name alignment for free-Rust traces: the model uses FQNs
+/// (`main::m`) while the instrumented program uses a variable name (`m`).
+fn resource_matches(model: &str, event: &str) -> bool {
+    if event.is_empty() {
+        return true;
+    }
+    if model == event {
+        return true;
+    }
+    let short = |s: &str| s.rsplit("::").next().unwrap_or(s).to_string();
+    short(model) == short(event)
+}
+
+fn statement_matches(
+    program: &SemProgram,
+    f: crate::sem::ids::FunctionId,
+    idx: usize,
+    target: &Target,
+) -> bool {
+    match target {
+        Target::Sid(s) => sid_of(program, f, idx).as_deref() == Some(s.as_str()),
+        Target::OpRes(op, res) => match observable_sig(program, f, idx) {
+            Some((mop, mres)) => {
+                mop == *op
+                    && (matches!(op.as_str(), "spawn" | "scope" | "join")
+                        || resource_matches(&mres, res))
+            }
+            None => false,
+        },
+    }
+}
+
+fn target_label(program: &SemProgram, f: crate::sem::ids::FunctionId, idx: usize,
+                target: &Target) -> Option<String> {
+    match target {
+        Target::Sid(_) => sid_of(program, f, idx),
+        Target::OpRes(..) => observable_sig(program, f, idx)
+            .map(|(op, res)| format!("{op}:{res}")),
+    }
+}
+
 /// One event step: from every state reachable by silent steps (carrying tag
-/// maps), take every binding of the target `(tid, sid)` completing step.
+/// maps), take every binding of the target completing step.
 fn advance(
     program: &SemProgram,
     it: &Interpreter,
     start: &MachineState,
     start_tags: &BTreeMap<String, ThreadId>,
     tid: ThreadId,
-    sid: &str,
+    target: &Target,
     lenient: bool,
     attempt_all: bool,
+    silent_spawn: bool,
 ) -> Result<Vec<(MachineState, BTreeMap<String, ThreadId>, crate::sem::ids::FunctionId)>, Vec<String>> {
     let mut closure: Vec<(MachineState, BTreeMap<String, ThreadId>)> =
         vec![(start.clone(), start_tags.clone())];
@@ -200,8 +258,8 @@ fn advance(
             Err(_) => continue,
         };
         for step in &enabled.steps {
-            if event_capable(program, &state, step, attempt_all)
-                && !(lenient && lenient_skippable(program, &state, step, attempt_all))
+            if event_capable(program, &state, step, attempt_all, silent_spawn)
+                && !(lenient && lenient_skippable(program, &state, step, attempt_all, silent_spawn))
             {
                 continue;
             }
@@ -224,7 +282,7 @@ fn advance(
             Err(_) => continue,
         };
         for step in &enabled.steps {
-            if !event_capable(program, state, step, attempt_all)
+            if !event_capable(program, state, step, attempt_all, silent_spawn)
                 || step.label.thread != Some(tid)
             {
                 continue;
@@ -232,7 +290,7 @@ fn advance(
             let Some(idx) = step.label.origin.sid else {
                 continue;
             };
-            if sid_of(program, step.label.origin.function, idx).as_deref() != Some(sid) {
+            if !statement_matches(program, step.label.origin.function, idx, target) {
                 continue;
             }
             let mut nm = map.clone();
@@ -250,11 +308,11 @@ fn advance(
         for (state, _) in &closure {
             if let Ok(enabled) = it.successors(state) {
                 for step in &enabled.steps {
-                    if event_capable(program, state, step, attempt_all)
+                    if event_capable(program, state, step, attempt_all, silent_spawn)
                         && step.label.thread == Some(tid)
                     {
                         if let Some(i) = step.label.origin.sid {
-                            if let Some(s) = sid_of(program, step.label.origin.function, i) {
+                            if let Some(s) = target_label(program, step.label.origin.function, i, target) {
                                 if !expected.contains(&s) {
                                     expected.push(s);
                                 }
@@ -275,6 +333,7 @@ fn silent_expand(
     frontier: &[(MachineState, BTreeMap<String, ThreadId>)],
     lenient: bool,
     attempt_all: bool,
+    silent_spawn: bool,
 ) -> Vec<(MachineState, BTreeMap<String, ThreadId>)> {
     let mut out: Vec<(MachineState, BTreeMap<String, ThreadId>)> = frontier.to_vec();
     let mut visited: HashSet<String> = HashSet::new();
@@ -293,8 +352,8 @@ fn silent_expand(
             Err(_) => continue,
         };
         for step in &enabled.steps {
-            if event_capable(program, &state, step, attempt_all)
-                && !(lenient && lenient_skippable(program, &state, step, attempt_all))
+            if event_capable(program, &state, step, attempt_all, silent_spawn)
+                && !(lenient && lenient_skippable(program, &state, step, attempt_all, silent_spawn))
             {
                 continue;
             }
@@ -377,16 +436,19 @@ pub fn conform_options(
         .iter()
         .map(|(t, s)| (t.clone(), s.clone(), String::new(), String::new()))
         .collect();
-    conform_events(program, &full, lenient_unlock, attempt_events)
+    conform_events(program, &full, lenient_unlock, attempt_events, false)
 }
 
 /// v2: each event carries (tag, sid, op, resource); op/resource are checked
-/// against the model statement when present.
+/// against the model statement when present. With `op_resource`, the event is
+/// matched to a model statement by `(op, resource)` only; this is the mode for
+/// LLM-written Rust, whose instrumented sids are synthetic.
 pub fn conform_events(
     program: &SemProgram,
     trace: &[(String, String, String, String)],
     lenient_unlock: bool,
     attempt_events: bool,
+    op_resource: bool,
 ) -> Conformance {
     let total = observable_sids(program).len();
     let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -413,12 +475,19 @@ pub fn conform_events(
     let mut frontier: Vec<(MachineState, BTreeMap<String, ThreadId>)> = vec![(initial, tags0)];
 
     for (k, (tag, sid, op, resource)) in trace.iter().enumerate() {
-        frontier = silent_expand(program, &it, &frontier, lenient_unlock, attempt_events);
-        let known = program
-            .functions()
-            .iter()
-            .any(|f| f.body.iter().any(|s| is_observable(&s.op) && s.sid == *sid));
-        if known && !op.is_empty() {
+        frontier = silent_expand(program, &it, &frontier, lenient_unlock, attempt_events, op_resource);
+        let target = if op_resource {
+            Target::OpRes(op.clone(), resource.clone())
+        } else {
+            Target::Sid(sid.clone())
+        };
+        let known = program.functions().iter().any(|f| {
+            f.body
+                .iter()
+                .enumerate()
+                .any(|(i, s)| is_observable(&s.op) && statement_matches(program, f.id, i, &target))
+        });
+        if known && !op.is_empty() && !op_resource {
             // v2 op/resource binding: the event's operation must match the model.
             let mut sigs: Vec<(String, String)> = Vec::new();
             for f in program.functions() {
@@ -448,17 +517,75 @@ pub fn conform_events(
         }
         if !known {
             return Conformance {
-                status: "unknown_sid".into(),
+                status: if op_resource { "violation".into() } else { "unknown_sid".into() },
                 events: trace.len(),
                 event_index: Some(k),
                 expected: vec![],
-                got: Some(sid.clone()),
+                got: Some(if op_resource {
+                    format!("{op}:{resource}")
+                } else {
+                    sid.clone()
+                }),
                 coverage: Coverage {
                     sids_seen: seen.len(),
                     sids_total: total,
                 },
-                detail: Some(format!("thread {tag} emitted unknown sid {sid}")),
+                detail: Some(if op_resource {
+                    format!("no model statement matches {op} on {resource:?} (thread {tag})")
+                } else {
+                    format!("thread {tag} emitted unknown sid {sid}")
+                }),
             };
+        }
+        if op_resource {
+            // Free-Rust mode: the instrumenter's tags do not match the model's
+            // child tags, so we check that the observed (op, resource) sequence
+            // is a valid interleaving of the model's observable steps, across
+            // threads.
+            let mut next: Vec<(MachineState, BTreeMap<String, ThreadId>)> = Vec::new();
+            let mut expected: Vec<String> = Vec::new();
+            let mut found = false;
+            for (state, map) in &frontier {
+                let Ok(enabled) = it.successors(state) else { continue };
+                for step in &enabled.steps {
+                    if !event_capable(program, state, step, attempt_events, true) {
+                        continue;
+                    }
+                    let Some(idx) = step.label.origin.sid else { continue };
+                    if statement_matches(program, step.label.origin.function, idx, &target) {
+                        found = true;
+                        let mut nm = map.clone();
+                        for (t, id) in new_tags_for_step(program, state, step) {
+                            nm.insert(t, id);
+                        }
+                        next.push((step.state.clone(), nm));
+                    } else if let Some(lbl) =
+                        target_label(program, step.label.origin.function, idx, &target)
+                    {
+                        if !expected.contains(&lbl) {
+                            expected.push(lbl);
+                        }
+                    }
+                }
+            }
+            if !found {
+                return Conformance {
+                    status: "violation".into(),
+                    events: trace.len(),
+                    event_index: Some(k),
+                    expected: expected.into_iter().take(6).collect(),
+                    got: Some(format!("{op}:{resource}")),
+                    coverage: Coverage { sids_seen: seen.len(), sids_total: total },
+                    detail: Some(format!(
+                        "no enabled model step matches {op} on {resource:?} at event {k}")),
+                };
+            }
+            let mut seen_states: HashSet<String> = HashSet::new();
+            frontier = next
+                .into_iter()
+                .filter(|(st, _)| seen_states.insert(it.state_key(st)))
+                .collect();
+            continue;
         }
         let mut next: Vec<(MachineState, BTreeMap<String, ThreadId>)> = Vec::new();
         let mut matched_functions: BTreeSet<crate::sem::ids::FunctionId> = BTreeSet::new();
@@ -469,7 +596,7 @@ pub fn conform_events(
                 continue;
             };
             tag_known = true;
-            match advance(program, &it, state, map, tid, sid, lenient_unlock, attempt_events) {
+            match advance(program, &it, state, map, tid, &target, lenient_unlock, attempt_events, op_resource) {
                 Ok(results) => {
                     for (s, m, f) in results {
                         matched_functions.insert(f);
@@ -533,9 +660,11 @@ pub fn conform_events(
             .into_iter()
             .filter(|(st, _)| seen_states.insert(it.state_key(st)))
             .collect();
-        for function in &matched_functions {
-            let f = program.function(*function);
-            seen.insert(format!("{}::{}::{}", program.module_name(f.module), f.name, sid));
+        if !op_resource {
+            for function in &matched_functions {
+                let f = program.function(*function);
+                seen.insert(format!("{}::{}::{}", program.module_name(f.module), f.name, sid));
+            }
         }
     }
     Conformance {

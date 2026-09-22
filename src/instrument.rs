@@ -29,9 +29,12 @@ use std::sync::OnceLock;
 
 static EVENTS: OnceLock<std::sync::Mutex<Vec<(String, String, String, String)>>> = OnceLock::new();
 static MAIN: OnceLock<std::thread::ThreadId> = OnceLock::new();
-static TAGS: OnceLock<std::sync::Mutex<HashMap<std::thread::ThreadId, String>>> = OnceLock::new();
 static NEXT_TAG: AtomicU64 = AtomicU64::new(1);
 static SIDS: OnceLock<std::sync::Mutex<HashMap<String, u64>>> = OnceLock::new();
+
+thread_local! {
+    static TAG: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
 
 /// Pin the main thread's tag to `t0` before any worker can run.
 pub fn init() {
@@ -39,20 +42,20 @@ pub fn init() {
     let _ = EVENTS.get_or_init(|| std::sync::Mutex::new(Vec::new()));
 }
 
+/// Thread tag: the eager spawn-order tag when set, `t0` for main, and a lazy
+/// fallback for threads created without the helper.
 pub fn tag() -> String {
+    if let Some(t) = TAG.with(|t| t.borrow().clone()) {
+        return t;
+    }
     let tid = std::thread::current().id();
     let main = *MAIN.get_or_init(|| tid);
     if tid == main {
         return "t0".to_string();
     }
-    let tags = TAGS.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
-    let mut map = tags.lock().unwrap();
-    if let Some(name) = map.get(&tid) {
-        return name.clone();
-    }
     let n = NEXT_TAG.fetch_add(1, Ordering::SeqCst);
     let name = format!("t{}", n);
-    map.insert(tid, name.clone());
+    TAG.with(|t| *t.borrow_mut() = Some(name.clone()));
     name
 }
 
@@ -81,7 +84,12 @@ where
     F: FnOnce() + Send + 'static,
 {
     record("spawn", name);
-    std::thread::spawn(f)
+    let n = NEXT_TAG.fetch_add(1, Ordering::SeqCst);
+    let tag = format!("t{}", n);
+    std::thread::spawn(move || {
+        TAG.with(|t| *t.borrow_mut() = Some(tag));
+        f()
+    })
 }
 
 pub fn finish() {
