@@ -1,0 +1,152 @@
+{
+  "program": "double_lock_05_bug",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "cfg",
+          "gen"
+        ],
+        "functions": [
+          "main",
+          "apply",
+          "check",
+          "edit"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "cfg",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "gen",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Int": [
+              0,
+              3
+            ]
+          },
+          "init": 0
+        }
+      ],
+      "protection": [
+        {
+          "var": "gen",
+          "lock": "cfg"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "apply",
+                "check"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "apply",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "cfg"
+            },
+            {
+              "sid": "s2",
+              "kind": "call",
+              "func": "edit",
+              "args": []
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "cfg"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "check",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "cfg"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "gen",
+              "expr": "gen + 1"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "cfg"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "edit",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "cfg"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "gen",
+              "expr": "gen + 1"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "cfg"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

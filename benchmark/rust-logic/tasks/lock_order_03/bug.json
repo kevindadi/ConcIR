@@ -1,0 +1,147 @@
+{
+  "program": "lock_order_03_bug",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "gate",
+          "book",
+          "ready"
+        ],
+        "functions": [
+          "main",
+          "left",
+          "right"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "gate",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "book",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "ready",
+          "kind": "var",
+          "type": "Var",
+          "base": "Bool",
+          "init": false
+        }
+      ],
+      "protection": [
+        {
+          "var": "ready",
+          "lock": "gate"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "left",
+                "right"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "left",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "gate"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "book"
+            },
+            {
+              "sid": "s3",
+              "kind": "write_shared",
+              "resource": "ready",
+              "expr": "true"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "book"
+            },
+            {
+              "sid": "s5",
+              "kind": "mutex_unlock",
+              "resource": "gate"
+            },
+            {
+              "sid": "s6",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "right",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "book"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "gate"
+            },
+            {
+              "sid": "s3",
+              "kind": "write_shared",
+              "resource": "ready",
+              "expr": "true"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "gate"
+            },
+            {
+              "sid": "s5",
+              "kind": "mutex_unlock",
+              "resource": "book"
+            },
+            {
+              "sid": "s6",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

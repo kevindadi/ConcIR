@@ -1,0 +1,137 @@
+{
+  "program": "condvar_05_bug",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "mu",
+          "cv",
+          "epoch"
+        ],
+        "functions": [
+          "main",
+          "producer",
+          "consumer"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "mu",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "cv",
+          "kind": "sync",
+          "type": "Condvar",
+          "mode": "Sync"
+        },
+        {
+          "name": "epoch",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Int": [
+              0,
+              1
+            ]
+          },
+          "init": 0
+        }
+      ],
+      "protection": [
+        {
+          "var": "epoch",
+          "lock": "mu"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "producer",
+                "consumer"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "producer",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "mu"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "epoch",
+              "expr": "1"
+            },
+            {
+              "sid": "s3",
+              "kind": "condvar_notify_all",
+              "condvar": "cv"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "mu"
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "consumer",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "mu"
+            },
+            {
+              "sid": "s2",
+              "kind": "condvar_wait",
+              "condvar": "cv",
+              "lock": "mu"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "mu"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

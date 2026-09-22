@@ -1,0 +1,132 @@
+{
+  "program": "condvar_02_bug",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "lock",
+          "go",
+          "started"
+        ],
+        "functions": [
+          "main",
+          "producer",
+          "consumer"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "lock",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "go",
+          "kind": "sync",
+          "type": "Condvar",
+          "mode": "Sync"
+        },
+        {
+          "name": "started",
+          "kind": "var",
+          "type": "Var",
+          "base": "Bool",
+          "init": false
+        }
+      ],
+      "protection": [
+        {
+          "var": "started",
+          "lock": "lock"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "producer",
+                "consumer"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "producer",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "lock"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "started",
+              "expr": "true"
+            },
+            {
+              "sid": "s3",
+              "kind": "condvar_notify",
+              "condvar": "go"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "lock"
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "consumer",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "lock"
+            },
+            {
+              "sid": "s2",
+              "kind": "condvar_wait",
+              "condvar": "go",
+              "lock": "lock"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "lock"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

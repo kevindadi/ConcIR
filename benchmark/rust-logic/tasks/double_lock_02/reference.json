@@ -1,0 +1,158 @@
+{
+  "program": "double_lock_02",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "client",
+          "state"
+        ],
+        "functions": [
+          "main",
+          "open",
+          "watch",
+          "refresh"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "client",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "state",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Int": [
+              0,
+              3
+            ]
+          },
+          "init": 0
+        }
+      ],
+      "protection": [
+        {
+          "var": "state",
+          "lock": "client"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "open",
+                "watch"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "open",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "client"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "state",
+              "expr": "state + 1"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "client"
+            },
+            {
+              "sid": "s4",
+              "kind": "call",
+              "func": "refresh",
+              "args": []
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "watch",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "client"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "state",
+              "expr": "state + 1"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "client"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "refresh",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "client"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "state",
+              "expr": "state + 1"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "client"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

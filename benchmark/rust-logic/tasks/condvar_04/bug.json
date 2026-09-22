@@ -1,0 +1,132 @@
+{
+  "program": "condvar_04_bug",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "pair",
+          "bell",
+          "acked"
+        ],
+        "functions": [
+          "main",
+          "producer",
+          "consumer"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "pair",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "bell",
+          "kind": "sync",
+          "type": "Condvar",
+          "mode": "Sync"
+        },
+        {
+          "name": "acked",
+          "kind": "var",
+          "type": "Var",
+          "base": "Bool",
+          "init": false
+        }
+      ],
+      "protection": [
+        {
+          "var": "acked",
+          "lock": "pair"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "producer",
+                "consumer"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "producer",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "pair"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "acked",
+              "expr": "true"
+            },
+            {
+              "sid": "s3",
+              "kind": "condvar_notify",
+              "condvar": "bell"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "pair"
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "consumer",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "pair"
+            },
+            {
+              "sid": "s2",
+              "kind": "condvar_wait",
+              "condvar": "bell",
+              "lock": "pair"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "pair"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

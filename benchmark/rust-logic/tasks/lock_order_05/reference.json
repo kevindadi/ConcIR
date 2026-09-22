@@ -1,0 +1,152 @@
+{
+  "program": "lock_order_05",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "m1",
+          "m2",
+          "used"
+        ],
+        "functions": [
+          "main",
+          "left",
+          "right"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "m1",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "m2",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "used",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Int": [
+              0,
+              5
+            ]
+          },
+          "init": 0
+        }
+      ],
+      "protection": [
+        {
+          "var": "used",
+          "lock": "m1"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "left",
+                "right"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "left",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "m1"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "m2"
+            },
+            {
+              "sid": "s3",
+              "kind": "write_shared",
+              "resource": "used",
+              "expr": "used + 1"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "m2"
+            },
+            {
+              "sid": "s5",
+              "kind": "mutex_unlock",
+              "resource": "m1"
+            },
+            {
+              "sid": "s6",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "right",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "m1"
+            },
+            {
+              "sid": "s2",
+              "kind": "mutex_lock",
+              "resource": "m2"
+            },
+            {
+              "sid": "s3",
+              "kind": "write_shared",
+              "resource": "used",
+              "expr": "used + 4"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_unlock",
+              "resource": "m2"
+            },
+            {
+              "sid": "s5",
+              "kind": "mutex_unlock",
+              "resource": "m1"
+            },
+            {
+              "sid": "s6",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

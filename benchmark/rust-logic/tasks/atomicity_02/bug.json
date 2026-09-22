@@ -1,0 +1,169 @@
+{
+  "program": "atomicity_02_bug",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "score_lock",
+          "score"
+        ],
+        "functions": [
+          "main",
+          "left",
+          "right"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "score_lock",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "score",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Int": [
+              0,
+              11
+            ]
+          },
+          "init": 0
+        }
+      ],
+      "protection": [
+        {
+          "var": "score",
+          "lock": "score_lock"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "left",
+                "right"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "left",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "score_lock"
+            },
+            {
+              "sid": "s2",
+              "kind": "read_shared",
+              "resource": "score",
+              "dst": "tmp"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "score_lock"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_lock",
+              "resource": "score_lock"
+            },
+            {
+              "sid": "s5",
+              "kind": "write_shared",
+              "resource": "score",
+              "expr": "tmp + 1"
+            },
+            {
+              "sid": "s6",
+              "kind": "mutex_unlock",
+              "resource": "score_lock"
+            },
+            {
+              "sid": "s7",
+              "kind": "return"
+            }
+          ],
+          "locals": [
+            {
+              "name": "tmp",
+              "type": "Int"
+            }
+          ]
+        },
+        {
+          "name": "right",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "score_lock"
+            },
+            {
+              "sid": "s2",
+              "kind": "read_shared",
+              "resource": "score",
+              "dst": "tmp"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "score_lock"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_lock",
+              "resource": "score_lock"
+            },
+            {
+              "sid": "s5",
+              "kind": "write_shared",
+              "resource": "score",
+              "expr": "tmp + 10"
+            },
+            {
+              "sid": "s6",
+              "kind": "mutex_unlock",
+              "resource": "score_lock"
+            },
+            {
+              "sid": "s7",
+              "kind": "return"
+            }
+          ],
+          "locals": [
+            {
+              "name": "tmp",
+              "type": "Int"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

@@ -1,0 +1,125 @@
+{
+  "program": "atomicity_04",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "poll",
+          "votes"
+        ],
+        "functions": [
+          "main",
+          "left",
+          "right"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "poll",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "votes",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Int": [
+              0,
+              5
+            ]
+          },
+          "init": 0
+        }
+      ],
+      "protection": [
+        {
+          "var": "votes",
+          "lock": "poll"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "left",
+                "right"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "left",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "poll"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "votes",
+              "expr": "votes + 4"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "poll"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "right",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "poll"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "votes",
+              "expr": "votes + 1"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "poll"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

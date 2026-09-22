@@ -1,0 +1,158 @@
+{
+  "program": "double_lock_01",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "guard",
+          "slot"
+        ],
+        "functions": [
+          "main",
+          "owner",
+          "peer",
+          "touch"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "guard",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "slot",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Int": [
+              0,
+              3
+            ]
+          },
+          "init": 0
+        }
+      ],
+      "protection": [
+        {
+          "var": "slot",
+          "lock": "guard"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "owner",
+                "peer"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "owner",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "guard"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "slot",
+              "expr": "slot + 1"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "guard"
+            },
+            {
+              "sid": "s4",
+              "kind": "call",
+              "func": "touch",
+              "args": []
+            },
+            {
+              "sid": "s5",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "peer",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "guard"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "slot",
+              "expr": "slot + 1"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "guard"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "touch",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "guard"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "slot",
+              "expr": "slot + 1"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "guard"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

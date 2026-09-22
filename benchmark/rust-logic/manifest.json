@@ -1,0 +1,212 @@
+[
+  {
+    "id": "lock_order_01",
+    "family": "lock_order",
+    "title": "账本：两把锁同一顺序",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "lock_order_02",
+    "family": "lock_order",
+    "title": "库存：两把锁同一顺序",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "lock_order_03",
+    "family": "lock_order",
+    "title": "会话：两把锁同一顺序",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "lock_order_04",
+    "family": "lock_order",
+    "title": "转账：两把锁同一顺序",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "lock_order_05",
+    "family": "lock_order",
+    "title": "配额：两把锁同一顺序",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "double_lock_01",
+    "family": "double_lock",
+    "title": "缓存：调用期间不要持有同一把锁",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "double_lock_02",
+    "family": "double_lock",
+    "title": "连接：调用期间不要持有同一把锁",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "double_lock_03",
+    "family": "double_lock",
+    "title": "文档：调用期间不要持有同一把锁",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "double_lock_04",
+    "family": "double_lock",
+    "title": "队列：调用期间不要持有同一把锁",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "double_lock_05",
+    "family": "double_lock",
+    "title": "配置：调用期间不要持有同一把锁",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "condvar_01",
+    "family": "condvar",
+    "title": "就绪标志：先看条件再等待",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "condvar_02",
+    "family": "condvar",
+    "title": "批次开始：先看条件再等待",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "condvar_03",
+    "family": "condvar",
+    "title": "水位：先看条件再等待",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "condvar_04",
+    "family": "condvar",
+    "title": "握手：先看条件再等待",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "condvar_05",
+    "family": "condvar",
+    "title": "代次：先看条件再等待",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "channel_01",
+    "family": "channel",
+    "title": "会合交接：收发条数一致",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "channel_02",
+    "family": "channel",
+    "title": "单槽邮箱：收发条数一致",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "channel_03",
+    "family": "channel",
+    "title": "两格缓冲：收发条数一致",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "channel_04",
+    "family": "channel",
+    "title": "令牌传递：收发条数一致",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "channel_05",
+    "family": "channel",
+    "title": "单次会合：收发条数一致",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "atomicity_01",
+    "family": "atomicity",
+    "title": "计数器：一次临界区完成加数",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "atomicity_02",
+    "family": "atomicity",
+    "title": "得分：一次临界区完成加数",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "atomicity_03",
+    "family": "atomicity",
+    "title": "重量：一次临界区完成加数",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "atomicity_04",
+    "family": "atomicity",
+    "title": "票数：一次临界区完成加数",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "atomicity_05",
+    "family": "atomicity",
+    "title": "步数：一次临界区完成加数",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "semaphore_01",
+    "family": "semaphore",
+    "title": "打印机：许可成对获取和释放",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "semaphore_02",
+    "family": "semaphore",
+    "title": "车位：许可成对获取和释放",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "semaphore_03",
+    "family": "semaphore",
+    "title": "许可池：许可成对获取和释放",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "semaphore_04",
+    "family": "semaphore",
+    "title": "门禁：许可成对获取和释放",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  },
+  {
+    "id": "semaphore_05",
+    "family": "semaphore",
+    "title": "名额：许可成对获取和释放",
+    "reference_outcome": "PASS",
+    "bug_outcome": "FAIL"
+  }
+]

@@ -1,0 +1,113 @@
+{
+  "program": "channel_03_bug",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "pipe"
+        ],
+        "functions": [
+          "main",
+          "sender",
+          "receiver"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "pipe",
+          "kind": "sync",
+          "type": "Channel",
+          "mode": "Sync",
+          "base": "Int",
+          "capacity": 2
+        }
+      ],
+      "protection": [],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "sender",
+                "receiver"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "sender",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "channel_send",
+              "channel": "pipe",
+              "value": "1"
+            },
+            {
+              "sid": "s2",
+              "kind": "channel_send",
+              "channel": "pipe",
+              "value": "2"
+            },
+            {
+              "sid": "s3",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "receiver",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "channel_recv",
+              "channel": "pipe",
+              "dst": "msg"
+            },
+            {
+              "sid": "s2",
+              "kind": "channel_recv",
+              "channel": "pipe",
+              "dst": "msg"
+            },
+            {
+              "sid": "s3",
+              "kind": "channel_recv",
+              "channel": "pipe",
+              "dst": "msg"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ],
+          "locals": [
+            {
+              "name": "msg",
+              "type": "Int"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

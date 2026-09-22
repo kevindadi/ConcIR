@@ -1,0 +1,169 @@
+{
+  "program": "atomicity_05_bug",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "step_lock",
+          "steps"
+        ],
+        "functions": [
+          "main",
+          "left",
+          "right"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "step_lock",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "steps",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Int": [
+              0,
+              10
+            ]
+          },
+          "init": 0
+        }
+      ],
+      "protection": [
+        {
+          "var": "steps",
+          "lock": "step_lock"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "left",
+                "right"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "left",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "step_lock"
+            },
+            {
+              "sid": "s2",
+              "kind": "read_shared",
+              "resource": "steps",
+              "dst": "tmp"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "step_lock"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_lock",
+              "resource": "step_lock"
+            },
+            {
+              "sid": "s5",
+              "kind": "write_shared",
+              "resource": "steps",
+              "expr": "tmp + 5"
+            },
+            {
+              "sid": "s6",
+              "kind": "mutex_unlock",
+              "resource": "step_lock"
+            },
+            {
+              "sid": "s7",
+              "kind": "return"
+            }
+          ],
+          "locals": [
+            {
+              "name": "tmp",
+              "type": "Int"
+            }
+          ]
+        },
+        {
+          "name": "right",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "step_lock"
+            },
+            {
+              "sid": "s2",
+              "kind": "read_shared",
+              "resource": "steps",
+              "dst": "tmp"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "step_lock"
+            },
+            {
+              "sid": "s4",
+              "kind": "mutex_lock",
+              "resource": "step_lock"
+            },
+            {
+              "sid": "s5",
+              "kind": "write_shared",
+              "resource": "steps",
+              "expr": "tmp + 5"
+            },
+            {
+              "sid": "s6",
+              "kind": "mutex_unlock",
+              "resource": "step_lock"
+            },
+            {
+              "sid": "s7",
+              "kind": "return"
+            }
+          ],
+          "locals": [
+            {
+              "name": "tmp",
+              "type": "Int"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

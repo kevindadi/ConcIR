@@ -1,0 +1,125 @@
+{
+  "program": "atomicity_03",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "scale",
+          "grams"
+        ],
+        "functions": [
+          "main",
+          "left",
+          "right"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "scale",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "grams",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Int": [
+              0,
+              5
+            ]
+          },
+          "init": 0
+        }
+      ],
+      "protection": [
+        {
+          "var": "grams",
+          "lock": "scale"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "left",
+                "right"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "left",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "scale"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "grams",
+              "expr": "grams + 2"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "scale"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "right",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "scale"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "grams",
+              "expr": "grams + 3"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "scale"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}

@@ -1,0 +1,152 @@
+{
+  "program": "double_lock_03_bug",
+  "version": "3.5.0",
+  "modules": [
+    {
+      "name": "main",
+      "provides": {
+        "resources": [
+          "doc",
+          "rev"
+        ],
+        "functions": [
+          "main",
+          "editor",
+          "reader",
+          "save"
+        ]
+      },
+      "requires": {
+        "resources": [],
+        "functions": []
+      },
+      "resources": [
+        {
+          "name": "doc",
+          "kind": "sync",
+          "type": "Mutex",
+          "mode": "Sync"
+        },
+        {
+          "name": "rev",
+          "kind": "var",
+          "type": "Var",
+          "base": {
+            "Int": [
+              0,
+              3
+            ]
+          },
+          "init": 0
+        }
+      ],
+      "protection": [
+        {
+          "var": "rev",
+          "lock": "doc"
+        }
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "scope",
+              "funcs": [
+                "editor",
+                "reader"
+              ]
+            },
+            {
+              "sid": "s2",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "editor",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "doc"
+            },
+            {
+              "sid": "s2",
+              "kind": "call",
+              "func": "save",
+              "args": []
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "doc"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "reader",
+          "kind": "normal",
+          "form": "closure",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "doc"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "rev",
+              "expr": "rev + 1"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "doc"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        },
+        {
+          "name": "save",
+          "kind": "normal",
+          "body": [
+            {
+              "sid": "s1",
+              "kind": "mutex_lock",
+              "resource": "doc"
+            },
+            {
+              "sid": "s2",
+              "kind": "write_shared",
+              "resource": "rev",
+              "expr": "rev + 1"
+            },
+            {
+              "sid": "s3",
+              "kind": "mutex_unlock",
+              "resource": "doc"
+            },
+            {
+              "sid": "s4",
+              "kind": "return"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entry": "main::main"
+}
