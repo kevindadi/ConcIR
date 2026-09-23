@@ -189,9 +189,25 @@ pub mod sync {
             guard.armed = false;
             let inner: std::sync::MutexGuard<'a, T> =
                 guard.inner.take().expect("condvar guard consumed twice");
-            record("mutex_unlock", name);
+            // One model step: the release/reacquire around the wait is implicit,
+            // so no mutex_unlock/mutex_lock events are emitted here.
             let result = self.inner.wait(inner);
-            record("mutex_lock", name);
+            record("condvar_wait", self.name);
+            match result {
+                Ok(g) => Ok(Guard { inner: Some(g), name, armed: true }),
+                Err(_) => Ok(Guard { inner: None, name, armed: false }),
+            }
+        }
+        pub fn wait_while<'a, T, F>(&self, mut guard: Guard<'a, T>, mut f: F)
+            -> LockResult<Guard<'a, T>>
+        where
+            F: FnMut(&mut T) -> bool,
+        {
+            let name = guard.name;
+            guard.armed = false;
+            let inner: std::sync::MutexGuard<'a, T> =
+                guard.inner.take().expect("condvar guard consumed twice");
+            let result = self.inner.wait_while(inner, |v| f(v));
             record("condvar_wait", self.name);
             match result {
                 Ok(g) => Ok(Guard { inner: Some(g), name, armed: true }),
@@ -207,7 +223,65 @@ pub mod sync {
             self.inner.notify_all();
         }
     }
+}
 
+"#;
+
+/// Runtime provided to every generated program as `concir_sync` (a counting
+/// semaphore, since std has none). `acquire` returns a permit whose drop
+/// releases; both emit `sem_acquire`/`sem_release` through `cir_trace`.
+pub const SYNC_RUNTIME: &str = r#"// Generated concir_sync runtime (std only).
+#![allow(dead_code)]
+use std::sync::{Arc, Condvar, Mutex};
+
+pub struct Semaphore {
+    permits: Mutex<i64>,
+    cv: Condvar,
+    name: &'static str,
+}
+
+pub struct Permit<'a> {
+    sem: &'a Semaphore,
+}
+
+impl Semaphore {
+    pub fn new(n: i64) -> Arc<Self> {
+        Self::new_named("semaphore", n)
+    }
+    pub fn new_named(name: &'static str, n: i64) -> Arc<Self> {
+        Arc::new(Semaphore { permits: Mutex::new(n), cv: Condvar::new(), name })
+    }
+    pub fn acquire(&self) -> Permit<'_> {
+        let mut p = self.permits.lock().unwrap();
+        while *p <= 0 {
+            p = self.cv.wait(p).unwrap();
+        }
+        *p -= 1;
+        crate::cir_trace::record("sem_acquire", self.name);
+        Permit { sem: self }
+    }
+    pub fn try_acquire(&self) -> Option<Permit<'_>> {
+        let mut p = self.permits.lock().unwrap();
+        if *p > 0 {
+            *p -= 1;
+            crate::cir_trace::record("sem_acquire", self.name);
+            Some(Permit { sem: self })
+        } else {
+            None
+        }
+    }
+    pub fn release(&self) {
+        let mut p = self.permits.lock().unwrap();
+        *p += 1;
+        crate::cir_trace::record("sem_release", self.name);
+        self.cv.notify_one();
+    }
+}
+
+impl<'a> Drop for Permit<'a> {
+    fn drop(&mut self) {
+        self.sem.release();
+    }
 }
 "#;
 
@@ -221,6 +295,7 @@ pub struct Resource {
 pub struct Wrapped {
     pub annotated: String,
     pub runtime: String,
+    pub sync_runtime: String,
     pub resources: Vec<Resource>,
     pub limitations: Vec<String>,
 }
@@ -267,6 +342,7 @@ fn ctor_kind(path: &syn::Path) -> Option<&'static str> {
     match segs.get(segs.len().wrapping_sub(2)).map(String::as_str) {
         Some("Mutex") => Some("Mutex"),
         Some("Condvar") => Some("Condvar"),
+        Some("Semaphore") => Some("Semaphore"),
         _ => None,
     }
 }
@@ -283,12 +359,41 @@ struct SpawnHit {
     callee_start: usize,
     callee_end: usize,
     open_brace: usize,
+    callee_name: Option<String>,
+}
+
+/// The first plain function called inside a spawned closure, used to name the
+/// thread after the worker it runs (falling back to order when absent).
+struct FirstCall {
+    name: Option<String>,
+}
+
+const BUILTIN_CALLS: &[&str] = &[
+    "spawn", "scope", "drop", "Arc", "Box", "Some", "Ok", "Err", "None",
+    "println", "print", "format", "Vec", "String", "vec", "panic",
+];
+
+impl<'ast> Visit<'ast> for FirstCall {
+    fn visit_expr_call(&mut self, node: &'ast ExprCall) {
+        if self.name.is_none() {
+            if let Expr::Path(p) = &*node.func {
+                if let Some(seg) = p.path.segments.last() {
+                    let ident = seg.ident.to_string();
+                    if !BUILTIN_CALLS.contains(&ident.as_str()) {
+                        self.name = Some(ident);
+                    }
+                }
+            }
+        }
+        syn::visit::visit_expr_call(self, node);
+    }
 }
 
 struct CtorCollector {
     starts: Vec<usize>,
     hits: Vec<CtorHit>,
     spawns: Vec<SpawnHit>,
+    skip_semaphore: bool,
 }
 
 fn is_thread_spawn(path: &syn::Path) -> bool {
@@ -302,12 +407,23 @@ impl<'ast> Visit<'ast> for CtorCollector {
         if let Expr::Path(p) = &*node.func {
             if is_thread_spawn(&p.path) {
                 let open = lc_offset(&self.starts, node.paren_token.span.open().start()) + 1;
+                let mut callee_name = None;
+                if let Some(Expr::Closure(c)) = node.args.first() {
+                    let mut fc = FirstCall { name: None };
+                    fc.visit_expr(&c.body);
+                    callee_name = fc.name;
+                }
                 self.spawns.push(SpawnHit {
                     callee_start: lc_offset(&self.starts, p.path.span().start()),
                     callee_end: lc_offset(&self.starts, p.path.span().end()),
                     open_brace: open,
+                    callee_name,
                 });
             } else if let Some(kind) = ctor_kind(&p.path) {
+                if kind == "Semaphore" && self.skip_semaphore {
+                    syn::visit::visit_expr_call(self, node);
+                    return;
+                }
                 let ident = p.path.segments.last().expect("callee path").ident.clone();
                 let open = lc_offset(&self.starts, node.paren_token.span.open().start()) + 1;
                 self.hits.push(CtorHit {
@@ -327,6 +443,7 @@ struct Namer {
     starts: Vec<usize>,
     edits: Vec<Edit>,
     resources: Vec<Resource>,
+    skip_semaphore: bool,
 }
 
 impl Namer {
@@ -336,6 +453,7 @@ impl Namer {
             starts: self.starts.clone(),
             hits: Vec::new(),
             spawns: Vec::new(),
+            skip_semaphore: self.skip_semaphore,
         };
         collector.visit_expr(&init.expr);
         if collector.hits.is_empty() && collector.spawns.is_empty() {
@@ -347,13 +465,15 @@ impl Namer {
         };
         let spawn_total = collector.spawns.len();
         for (index, hit) in collector.spawns.into_iter().enumerate() {
-            let name = if base != "res" && spawn_total == 1 {
-                base.clone()
-            } else if base != "res" {
-                format!("{base}_{index}")
-            } else {
-                format!("spawn{index}")
-            };
+            let name = hit.callee_name.clone().unwrap_or_else(|| {
+                if base != "res" && spawn_total == 1 {
+                    base.clone()
+                } else if base != "res" {
+                    format!("{base}_{index}")
+                } else {
+                    format!("spawn{index}")
+                }
+            });
             self.edits.push(Edit {
                 start: hit.callee_start,
                 end: hit.callee_end,
@@ -473,7 +593,9 @@ pub fn wrap(src: &str) -> Result<Wrapped, String> {
     let file: File = syn::parse_file(src).map_err(|e| format!("parse error: {e}"))?;
     let starts = line_starts(src);
 
-    let mut namer = Namer { starts: starts.clone(), edits: Vec::new(), resources: Vec::new() };
+    let skip_semaphore = src.contains("struct Semaphore") || src.contains("impl Semaphore");
+    let mut namer = Namer { starts: starts.clone(), edits: Vec::new(),
+                            resources: Vec::new(), skip_semaphore };
     namer.visit_file(&file);
 
     let mut finder = MainFinder { starts: starts.clone(), open: None, close: None };
@@ -496,12 +618,16 @@ pub fn wrap(src: &str) -> Result<Wrapped, String> {
     });
 
     // Header: module declaration + imports.
-    let header = if src.contains("Mutex") || src.contains("Condvar") {
-        "mod cir_trace;\nuse cir_trace::sync::{Mutex, Condvar};\n"
-    } else {
-        "mod cir_trace;\n"
-    };
-    edits.push(Edit { start: leading_header_len(src), end: leading_header_len(src), text: header.to_string() });
+    let uses_sync = src.contains("Mutex") || src.contains("Condvar");
+    let uses_sem = src.contains("Semaphore");
+    let mut header = String::from("mod cir_trace;\n");
+    if uses_sem {
+        header.push_str("mod concir_sync;\n");
+    }
+    if uses_sync {
+        header.push_str("use cir_trace::sync::{Mutex, Condvar};\n");
+    }
+    edits.push(Edit { start: leading_header_len(src), end: leading_header_len(src), text: header });
 
     let mut annotated = src.to_string();
     edits.sort_by(|a, b| b.start.cmp(&a.start).then(b.end.cmp(&a.end)));
@@ -514,6 +640,7 @@ pub fn wrap(src: &str) -> Result<Wrapped, String> {
     Ok(Wrapped {
         annotated,
         runtime: RUNTIME.to_string(),
+        sync_runtime: SYNC_RUNTIME.to_string(),
         resources: namer.resources,
         limitations: limitations_of(src),
     })

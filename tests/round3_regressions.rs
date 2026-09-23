@@ -105,10 +105,11 @@ fn b1_repair_must_reject_deleting_the_last_write() {
 
 #[test]
 fn b2_condvar_waiters_carry_their_own_locks() {
-    let (i, pe, ic, pc) = both("r2_multi_lock_cv.json", "r2_multi_lock_cv_contract.json");
-    assert_eq!(i, Outcome::Pass, "interpreter must accept per-waiter locks");
-    assert_eq!(pe, Outcome::Pass);
-    assert!(ic && pc);
+    // v3.1 (W1xx): a Condvar waited on with more than one mutex is unsupported
+    // in the Rust target, so the verdict is UNSUPPORTED rather than PASS.
+    let (i, pe, _ic, _pc) = both("r2_multi_lock_cv.json", "r2_multi_lock_cv_contract.json");
+    assert_eq!(i, Outcome::Unsupported, "multi-lock condvar is unsupported");
+    assert_eq!(pe, Outcome::Unsupported);
 }
 
 // ── B3 ──────────────────────────────────────────────────────────────

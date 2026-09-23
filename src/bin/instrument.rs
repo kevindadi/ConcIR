@@ -346,6 +346,8 @@ fn main() {
                 });
                 fs::write(out.join("annotated.rs"), &w.annotated).expect("write annotated.rs");
                 fs::write(out.join("cir_trace.rs"), &w.runtime).expect("write cir_trace.rs");
+                fs::write(out.join("concir_sync.rs"), &w.sync_runtime)
+                    .expect("write concir_sync.rs");
                 let resources = serde_json::json!({
                     "schema_version": "cir-resources-v1",
                     "source": input,
