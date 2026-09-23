@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 
 use syn::spanned::Spanned;
 use syn::visit::Visit;
-use syn::{Expr, ExprCall, File, Pat, Stmt};
+use syn::{Expr, ExprCall, ExprMethodCall, File, Pat, Stmt};
 
 /// Runtime emitted next to the instrumented source as `cir_trace.rs`.
 pub const RUNTIME: &str = r#"// Generated cir_trace runtime v2 (std only, wrapper types).
@@ -383,11 +383,92 @@ impl<'ast> Visit<'ast> for CtorCollector {
     }
 }
 
+
+fn channel_op(method: &str) -> Option<&'static str> {
+    match method {
+        "recv" | "try_recv" => Some("channel_recv"),
+        "send" | "try_send" => Some("channel_send"),
+        _ => None,
+    }
+}
+
+/// Base identifier and whether the receiver goes through a `Mutex` guard.
+fn channel_target(expr: &Expr) -> (String, Option<String>) {
+    match expr {
+        Expr::MethodCall(mc) => {
+            let method = mc.method.to_string();
+            if method == "unwrap" || method == "expect" {
+                return channel_target(&mc.receiver);
+            }
+            if method == "lock" {
+                if let Expr::Path(p) = &*mc.receiver {
+                    if let Some(seg) = p.path.segments.last() {
+                        let base = seg.ident.to_string();
+                        return (base.clone(), Some(base));
+                    }
+                }
+                return ("channel".to_string(), None);
+            }
+            ("channel".to_string(), None)
+        }
+        Expr::Path(p) => p
+            .path
+            .segments
+            .last()
+            .map(|s| (s.ident.to_string(), None))
+            .unwrap_or_else(|| ("channel".to_string(), None)),
+        _ => ("channel".to_string(), None),
+    }
+}
+
+struct ChannelCollector {
+    starts: Vec<usize>,
+    stmt_stack: Vec<usize>,
+    edits: Vec<Edit>,
+    wrappers: std::collections::HashSet<String>,
+    resources: Vec<Resource>,
+}
+
+impl<'ast> Visit<'ast> for ChannelCollector {
+    fn visit_stmt(&mut self, node: &'ast Stmt) {
+        let start = lc_offset(&self.starts, node.span().start());
+        self.stmt_stack.push(start);
+        syn::visit::visit_stmt(self, node);
+        self.stmt_stack.pop();
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast ExprMethodCall) {
+        if let Some(op) = channel_op(&node.method.to_string()) {
+            let (resource, wrapper) = channel_target(&node.receiver);
+            if let Some(w) = wrapper {
+                self.wrappers.insert(w);
+                self.resources.push(Resource {
+                    name: resource.clone(),
+                    kind: "ChannelWrapper".to_string(),
+                });
+            }
+            if let Some(pos) = self.stmt_stack.last().copied() {
+                self.edits.push(Edit {
+                    start: pos,
+                    end: pos,
+                    text: format!("cir_trace::record(\"{op}\", \"{resource}\"); "),
+                });
+                self.resources.push(Resource {
+                    name: resource,
+                    kind: "Channel".to_string(),
+                });
+            }
+        }
+        syn::visit::visit_expr_method_call(self, node);
+    }
+}
+
 struct Namer {
     starts: Vec<usize>,
     edits: Vec<Edit>,
     resources: Vec<Resource>,
     skip_semaphore: bool,
+    wrappers: std::collections::HashSet<String>,
 }
 
 impl Namer {
@@ -435,6 +516,14 @@ impl Namer {
             let k = counters.entry(hit.kind).or_insert(0);
             let name = format!("{}_{}{}", base, hit.kind.to_lowercase(), *k);
             *k += 1;
+            let is_wrapper = self.wrappers.iter().any(|w| {
+                w == &base || w.starts_with(&base) || base.starts_with(w.as_str())
+            });
+            let kind = if hit.kind == "Mutex" && is_wrapper {
+                "ChannelWrapper"
+            } else {
+                hit.kind
+            };
             let text = if hit.empty_args {
                 format!("\"{name}\"")
             } else {
@@ -446,7 +535,7 @@ impl Namer {
                 text: "new_named".to_string(),
             });
             self.edits.push(Edit { start: hit.open_brace, end: hit.open_brace, text });
-            self.resources.push(Resource { name, kind: hit.kind.to_string() });
+            self.resources.push(Resource { name, kind: kind.to_string() });
         }
     }
 }
@@ -600,9 +689,21 @@ pub fn wrap(src: &str) -> Result<Wrapped, String> {
     let starts = line_starts(src);
 
     let skip_semaphore = src.contains("struct Semaphore") || src.contains("impl Semaphore");
+    let mut channels = ChannelCollector {
+        starts: starts.clone(), stmt_stack: Vec::new(), edits: Vec::new(),
+        wrappers: Default::default(), resources: Vec::new(),
+    };
+    channels.visit_file(&file);
     let mut namer = Namer { starts: starts.clone(), edits: Vec::new(),
-                            resources: Vec::new(), skip_semaphore };
+                            resources: Vec::new(), skip_semaphore,
+                            wrappers: channels.wrappers.clone() };
     namer.visit_file(&file);
+    namer.edits.extend(channels.edits);
+    namer.resources.extend(channels.resources);
+    {
+        let mut seen = std::collections::HashSet::new();
+        namer.resources.retain(|r| seen.insert((r.name.clone(), r.kind.clone())));
+    }
 
     let mut finder = MainFinder { starts: starts.clone(), open: None, close: None };
     finder.visit_file(&file);
