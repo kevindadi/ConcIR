@@ -40,6 +40,7 @@ thread_local! {
 pub fn init() {
     let _ = MAIN.set(std::thread::current().id());
     let _ = EVENTS.get_or_init(|| std::sync::Mutex::new(Vec::new()));
+    let _ = concir_sync::set_recorder(record);
 }
 
 /// Thread tag: the eager spawn-order tag when set, `t0` for main, and a lazy
@@ -227,63 +228,6 @@ pub mod sync {
 
 "#;
 
-/// Runtime provided to every generated program as `concir_sync` (a counting
-/// semaphore, since std has none). `acquire` returns a permit whose drop
-/// releases; both emit `sem_acquire`/`sem_release` through `cir_trace`.
-pub const SYNC_RUNTIME: &str = r#"// Generated concir_sync runtime (std only).
-#![allow(dead_code)]
-use std::sync::{Arc, Condvar, Mutex};
-
-pub struct Semaphore {
-    permits: Mutex<i64>,
-    cv: Condvar,
-    name: &'static str,
-}
-
-pub struct Permit<'a> {
-    sem: &'a Semaphore,
-}
-
-impl Semaphore {
-    pub fn new(n: i64) -> Arc<Self> {
-        Self::new_named("semaphore", n)
-    }
-    pub fn new_named(name: &'static str, n: i64) -> Arc<Self> {
-        Arc::new(Semaphore { permits: Mutex::new(n), cv: Condvar::new(), name })
-    }
-    pub fn acquire(&self) -> Permit<'_> {
-        let mut p = self.permits.lock().unwrap();
-        while *p <= 0 {
-            p = self.cv.wait(p).unwrap();
-        }
-        *p -= 1;
-        crate::cir_trace::record("sem_acquire", self.name);
-        Permit { sem: self }
-    }
-    pub fn try_acquire(&self) -> Option<Permit<'_>> {
-        let mut p = self.permits.lock().unwrap();
-        if *p > 0 {
-            *p -= 1;
-            crate::cir_trace::record("sem_acquire", self.name);
-            Some(Permit { sem: self })
-        } else {
-            None
-        }
-    }
-    pub fn release(&self) {
-        let mut p = self.permits.lock().unwrap();
-        *p += 1;
-        crate::cir_trace::record("sem_release", self.name);
-        self.cv.notify_one();
-    }
-}
-
-impl<'a> Drop for Permit<'a> {
-    fn drop(&mut self) {
-        self.sem.release();
-    }
-}
-"#;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Resource {
@@ -295,9 +239,9 @@ pub struct Resource {
 pub struct Wrapped {
     pub annotated: String,
     pub runtime: String,
-    pub sync_runtime: String,
     pub resources: Vec<Resource>,
     pub limitations: Vec<String>,
+    pub harness_notes: Vec<String>,
 }
 
 struct Edit {
@@ -589,7 +533,69 @@ fn limitations_of(src: &str) -> Vec<String> {
     out
 }
 
+
+fn matching_brace(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut depth = 0i32;
+    let mut i = 0usize;
+    let mut in_str = false;
+    let mut esc = false;
+    while i < bytes.len() {
+        let c = bytes[i] as char;
+        if in_str {
+            if esc { esc = false; }
+            else if c == '\\' { esc = true; }
+            else if c == '"' { in_str = false; }
+            i += 1;
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '{' => depth += 1,
+            '}' => {
+                if depth == 0 { return Some(i); }
+                depth -= 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Remove any `mod concir_sync;` / `mod concir_sync { .. }` the model wrote:
+/// the harness links `concir_sync` as an external crate.
+fn strip_concir_sync_mod(src: &str) -> (String, Vec<String>) {
+    let mut notes = Vec::new();
+    let mut out = String::new();
+    let mut rest = src;
+    const NEEDLE: &str = "mod concir_sync";
+    while let Some(i) = rest.find(NEEDLE) {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + NEEDLE.len()..];
+        let lead = after.len() - after.trim_start().len();
+        if after.trim_start().starts_with('{') {
+            let block = &after[lead + 1..];
+            if let Some(end) = matching_brace(block) {
+                notes.push("stripped inline `mod concir_sync {..}`".to_string());
+                rest = &block[end + 1..];
+                continue;
+            }
+        } else if after.trim_start().starts_with(';') {
+            notes.push("stripped `mod concir_sync;`".to_string());
+            rest = &after[lead + 1..];
+            continue;
+        }
+        out.push_str(NEEDLE);
+        rest = &rest[i + NEEDLE.len()..];
+    }
+    out.push_str(rest);
+    (out, notes)
+}
+
 pub fn wrap(src: &str) -> Result<Wrapped, String> {
+    let (clean, harness_notes) = strip_concir_sync_mod(src);
+    let src: &str = &clean;
     let file: File = syn::parse_file(src).map_err(|e| format!("parse error: {e}"))?;
     let starts = line_starts(src);
 
@@ -619,11 +625,7 @@ pub fn wrap(src: &str) -> Result<Wrapped, String> {
 
     // Header: module declaration + imports.
     let uses_sync = src.contains("Mutex") || src.contains("Condvar");
-    let uses_sem = src.contains("Semaphore");
     let mut header = String::from("mod cir_trace;\n");
-    if uses_sem {
-        header.push_str("mod concir_sync;\n");
-    }
     if uses_sync {
         header.push_str("use cir_trace::sync::{Mutex, Condvar};\n");
     }
@@ -640,8 +642,8 @@ pub fn wrap(src: &str) -> Result<Wrapped, String> {
     Ok(Wrapped {
         annotated,
         runtime: RUNTIME.to_string(),
-        sync_runtime: SYNC_RUNTIME.to_string(),
         resources: namer.resources,
         limitations: limitations_of(src),
+        harness_notes,
     })
 }

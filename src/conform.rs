@@ -40,6 +40,11 @@ pub struct Conformance {
     pub got: Option<String>,
     pub coverage: Coverage,
     pub detail: Option<String>,
+    /// In `--op-resource` mode: main-thread events after all spawned threads have
+    /// joined (e.g. reading state to print the terminal line). Not a violation.
+    pub post_join_main_ops: Vec<String>,
+    /// Channel operations observed through a wrapper mutex (ignored as events).
+    pub wrapper_ops: Vec<String>,
 }
 
 fn op_of(
@@ -451,6 +456,8 @@ pub fn conform_events(
     op_resource: bool,
 ) -> Conformance {
     let total = observable_sids(program).len();
+    let mut post_join_main_ops: Vec<String> = Vec::new();
+    let mut wrapper_ops: Vec<String> = Vec::new();
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let it = Interpreter::new(program, AnalysisBounds::default());
     let initial = match it.initial() {
@@ -459,6 +466,8 @@ pub fn conform_events(
             return Conformance {
                 status: "error".into(),
                 events: trace.len(),
+                post_join_main_ops: post_join_main_ops.clone(),
+                wrapper_ops: wrapper_ops.clone(),
                 event_index: None,
                 expected: vec![],
                 got: None,
@@ -506,6 +515,8 @@ pub fn conform_events(
                 return Conformance {
                     status: "violation".into(),
                     events: trace.len(),
+                    post_join_main_ops: post_join_main_ops.clone(),
+                    wrapper_ops: wrapper_ops.clone(),
                     event_index: Some(k),
                     expected: sigs.iter().map(|(o, r)| format!("{o}:{r}")).collect(),
                     got: Some(format!("{op}:{resource}")),
@@ -519,6 +530,8 @@ pub fn conform_events(
             return Conformance {
                 status: if op_resource { "violation".into() } else { "unknown_sid".into() },
                 events: trace.len(),
+                post_join_main_ops: post_join_main_ops.clone(),
+                wrapper_ops: wrapper_ops.clone(),
                 event_index: Some(k),
                 expected: vec![],
                 got: Some(if op_resource {
@@ -569,9 +582,24 @@ pub fn conform_events(
                 }
             }
             if !found {
+                // Post-join main-thread work (reading state to print the terminal
+                // line) is allowed once every spawned thread has finished; keep
+                // only the finished-children frontier and record the op.
+                let main_only: Vec<(MachineState, BTreeMap<String, ThreadId>)> = frontier
+                    .iter()
+                    .filter(|(st, _)| st.threads.len() <= 1)
+                    .cloned()
+                    .collect();
+                if !main_only.is_empty() {
+                    post_join_main_ops.push(format!("{op}:{resource}"));
+                    frontier = main_only;
+                    continue;
+                }
                 return Conformance {
                     status: "violation".into(),
                     events: trace.len(),
+                    post_join_main_ops: post_join_main_ops.clone(),
+                    wrapper_ops: wrapper_ops.clone(),
                     event_index: Some(k),
                     expected: expected.into_iter().take(6).collect(),
                     got: Some(format!("{op}:{resource}")),
@@ -616,6 +644,8 @@ pub fn conform_events(
             return Conformance {
                 status: "violation".into(),
                 events: trace.len(),
+                post_join_main_ops: post_join_main_ops.clone(),
+                wrapper_ops: wrapper_ops.clone(),
                 event_index: Some(k),
                 expected: vec![],
                 got: Some(sid.clone()),
@@ -643,6 +673,8 @@ pub fn conform_events(
             return Conformance {
                 status: "violation".into(),
                 events: trace.len(),
+                post_join_main_ops: post_join_main_ops.clone(),
+                wrapper_ops: wrapper_ops.clone(),
                 event_index: Some(k),
                 expected,
                 got: Some(sid.clone()),
@@ -670,6 +702,8 @@ pub fn conform_events(
     Conformance {
         status: "conformant".into(),
         events: trace.len(),
+        post_join_main_ops: post_join_main_ops.clone(),
+        wrapper_ops: wrapper_ops.clone(),
         event_index: None,
         expected: vec![],
         got: None,
