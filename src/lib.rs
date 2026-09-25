@@ -14,6 +14,7 @@ pub mod monitor;
 pub mod petri;
 pub mod repair;
 pub mod schema;
+pub mod src_mutate;
 pub mod sem;
 pub mod typedef;
 pub mod validate;

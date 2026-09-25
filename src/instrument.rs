@@ -80,9 +80,10 @@ pub fn record(op: &str, resource: &str) {
 
 /// Spawn a worker and record it; the child's completion is witnessed by the
 /// program finishing (a finished trace implies `main` returned).
-pub fn spawn<F>(name: &'static str, f: F) -> std::thread::JoinHandle<()>
+pub fn spawn<F, T>(name: &'static str, f: F) -> std::thread::JoinHandle<T>
 where
-    F: FnOnce() + Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
 {
     record("spawn", name);
     let n = NEXT_TAG.fetch_add(1, Ordering::SeqCst);
@@ -338,6 +339,9 @@ struct CtorCollector {
     hits: Vec<CtorHit>,
     spawns: Vec<SpawnHit>,
     skip_semaphore: bool,
+    /// Nested `let` bindings are named by their own `Namer` visit. Collecting
+    /// them again from an enclosing initializer double-rewrites `thread::spawn`.
+    closure_depth: usize,
 }
 
 fn is_thread_spawn(path: &syn::Path) -> bool {
@@ -347,6 +351,21 @@ fn is_thread_spawn(path: &syn::Path) -> bool {
 }
 
 impl<'ast> Visit<'ast> for CtorCollector {
+    fn visit_expr_closure(&mut self, node: &'ast syn::ExprClosure) {
+        self.closure_depth += 1;
+        syn::visit::visit_expr_closure(self, node);
+        self.closure_depth -= 1;
+    }
+
+    fn visit_stmt(&mut self, node: &'ast Stmt) {
+        if self.closure_depth > 0 {
+            if let Stmt::Local(_) = node {
+                return;
+            }
+        }
+        syn::visit::visit_stmt(self, node);
+    }
+
     fn visit_expr_call(&mut self, node: &'ast ExprCall) {
         if let Expr::Path(p) = &*node.func {
             if is_thread_spawn(&p.path) {
@@ -479,6 +498,7 @@ impl Namer {
             hits: Vec::new(),
             spawns: Vec::new(),
             skip_semaphore: self.skip_semaphore,
+            closure_depth: 0,
         };
         collector.visit_expr(&init.expr);
         if collector.hits.is_empty() && collector.spawns.is_empty() {
@@ -569,36 +589,103 @@ impl<'ast> Visit<'ast> for MainFinder {
 
 /// Remove `Mutex`/`Condvar` from `use std::sync::{...}` and simple uses so the
 /// names can be provided by `cir_trace::sync`.
-fn rewrite_imports(src: &str) -> String {
-    let mut out = src.to_string();
-    for name in ["Mutex", "Condvar"] {
-        out = out.replace(&format!("use std::sync::{name};"), "");
-    }
-    let mut result = String::new();
-    let mut rest = out.as_str();
-    while let Some(i) = rest.find("use std::sync::{") {
-        let (before, from) = rest.split_at(i);
-        result.push_str(before);
-        let after = &from["use std::sync::{".len()..];
-        if let Some(j) = after.find('}') {
-            let inner = &after[..j];
-            let rest2 = &after[j + 1..];
-            let semi = rest2.find(';').map(|k| k + 1).unwrap_or(0);
-            let items: Vec<&str> = inner
-                .split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty() && *s != "Mutex" && *s != "Condvar")
-                .collect();
-            if !items.is_empty() {
-                result.push_str(&format!("use std::sync::{{{}}};", items.join(", ")));
+fn brace_depth_at(src: &str, index: usize) -> usize {
+    let mut depth = 0usize;
+    let mut in_str = false;
+    let mut esc = false;
+    for (i, c) in src.char_indices() {
+        if i >= index {
+            break;
+        }
+        if in_str {
+            if esc {
+                esc = false;
+            } else if c == '\\' {
+                esc = true;
+            } else if c == '"' {
+                in_str = false;
             }
-            rest = &rest2[semi..];
-        } else {
-            result.push_str(from);
-            rest = "";
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            _ => {}
         }
     }
-    result.push_str(rest);
+    depth
+}
+
+/// A crate-root `use cir_trace::sync::{Mutex, Condvar}` does not reach items
+/// inside `mod`. Re-import the wrappers in the module that originally imported
+/// `std::sync::{Mutex, Condvar}`.
+fn scoped_sync_use(src_before: &str, names: &[&str]) -> String {
+    if names.is_empty() || brace_depth_at(src_before, src_before.len()) == 0 {
+        return String::new();
+    }
+    format!("use crate::cir_trace::sync::{{{}}};", names.join(", "))
+}
+
+fn rewrite_imports(src: &str) -> String {
+    let mut result = String::new();
+    let mut rest = src;
+    loop {
+        let grouped = rest.find("use std::sync::{");
+        let single_m = rest.find("use std::sync::Mutex;");
+        let single_c = rest.find("use std::sync::Condvar;");
+        let next = [grouped, single_m, single_c].into_iter().flatten().min();
+        let Some(i) = next else {
+            result.push_str(rest);
+            break;
+        };
+        result.push_str(&rest[..i]);
+        let from = &rest[i..];
+        if from.starts_with("use std::sync::{") {
+            let after = &from["use std::sync::{".len()..];
+            if let Some(j) = after.find('}') {
+                let inner = &after[..j];
+                let rest2 = &after[j + 1..];
+                let semi = rest2.find(';').map(|k| k + 1).unwrap_or(0);
+                let mut kept = Vec::new();
+                let mut wrapped = Vec::new();
+                for item in inner.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                    if item == "Mutex" || item == "Condvar" {
+                        wrapped.push(item);
+                    } else {
+                        kept.push(item);
+                    }
+                }
+                if !kept.is_empty() {
+                    result.push_str(&format!("use std::sync::{{{}}};", kept.join(", ")));
+                }
+                let local = scoped_sync_use(&result, &wrapped);
+                if !local.is_empty() {
+                    result.push_str(&local);
+                }
+                rest = &rest2[semi..];
+                continue;
+            }
+        }
+        let mut consumed = false;
+        for name in ["Mutex", "Condvar"] {
+            let needle = format!("use std::sync::{name};");
+            if from.starts_with(&needle) {
+                let local = scoped_sync_use(&result, &[name]);
+                if !local.is_empty() {
+                    result.push_str(&local);
+                }
+                rest = &from[needle.len()..];
+                consumed = true;
+                break;
+            }
+        }
+        if consumed {
+            continue;
+        }
+        result.push_str(&from[..1]);
+        rest = &from[1..];
+    }
     result
         .replace("std::sync::Mutex", "cir_trace::sync::Mutex")
         .replace("std::sync::Condvar", "cir_trace::sync::Condvar")

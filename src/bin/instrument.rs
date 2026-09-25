@@ -301,6 +301,22 @@ impl<T: Send> Channel<T> {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--src-mutate") {
+        let op = args.get(2).map(String::as_str).unwrap_or("");
+        let index: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let input = args.get(4).cloned().unwrap_or_default();
+        let src = fs::read_to_string(&input).unwrap_or_else(|e| {
+            eprintln!("error reading '{input}': {e}");
+            process::exit(2);
+        });
+        let result = concir::src_mutate::apply(op, &src, index);
+        println!("{}", serde_json::json!({
+            "applicable": result.applicable,
+            "reason": result.reason,
+            "source": result.source,
+        }));
+        process::exit(if result.applicable { 0 } else { 3 });
+    }
     let mut input: Option<String> = None;
     let mut out_dir: Option<String> = None;
     let mut wrappers = false;
