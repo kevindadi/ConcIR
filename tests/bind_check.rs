@@ -80,3 +80,37 @@ fn missing_manifest_is_an_input_error() {
                           "--manifest", dir.join("nope.json").to_str().unwrap()]);
     assert_eq!(code, 2);
 }
+
+#[test]
+fn unestablished_claim_is_unresolved_not_violated() {
+    // A valid object whose relation cannot be established must be unresolved,
+    // not reported as a structural contradiction.
+    let dir = tmp("unest");
+    let res = dir.join("resources.json");
+    fs::write(&res, r#"{"source":"","resources":[{"name":"tx#10","kind":"Channel","display":"tx"}]}"#).unwrap();
+    let cir = channels_cir(&dir);
+    let man = dir.join("m.json");
+    fs::write(&man, r#"[{"rust":"tx#10","cir":"main::ch"}]"#).unwrap();
+    let (code, out) = run(&["--resources", res.to_str().unwrap(), "--cir", cir.to_str().unwrap(),
+                            "--manifest", man.to_str().unwrap()]);
+    assert_eq!(code, 0);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert!(v["violated"].get("tx#10").is_none());
+    assert!(v["unresolved"].get("tx#10").is_some());
+}
+
+#[test]
+fn nonexistent_object_claim_is_violated() {
+    let dir = tmp("noobj");
+    let res = dir.join("resources.json");
+    fs::write(&res, r#"{"source":"","resources":[]}"#).unwrap();
+    let cir = dir.join("cir.json");
+    fs::write(&cir, r#"{"modules":[]}"#).unwrap();
+    let man = dir.join("m.json");
+    fs::write(&man, r#"[{"rust":"ghost","cir":"main::a"}]"#).unwrap();
+    let (code, out) = run(&["--resources", res.to_str().unwrap(), "--cir", cir.to_str().unwrap(),
+                            "--manifest", man.to_str().unwrap()]);
+    assert_eq!(code, 0);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert!(v["violated"].get("ghost").is_some());
+}

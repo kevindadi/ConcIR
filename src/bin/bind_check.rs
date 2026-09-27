@@ -194,6 +194,7 @@ fn check(resources: &[Value], cir: &Value, manifest: Option<&Value>) -> Value {
     }
 
     let mut violated: BTreeMap<String, Value> = BTreeMap::new();
+    let mut claim_unresolved: BTreeMap<String, Value> = BTreeMap::new();
     if let Some(list) = manifest.and_then(Value::as_array) {
         for claim in list {
             let rust = claim.get("rust").and_then(Value::as_str).unwrap_or("");
@@ -204,24 +205,38 @@ fn check(resources: &[Value], cir: &Value, manifest: Option<&Value>) -> Value {
             } else {
                 display_to_runtime.get(rust).cloned()
             };
-            let actual: Option<String> = runtime
-                .as_ref()
-                .and_then(|k| verified.get(k))
+            let Some(k) = runtime else {
+                // The object/target does not exist: an input error, not a
+                // proven structural contradiction.
+                violated.insert(rust.to_string(), json!({
+                    "claim": cir, "reason": "no such runtime resource or display name"}));
+                continue;
+            };
+            let actual: Option<String> = verified
+                .get(&k)
                 .and_then(|v| v.get("cir").and_then(Value::as_str))
                 .map(|s| s.to_string());
             if actual.as_deref() == Some(cir) {
-                continue;
+                continue; // established relation agrees with the claim
             }
-            // Contradiction -> violated, and the object is not also verified.
-            if let Some(k) = &runtime {
-                verified.remove(k);
-                unresolved.remove(k);
+            if verified.contains_key(&k) {
+                // An established relation conflicts with the claim.
+                verified.remove(&k);
+                unresolved.remove(&k);
+                violated.insert(rust.to_string(), json!({
+                    "claim": cir, "actual": actual, "runtime": k,
+                    "reason": "manifest conflicts with an established binding"}));
+            } else {
+                // A valid object whose relation is not established: unresolved,
+                // not a contradiction. Not promoted by relaxing name matching.
+                unresolved.remove(&k);
+                claim_unresolved.insert(rust.to_string(), json!({
+                    "claim": cir, "runtime": k,
+                    "reason": "no structural evidence to establish the declared relation"}));
             }
-            violated.insert(rust.to_string(), json!({
-                "claim": cir, "actual": actual, "runtime": runtime,
-                "reason": "manifest disagrees with structure"}));
         }
     }
+    unresolved.extend(claim_unresolved);
 
     json!({
         "verified": verified,
