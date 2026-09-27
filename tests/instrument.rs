@@ -117,3 +117,58 @@ fn main() {
     assert!(wrapped.runtime.contains("F: FnOnce() -> T + Send + 'static"));
     assert!(wrapped.annotated.contains(r#"cir_trace::spawn("receiver""#));
 }
+
+#[test]
+fn static_mutex_uses_const_named_constructor() {
+    let source = r#"use std::sync::Mutex;
+use std::thread;
+mod main_mod {
+    use std::sync::Mutex;
+    pub static A: Mutex<()> = Mutex::new(());
+    pub fn t1() { let _g = A.lock().unwrap(); }
+}
+fn main() {
+    let h = thread::spawn(main_mod::t1);
+    h.join().unwrap();
+}
+"#;
+    let wrapped = wrap(source).expect("wrap");
+    assert!(wrapped.runtime.contains("pub const fn new_named"));
+    assert!(wrapped.annotated.contains("Mutex::new_named("));
+    assert_eq!(wrapped.annotated.matches("mod cir_trace;").count(), 1);
+}
+
+#[test]
+fn spawn_block_closure_uses_callee_name() {
+    // `thread::spawn({ let c = ..; move || worker(c) })` must name the thread
+    // by the function it runs, not by the handle binding.
+    let source = r#"use std::sync::Arc;
+fn worker(x: Arc<()>) { let _ = x; }
+fn main() {
+    let c = Arc::new(());
+    let h = std::thread::spawn({ let c = c.clone(); move || worker(c) });
+    h.join().unwrap();
+}
+"#;
+    let wrapped = wrap(source).expect("wrap");
+    let names: Vec<&str> = wrapped.resources.iter().map(|r| r.name.as_str()).collect();
+    assert!(names.contains(&"worker"), "resources: {names:?}");
+    assert!(!names.contains(&"h"), "handle name must not be used: {names:?}");
+}
+
+#[test]
+fn struct_field_mutex_uses_field_name() {
+    // A mutex created in a struct-literal field is named by the field, so the
+    // CIR resource name is recovered structurally.
+    let source = r#"use std::sync::{Arc, Mutex};
+struct S { m: Mutex<i32> }
+fn main() {
+    let s = Arc::new(S { m: Mutex::new(0) });
+    let _ = s.m.lock().unwrap();
+}
+"#;
+    let wrapped = wrap(source).expect("wrap");
+    assert!(wrapped.annotated.contains(r#"Mutex::new_named("m", 0)"#));
+    let names: Vec<&str> = wrapped.resources.iter().map(|r| r.name.as_str()).collect();
+    assert!(names.contains(&"m"), "resources: {names:?}");
+}

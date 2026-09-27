@@ -129,7 +129,7 @@ pub mod sync {
         pub fn new(value: T) -> Self {
             Self::new_named("mutex", value)
         }
-        pub fn new_named(name: &'static str, value: T) -> Self {
+        pub const fn new_named(name: &'static str, value: T) -> Self {
             Mutex { inner: StdMutex::new(value), name }
         }
         pub fn lock(&self) -> LockResult<Guard<'_, T>> {
@@ -183,7 +183,7 @@ pub mod sync {
         pub fn new() -> Self {
             Self::new_named("condvar")
         }
-        pub fn new_named(name: &'static str) -> Self {
+        pub const fn new_named(name: &'static str) -> Self {
             Condvar { inner: StdCondvar::new(), name }
         }
         pub fn wait<'a, T>(&self, mut guard: Guard<'a, T>) -> LockResult<Guard<'a, T>> {
@@ -230,10 +230,20 @@ pub mod sync {
 "#;
 
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, Default)]
 pub struct Resource {
     pub name: String,
     pub kind: String,
+    /// Construction-site byte offset: distinguishes two instances that share a
+    /// name (e.g. two `S { m: Mutex::new(..) }` values).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub site: Option<String>,
+    /// Spawn: the function the thread runs, when it is unambiguous.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
+    /// Spawn: whether the closure body has exactly one non-builtin call.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unique_entry: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -298,11 +308,15 @@ struct CtorHit {
     open_brace: usize,
     empty_args: bool,
     kind: &'static str,
+    /// Struct-literal field the constructor is assigned to, when any. Used as
+    /// the resource name so field identity is recovered structurally.
+    field: Option<String>,
 }
 
 struct SpawnHit {
     callee_start: usize,
     callee_end: usize,
+    unique: bool,
     open_brace: usize,
     callee_name: Option<String>,
 }
@@ -334,6 +348,67 @@ impl<'ast> Visit<'ast> for FirstCall {
     }
 }
 
+/// The first call inside a closure body, descending through blocks.
+fn closure_callee(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Closure(c) => {
+            let mut fc = FirstCall { name: None };
+            fc.visit_expr(&c.body);
+            fc.name
+        }
+        Expr::Block(b) => b.block.stmts.iter().rev().find_map(|s| match s {
+            Stmt::Expr(e, _) => closure_callee(e),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
+/// Count non-builtin calls in a closure body, to decide whether the thread
+/// entry is unambiguous (`move || worker()` = 1) or not (`|| { helper(); w(); }`).
+struct CallCounter {
+    n: usize,
+}
+
+impl<'ast> Visit<'ast> for CallCounter {
+    fn visit_expr_call(&mut self, node: &'ast ExprCall) {
+        if let Expr::Path(p) = &*node.func {
+            if let Some(seg) = p.path.segments.last() {
+                if !BUILTIN_CALLS.contains(&seg.ident.to_string().as_str()) {
+                    self.n += 1;
+                }
+            }
+        }
+        syn::visit::visit_expr_call(self, node);
+    }
+}
+
+fn closure_call_count(expr: &Expr) -> usize {
+    match expr {
+        Expr::Closure(c) => {
+            let mut counter = CallCounter { n: 0 };
+            counter.visit_expr(&c.body);
+            counter.n
+        }
+        Expr::Block(b) => b.block.stmts.iter().rev().find_map(|s| match s {
+            Stmt::Expr(e, _) => Some(closure_call_count(e)),
+            _ => None,
+        }).unwrap_or(0),
+        _ => 0,
+    }
+}
+
+/// The function a `thread::spawn` runs. Handles both `spawn(move || f(..))` and
+/// the block form `spawn({ let x = ..; move || f(x) })`, so the thread entry is
+/// recovered structurally instead of from the handle name.
+fn spawn_callee(args: &syn::punctuated::Punctuated<Expr, syn::Token![,]>) -> Option<String> {
+    args.first().and_then(closure_callee)
+}
+
+fn spawn_unique(args: &syn::punctuated::Punctuated<Expr, syn::Token![,]>) -> bool {
+    args.first().map(closure_call_count) == Some(1)
+}
+
 struct CtorCollector {
     starts: Vec<usize>,
     hits: Vec<CtorHit>,
@@ -342,6 +417,7 @@ struct CtorCollector {
     /// Nested `let` bindings are named by their own `Namer` visit. Collecting
     /// them again from an enclosing initializer double-rewrites `thread::spawn`.
     closure_depth: usize,
+    current_field: Option<String>,
 }
 
 fn is_thread_spawn(path: &syn::Path) -> bool {
@@ -351,6 +427,15 @@ fn is_thread_spawn(path: &syn::Path) -> bool {
 }
 
 impl<'ast> Visit<'ast> for CtorCollector {
+    fn visit_field_value(&mut self, node: &'ast syn::FieldValue) {
+        let prev = self.current_field.take();
+        if let syn::Member::Named(ident) = &node.member {
+            self.current_field = Some(ident.to_string());
+        }
+        syn::visit::visit_field_value(self, node);
+        self.current_field = prev;
+    }
+
     fn visit_expr_closure(&mut self, node: &'ast syn::ExprClosure) {
         self.closure_depth += 1;
         syn::visit::visit_expr_closure(self, node);
@@ -370,17 +455,13 @@ impl<'ast> Visit<'ast> for CtorCollector {
         if let Expr::Path(p) = &*node.func {
             if is_thread_spawn(&p.path) {
                 let open = lc_offset(&self.starts, node.paren_token.span.open().start()) + 1;
-                let mut callee_name = None;
-                if let Some(Expr::Closure(c)) = node.args.first() {
-                    let mut fc = FirstCall { name: None };
-                    fc.visit_expr(&c.body);
-                    callee_name = fc.name;
-                }
+                let callee_name = spawn_callee(&node.args);
                 self.spawns.push(SpawnHit {
                     callee_start: lc_offset(&self.starts, p.path.span().start()),
                     callee_end: lc_offset(&self.starts, p.path.span().end()),
                     open_brace: open,
                     callee_name,
+                    unique: spawn_unique(&node.args),
                 });
             } else if let Some(kind) = ctor_kind(&p.path) {
                 if kind == "Semaphore" && self.skip_semaphore {
@@ -395,6 +476,7 @@ impl<'ast> Visit<'ast> for CtorCollector {
                     open_brace: open,
                     empty_args: node.args.is_empty(),
                     kind,
+                    field: self.current_field.clone(),
                 });
             }
         }
@@ -464,6 +546,7 @@ impl<'ast> Visit<'ast> for ChannelCollector {
                 self.resources.push(Resource {
                     name: resource.clone(),
                     kind: "ChannelWrapper".to_string(),
+                    ..Default::default()
                 });
             }
             if let Some(pos) = self.stmt_stack.last().copied() {
@@ -475,6 +558,7 @@ impl<'ast> Visit<'ast> for ChannelCollector {
                 self.resources.push(Resource {
                     name: resource,
                     kind: "Channel".to_string(),
+                    ..Default::default()
                 });
             }
         }
@@ -499,6 +583,7 @@ impl Namer {
             spawns: Vec::new(),
             skip_semaphore: self.skip_semaphore,
             closure_depth: 0,
+            current_field: None,
         };
         collector.visit_expr(&init.expr);
         if collector.hits.is_empty() && collector.spawns.is_empty() {
@@ -529,12 +614,22 @@ impl Namer {
                 end: hit.open_brace,
                 text: format!("\"{name}\", "),
             });
-            self.resources.push(Resource { name, kind: "Spawn".to_string() });
+            self.resources.push(Resource {
+                name,
+                kind: "Spawn".to_string(),
+                site: Some(hit.callee_start.to_string()),
+                entry: hit.callee_name.clone(),
+                unique_entry: Some(hit.unique),
+                ..Default::default()
+            });
         }
         let mut counters: BTreeMap<&'static str, usize> = BTreeMap::new();
         for hit in collector.hits {
             let k = counters.entry(hit.kind).or_insert(0);
-            let name = format!("{}_{}{}", base, hit.kind.to_lowercase(), *k);
+            let name = match &hit.field {
+                Some(field) => field.clone(),
+                None => format!("{}_{}{}", base, hit.kind.to_lowercase(), *k),
+            };
             *k += 1;
             let is_wrapper = self.wrappers.iter().any(|w| {
                 w == &base || w.starts_with(&base) || base.starts_with(w.as_str())
@@ -555,12 +650,47 @@ impl Namer {
                 text: "new_named".to_string(),
             });
             self.edits.push(Edit { start: hit.open_brace, end: hit.open_brace, text });
-            self.resources.push(Resource { name, kind: kind.to_string() });
+            self.resources.push(Resource {
+                name,
+                kind: kind.to_string(),
+                site: Some(hit.new_start.to_string()),
+                ..Default::default()
+            });
         }
     }
 }
 
 impl<'ast> Visit<'ast> for Namer {
+    fn visit_item_static(&mut self, node: &'ast syn::ItemStatic) {
+        let mut collector = CtorCollector {
+            starts: self.starts.clone(),
+            hits: Vec::new(),
+            spawns: Vec::new(),
+            skip_semaphore: self.skip_semaphore,
+            closure_depth: 0,
+            current_field: None,
+        };
+        collector.visit_expr(&node.expr);
+        let base = node.ident.to_string();
+        for hit in collector.hits {
+            let name = format!("{}_{}0", base, hit.kind.to_lowercase());
+            let text = if hit.empty_args {
+                format!("\"{name}\"")
+            } else {
+                format!("\"{name}\", ")
+            };
+            self.edits.push(Edit { start: hit.new_start, end: hit.new_end, text: "new_named".into() });
+            self.edits.push(Edit { start: hit.open_brace, end: hit.open_brace, text });
+            self.resources.push(Resource {
+                name,
+                kind: hit.kind.to_string(),
+                site: Some(hit.new_start.to_string()),
+                ..Default::default()
+            });
+        }
+        syn::visit::visit_item_static(self, node);
+    }
+
     fn visit_stmt(&mut self, node: &'ast Stmt) {
         if let Stmt::Local(local) = node {
             self.name_constructors(local);
@@ -698,7 +828,7 @@ fn limitations_of(src: &str) -> Vec<String> {
         ("Barrier", "Barrier is not instrumented"),
         ("Once", "Once is not instrumented"),
         ("atomic", "atomics are not instrumented (no value events)"),
-        ("thread::scope", "thread::scope tags are runtime-derived, scope event absent"),
+        ("thread::scope", "thread::scope spawns have no stable thread identity; scope events are absent"),
         ("async ", "async/await is not supported"),
         ("select!", "select is not supported"),
     ] {
@@ -788,8 +918,12 @@ pub fn wrap(src: &str) -> Result<Wrapped, String> {
     namer.edits.extend(channels.edits);
     namer.resources.extend(channels.resources);
     {
+        // Distinct construction sites are distinct instances even when they
+        // share a name (e.g. two `S { m: Mutex::new(..) }` values).
         let mut seen = std::collections::HashSet::new();
-        namer.resources.retain(|r| seen.insert((r.name.clone(), r.kind.clone())));
+        namer.resources.retain(|r| {
+            seen.insert((r.name.clone(), r.kind.clone(), r.site.clone()))
+        });
     }
 
     let mut finder = MainFinder { starts: starts.clone(), open: None, close: None };
@@ -813,8 +947,11 @@ pub fn wrap(src: &str) -> Result<Wrapped, String> {
 
     // Header: module declaration + imports.
     let uses_sync = src.contains("Mutex") || src.contains("Condvar");
-    let mut header = String::from("mod cir_trace;\n");
-    if uses_sync {
+    let mut header = String::new();
+    if !src.contains("mod cir_trace") {
+        header.push_str("mod cir_trace;\n");
+    }
+    if uses_sync && !src.contains("use cir_trace::sync") && !src.contains("use crate::cir_trace::sync") {
         header.push_str("use cir_trace::sync::{Mutex, Condvar};\n");
     }
     edits.push(Edit { start: leading_header_len(src), end: leading_header_len(src), text: header });
