@@ -7,9 +7,10 @@
 //! bindings; each claim is checked, never trusted.
 //!
 //! Supported subset only: direct mutex/condvar/semaphore construction, channel
-//! endpoints identified by a channel token, and spawns whose entry function is
-//! unambiguous. Everything else is `unresolved`. This does not prove arbitrary
-//! Rust or whole-program equivalence.
+//! endpoints identified by an exact channel token, and spawns whose entry
+//! function is unambiguous. Everything else is `unresolved`. This proves an
+//! identity association only; it does NOT prove resource usage or whole-program
+//! equivalence.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -17,8 +18,28 @@ use std::process;
 
 use serde_json::{json, Value};
 
-fn norm(s: &str) -> String {
-    s.replace("preserved: ", "").trim().to_string()
+fn binding_base(name: &str) -> String {
+    for kind in ["mutex", "condvar", "semaphore", "channel", "atomic", "var"] {
+        if let Some(idx) = name.rfind(&format!("_{kind}")) {
+            let tail = &name[idx + kind.len() + 1..];
+            if !tail.is_empty() && tail.chars().all(|c| c.is_ascii_digit()) {
+                return name[..idx].to_string();
+            }
+        }
+    }
+    name.to_string()
+}
+
+/// Channel token = the endpoint name with its endpoint suffix removed. Digits
+/// are part of the identity (`ch1_tx` -> `ch1`, never `ch`). An endpoint with no
+/// channel token (`tx`, `rx`) returns the empty string (unresolved).
+fn channel_token(name: &str) -> String {
+    for suf in ["_sender", "_receiver", "_tx", "_rx"] {
+        if let Some(stripped) = name.strip_suffix(suf) {
+            return stripped.to_string();
+        }
+    }
+    String::new()
 }
 
 fn cir_resources(cir: &Value) -> BTreeMap<String, String> {
@@ -56,29 +77,11 @@ fn cir_threads(cir: &Value) -> Vec<String> {
     out
 }
 
-fn binding_base(name: &str) -> String {
-    // strip a trailing `_kindN` binding suffix
-    for kind in ["mutex", "condvar", "semaphore", "channel", "atomic", "var"] {
-        if let Some(idx) = name.rfind(&format!("_{kind}")) {
-            let tail = &name[idx + kind.len() + 1..];
-            if !tail.is_empty() && tail.chars().all(|c| c.is_ascii_digit()) {
-                return name[..idx].to_string();
-            }
-        }
-    }
-    name.to_string()
-}
-
-fn channel_token(name: &str) -> String {
-    for suf in ["_tx", "_rx", "_sender", "_receiver", "tx", "rx"] {
-        if let Some(stripped) = name.strip_suffix(suf) {
-            let stripped = stripped.trim_end_matches(|c: char| c.is_ascii_digit());
-            if !stripped.is_empty() {
-                return stripped.to_string();
-            }
-        }
-    }
-    String::new()
+fn resource_display(r: &Value) -> String {
+    r.get("display")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| r.get("name").and_then(Value::as_str).unwrap_or(""))
+        .to_string()
 }
 
 fn check(resources: &[Value], cir: &Value, manifest: Option<&Value>) -> Value {
@@ -94,9 +97,14 @@ fn check(resources: &[Value], cir: &Value, manifest: Option<&Value>) -> Value {
 
     let mut display_counts: BTreeMap<String, usize> = BTreeMap::new();
     for r in resources {
-        let d = r.get("display").and_then(Value::as_str)
-            .unwrap_or_else(|| r.get("name").and_then(Value::as_str).unwrap_or(""));
-        *display_counts.entry(d.to_string()).or_insert(0) += 1;
+        *display_counts.entry(resource_display(r)).or_insert(0) += 1;
+    }
+
+    // display -> runtime_id, for manifest alias resolution.
+    let mut display_to_runtime: BTreeMap<String, String> = BTreeMap::new();
+    for r in resources {
+        let name = r.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+        display_to_runtime.insert(resource_display(r), name);
     }
 
     let mut verified: BTreeMap<String, Value> = BTreeMap::new();
@@ -106,19 +114,16 @@ fn check(resources: &[Value], cir: &Value, manifest: Option<&Value>) -> Value {
     for r in resources {
         let kind = r.get("kind").and_then(Value::as_str).unwrap_or("");
         let name = r.get("name").and_then(Value::as_str).unwrap_or("");
-        if kind == "Spawn" {
+        if kind == "Spawn" || kind == "ChannelWrapper" {
             continue;
         }
-        if kind == "ChannelWrapper" {
-            continue;
-        }
-        let display = r.get("display").and_then(Value::as_str).unwrap_or(name);
-        if *display_counts.get(display).unwrap_or(&0) > 1 {
+        let display = resource_display(r);
+        if *display_counts.get(&display).unwrap_or(&0) > 1 {
             unresolved.insert(name.to_string(), json!({
                 "reason": "duplicate runtime resource name", "site": r.get("site")}));
             continue;
         }
-        let short = binding_base(display);
+        let short = binding_base(&display);
         let cands: Vec<String> = by_short
             .get(&(short.clone(), kind.to_string()))
             .cloned()
@@ -132,7 +137,7 @@ fn check(resources: &[Value], cir: &Value, manifest: Option<&Value>) -> Value {
             continue;
         }
         if kind == "Channel" {
-            let token = channel_token(display);
+            let token = channel_token(&display);
             if !token.is_empty() {
                 let hits: Vec<String> = by_kind
                     .get("Channel")
@@ -146,9 +151,13 @@ fn check(resources: &[Value], cir: &Value, manifest: Option<&Value>) -> Value {
                                     json!({"cir": hits[0], "rule": "channel-name"}));
                     continue;
                 }
+                unresolved.insert(name.to_string(), json!({
+                    "reason": "channel token does not match exactly one CIR channel",
+                    "token": token, "site": r.get("site")}));
+                continue;
             }
             unresolved.insert(name.to_string(), json!({
-                "reason": "channel identity not established by a token",
+                "reason": "channel endpoint has no channel token",
                 "site": r.get("site")}));
             continue;
         }
@@ -186,41 +195,45 @@ fn check(resources: &[Value], cir: &Value, manifest: Option<&Value>) -> Value {
 
     let mut violated: BTreeMap<String, Value> = BTreeMap::new();
     if let Some(list) = manifest.and_then(Value::as_array) {
-        // A claim may key a resource by its runtime name or its display name.
-        let mut by_display: BTreeMap<String, String> = BTreeMap::new();
-        for (name, v) in &verified {
-            if let Some(d) = resources.iter().find_map(|r| {
-                (r.get("name").and_then(Value::as_str) == Some(name.as_str()))
-                    .then(|| r.get("display").and_then(Value::as_str).unwrap_or("").to_string())
-            }) {
-                by_display.insert(d, name.clone());
-            }
-            let _ = v;
-        }
         for claim in list {
             let rust = claim.get("rust").and_then(Value::as_str).unwrap_or("");
             let cir = claim.get("cir").and_then(Value::as_str).unwrap_or("");
-            let key = if verified.contains_key(rust) {
+            // Normalise the claim key (runtime id or display) to one object.
+            let runtime = if verified.contains_key(rust) || unresolved.contains_key(rust) {
                 Some(rust.to_string())
             } else {
-                by_display.get(rust).cloned()
+                display_to_runtime.get(rust).cloned()
             };
-            match key.as_ref().and_then(|k| verified.get(k)) {
-                Some(v) if v.get("cir").and_then(Value::as_str) == Some(cir) => {}
-                other => {
-                    violated.insert(rust.to_string(), json!({
-                        "claim": cir,
-                        "actual": other.and_then(|v| v.get("cir")),
-                        "reason": "manifest disagrees with structure"}));
-                }
+            let actual: Option<String> = runtime
+                .as_ref()
+                .and_then(|k| verified.get(k))
+                .and_then(|v| v.get("cir").and_then(Value::as_str))
+                .map(|s| s.to_string());
+            if actual.as_deref() == Some(cir) {
+                continue;
             }
+            // Contradiction -> violated, and the object is not also verified.
+            if let Some(k) = &runtime {
+                verified.remove(k);
+                unresolved.remove(k);
+            }
+            violated.insert(rust.to_string(), json!({
+                "claim": cir, "actual": actual, "runtime": runtime,
+                "reason": "manifest disagrees with structure"}));
         }
     }
-    // A claim cannot be both verified and violated.
-    for k in violated.keys() {
-        verified.remove(k);
-    }
-    json!({"verified": verified, "unresolved": unresolved, "violated": violated})
+
+    json!({
+        "verified": verified,
+        "unresolved": unresolved,
+        "violated": violated,
+        "scope": "identity association only; not resource usage or whole-program equivalence",
+    })
+}
+
+fn die(msg: &str) -> ! {
+    eprintln!("bind-check input error: {msg}");
+    process::exit(2);
 }
 
 fn main() {
@@ -228,27 +241,66 @@ fn main() {
     let mut resources_path = None;
     let mut cir_path = None;
     let mut manifest_path: Option<String> = None;
+    let mut source_sha: Option<String> = None;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "--resources" => { resources_path = args.get(i + 1).cloned(); i += 2; }
             "--cir" => { cir_path = args.get(i + 1).cloned(); i += 2; }
             "--manifest" => { manifest_path = args.get(i + 1).cloned(); i += 2; }
+            "--source-sha256" => { source_sha = args.get(i + 1).cloned(); i += 2; }
             _ => { i += 1; }
         }
     }
     let (Some(rp), Some(cp)) = (resources_path, cir_path) else {
-        eprintln!("usage: concir-bind-check --resources r.json --cir c.json [--manifest m.json]");
-        process::exit(2);
+        die("usage: concir-bind-check --resources r.json --cir c.json [--manifest m.json]");
     };
-    let resources_doc: Value = serde_json::from_str(&fs::read_to_string(&rp).unwrap_or_default())
-        .unwrap_or_else(|e| { eprintln!("resources parse error: {e}"); process::exit(2); });
-    let resources = resources_doc.get("resources").and_then(Value::as_array).cloned().unwrap_or_default();
-    let cir: Value = serde_json::from_str(&fs::read_to_string(&cp).unwrap_or_default())
-        .unwrap_or_else(|e| { eprintln!("cir parse error: {e}"); process::exit(2); });
-    let manifest: Option<Value> = manifest_path
-        .and_then(|p| fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok());
+    let resources_doc: Value = match fs::read_to_string(&rp) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_else(|e| die(&format!("resources parse error: {e}"))),
+        Err(e) => die(&format!("cannot read resources '{rp}': {e}")),
+    };
+    let resources = resources_doc.get("resources").and_then(Value::as_array).cloned()
+        .unwrap_or_else(|| die("resources.json has no 'resources' array"));
+    let cir: Value = match fs::read_to_string(&cp) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_else(|e| die(&format!("cir parse error: {e}"))),
+        Err(e) => die(&format!("cannot read cir '{cp}': {e}")),
+    };
+
+    // Optional source fingerprint: the instrumenter records the source path it
+    // read; verify it matches the expected hash.
+    if let Some(expected) = source_sha {
+        let source_path = resources_doc.get("source").and_then(Value::as_str).unwrap_or("");
+        let actual = fs::read(source_path).ok().map(|b| sha256_hex(&b));
+        if actual.as_deref() != Some(expected.as_str()) {
+            die("source fingerprint mismatch");
+        }
+    }
+
+    // An explicit manifest must be well-formed; a broken input is an error, not
+    // "no manifest".
+    let manifest: Option<Value> = match manifest_path {
+        None => None,
+        Some(p) => {
+            let text = fs::read_to_string(&p)
+                .unwrap_or_else(|e| die(&format!("cannot read manifest '{p}': {e}")));
+            let value: Value = serde_json::from_str(&text)
+                .unwrap_or_else(|e| die(&format!("manifest parse error: {e}")));
+            let arr = value.as_array().unwrap_or_else(|| die("manifest must be a JSON array"));
+            for entry in arr {
+                if entry.get("rust").and_then(Value::as_str).is_none()
+                    || entry.get("cir").and_then(Value::as_str).is_none()
+                {
+                    die("manifest entry must have string 'rust' and 'cir'");
+                }
+            }
+            Some(value)
+        }
+    };
+
     let result = check(&resources, &cir, manifest.as_ref());
     println!("{}", serde_json::to_string_pretty(&result).unwrap());
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    concir::hash::sha256_hex(bytes)
 }
