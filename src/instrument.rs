@@ -234,6 +234,10 @@ pub mod sync {
 pub struct Resource {
     pub name: String,
     pub kind: String,
+    /// CIR-matching name (field / binding / channel token), separate from the
+    /// runtime-unique `name` which carries the construction site.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display: Option<String>,
     /// Construction-site byte offset: distinguishes two instances that share a
     /// name (e.g. two `S { m: Mutex::new(..) }` values).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -546,6 +550,7 @@ impl<'ast> Visit<'ast> for ChannelCollector {
                 self.resources.push(Resource {
                     name: resource.clone(),
                     kind: "ChannelWrapper".to_string(),
+                    display: Some(resource.clone()),
                     ..Default::default()
                 });
             }
@@ -556,8 +561,9 @@ impl<'ast> Visit<'ast> for ChannelCollector {
                     text: format!("cir_trace::record(\"{op}\", \"{resource}\"); "),
                 });
                 self.resources.push(Resource {
-                    name: resource,
+                    name: resource.clone(),
                     kind: "Channel".to_string(),
+                    display: Some(resource),
                     ..Default::default()
                 });
             }
@@ -595,7 +601,7 @@ impl Namer {
         };
         let spawn_total = collector.spawns.len();
         for (index, hit) in collector.spawns.into_iter().enumerate() {
-            let name = hit.callee_name.clone().unwrap_or_else(|| {
+            let display = hit.callee_name.clone().unwrap_or_else(|| {
                 if base != "res" && spawn_total == 1 {
                     base.clone()
                 } else if base != "res" {
@@ -604,6 +610,7 @@ impl Namer {
                     format!("spawn{index}")
                 }
             });
+            let name = format!("{display}#{}", hit.callee_start);
             self.edits.push(Edit {
                 start: hit.callee_start,
                 end: hit.callee_end,
@@ -617,6 +624,7 @@ impl Namer {
             self.resources.push(Resource {
                 name,
                 kind: "Spawn".to_string(),
+                display: Some(display),
                 site: Some(hit.callee_start.to_string()),
                 entry: hit.callee_name.clone(),
                 unique_entry: Some(hit.unique),
@@ -626,10 +634,11 @@ impl Namer {
         let mut counters: BTreeMap<&'static str, usize> = BTreeMap::new();
         for hit in collector.hits {
             let k = counters.entry(hit.kind).or_insert(0);
-            let name = match &hit.field {
+            let display = match &hit.field {
                 Some(field) => field.clone(),
                 None => format!("{}_{}{}", base, hit.kind.to_lowercase(), *k),
             };
+            let name = format!("{display}#{}", hit.new_start);
             *k += 1;
             let is_wrapper = self.wrappers.iter().any(|w| {
                 w == &base || w.starts_with(&base) || base.starts_with(w.as_str())
@@ -653,6 +662,7 @@ impl Namer {
             self.resources.push(Resource {
                 name,
                 kind: kind.to_string(),
+                display: Some(display),
                 site: Some(hit.new_start.to_string()),
                 ..Default::default()
             });

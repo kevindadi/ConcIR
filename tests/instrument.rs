@@ -25,18 +25,21 @@ fn names_constructors_and_rewrites_imports() {
     assert!(wrapped.annotated.contains("mod cir_trace;"));
     assert!(wrapped.annotated.contains("use cir_trace::sync::{Mutex, Condvar};"));
     assert!(!wrapped.annotated.contains("use std::sync::{Arc, Mutex}"));
-    assert!(wrapped.annotated.contains(r#"Mutex::new_named("mtx_a_mutex0", ())"#));
-    assert!(wrapped.annotated.contains(r#"Mutex::new_named("mtx_b_mutex0", ())"#));
-    assert!(wrapped.annotated.contains(r#"cir_trace::spawn("w1", move ||"#));
+    assert!(wrapped.annotated.contains(r#"Mutex::new_named("mtx_a_mutex0#"#));
+    assert!(wrapped.annotated.contains(r#"Mutex::new_named("mtx_b_mutex0#"#));
+    assert!(wrapped.annotated.contains(r#"cir_trace::spawn("w1#"#));
     assert!(wrapped.annotated.contains("cir_trace::init();"));
     assert!(wrapped.annotated.contains("cir_trace::finish();"));
 
-    let names: Vec<&str> = wrapped.resources.iter().map(|r| r.name.as_str()).collect();
-    assert!(names.contains(&"mtx_a_mutex0"));
-    assert!(names.contains(&"mtx_b_mutex0"));
-    assert!(names.contains(&"w1"));
-    let spawn = wrapped.resources.iter().find(|r| r.name == "w1").unwrap();
+    // runtime names carry the construction site; display carries the CIR name.
+    let displays: Vec<&str> = wrapped.resources.iter()
+        .map(|r| r.display.as_deref().unwrap_or("")).collect();
+    assert!(displays.contains(&"mtx_a_mutex0"));
+    assert!(displays.contains(&"mtx_b_mutex0"));
+    assert!(displays.contains(&"w1"));
+    let spawn = wrapped.resources.iter().find(|r| r.display.as_deref() == Some("w1")).unwrap();
     assert_eq!(spawn.kind, "Spawn");
+    assert!(spawn.name.contains('#'));
 }
 
 #[test]
@@ -57,8 +60,8 @@ fn main() {
 }
 "#;
     let wrapped = wrap(source).expect("wrap");
-    assert!(wrapped.annotated.contains(r#"Mutex::new_named("pair_mutex0", false)"#));
-    assert!(wrapped.annotated.contains(r#"Condvar::new_named("pair_condvar0")"#));
+    assert!(wrapped.annotated.contains(r#"Mutex::new_named("pair_mutex0#"#));
+    assert!(wrapped.annotated.contains(r#"Condvar::new_named("pair_condvar0#"#));
 }
 
 #[test]
@@ -77,7 +80,7 @@ fn main() {
     let wrapped = wrap(source).expect("wrap");
     assert!(!wrapped.annotated.contains("spawnawn"));
     assert_eq!(wrapped.annotated.matches("cir_trace::spawn").count(), 2);
-    assert!(wrapped.annotated.contains(r#"cir_trace::spawn("x1","#));
+    assert!(wrapped.annotated.contains(r#"cir_trace::spawn("x1#"#));
 }
 
 #[test]
@@ -115,7 +118,7 @@ fn main() {
     let wrapped = wrap(source).expect("wrap");
     assert!(wrapped.runtime.contains("fn spawn<F, T>"));
     assert!(wrapped.runtime.contains("F: FnOnce() -> T + Send + 'static"));
-    assert!(wrapped.annotated.contains(r#"cir_trace::spawn("receiver""#));
+    assert!(wrapped.annotated.contains(r#"cir_trace::spawn("receiver#"#));
 }
 
 #[test]
@@ -151,9 +154,10 @@ fn main() {
 }
 "#;
     let wrapped = wrap(source).expect("wrap");
-    let names: Vec<&str> = wrapped.resources.iter().map(|r| r.name.as_str()).collect();
-    assert!(names.contains(&"worker"), "resources: {names:?}");
-    assert!(!names.contains(&"h"), "handle name must not be used: {names:?}");
+    let displays: Vec<&str> = wrapped.resources.iter()
+        .map(|r| r.display.as_deref().unwrap_or("")).collect();
+    assert!(displays.contains(&"worker"), "displays: {displays:?}");
+    assert!(!displays.contains(&"h"), "handle name must not be used: {displays:?}");
 }
 
 #[test]
@@ -168,7 +172,8 @@ fn main() {
 }
 "#;
     let wrapped = wrap(source).expect("wrap");
-    assert!(wrapped.annotated.contains(r#"Mutex::new_named("m", 0)"#));
-    let names: Vec<&str> = wrapped.resources.iter().map(|r| r.name.as_str()).collect();
-    assert!(names.contains(&"m"), "resources: {names:?}");
+    assert!(wrapped.annotated.contains(r#"Mutex::new_named("m#"#));
+    let displays: Vec<&str> = wrapped.resources.iter()
+        .map(|r| r.display.as_deref().unwrap_or("")).collect();
+    assert!(displays.contains(&"m"), "displays: {displays:?}");
 }
