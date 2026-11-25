@@ -36,6 +36,11 @@ pub fn statements() -> Vec<(&'static str, &'static [&'static str], &'static [&'s
         ("branch", &["cond", "then", "else"], &[]),
         ("switch", &["var", "cases", "default"], &[]),
         ("return", &[], &["value"]),
+        (
+            "seq_hole",
+            &["id"],
+            &["desc", "reads", "writes", "updates_modeled", "expected_type", "req"],
+        ),
     ]
 }
 
@@ -136,6 +141,7 @@ fn field_value(kind: &str, field: &str) -> Value {
     match (kind, field) {
         (_, "args" | "funcs") => json!(["main::f"]),
         ("switch", "cases") => json!({"A": "s2"}),
+        ("seq_hole", "id") => json!("h1"),
         (_, "target" | "then" | "else" | "default" | "dst") => json!("s2"),
         (_, "expr" | "value" | "expected" | "desired") => json!("x + 1"),
         (_, "cond") => json!("x == 1"),

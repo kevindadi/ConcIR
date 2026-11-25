@@ -617,9 +617,18 @@ fn protected_var_accesses(op: &Op, env: &NameEnv) -> Vec<String> {
     if let Some((resource, _)) = op.shared_var_access() {
         names.push(resource.to_string());
     }
-    if let Op::SeqHole { reads, writes, .. } = op {
+    if let Op::SeqHole {
+        reads,
+        writes,
+        updates_modeled,
+        ..
+    } = op
+    {
         names.extend(reads.iter().cloned());
         names.extend(writes.iter().cloned());
+        for u in updates_modeled {
+            names.push(u.target.clone());
+        }
     }
     if let Op::Switch { var, .. } = op {
         if env.get(var).is_some_and(|s| s.kind == SlotKind::Var) {

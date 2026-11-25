@@ -18,6 +18,7 @@ fn fn_named<'a>(prog: &'a Program, name: &str) -> &'a Function {
 fn stmt(sid: &str, op: Op) -> Stmt {
     Stmt {
         sid: sid.into(),
+        req: vec![],
         op,
     }
 }
@@ -38,6 +39,8 @@ fn make_linear_function() -> Function {
         params: vec![],
         returns: None,
         locals: vec![],
+        structured_body: vec![],
+        req: vec![],
         body: vec![
             stmt(
                 "s1",
@@ -75,6 +78,8 @@ fn make_branch_function() -> Function {
         params: vec![],
         returns: None,
         locals: vec![],
+        structured_body: vec![],
+        req: vec![],
         body: vec![
             stmt(
                 "s1",
@@ -121,6 +126,8 @@ fn make_loop_function() -> Function {
         params: vec![],
         returns: None,
         locals: vec![],
+        structured_body: vec![],
+        req: vec![],
         body: vec![
             stmt(
                 "s1",

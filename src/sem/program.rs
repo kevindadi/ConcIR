@@ -58,7 +58,14 @@ pub struct SemSlot {
 pub struct SemStmt {
     pub id: StatementId,
     pub sid: String,
+    pub req: Vec<String>,
     pub op: SemOp,
+}
+
+#[derive(Debug, Clone)]
+pub struct SemModeledUpdate {
+    pub target: SlotRef,
+    pub expr: LExpr,
 }
 
 #[derive(Debug, Clone)]
@@ -152,6 +159,15 @@ pub enum SemOp {
     },
     Return {
         value: Option<LExpr>,
+    },
+    SeqHole {
+        id: String,
+        desc: String,
+        reads: Vec<String>,
+        writes: Vec<String>,
+        updates_modeled: Vec<SemModeledUpdate>,
+        expected_type: String,
+        req: Vec<String>,
     },
     /// A construct outside the supported subset; carries the reason.
     Unsupported {
@@ -291,6 +307,18 @@ impl SemProgram {
 // ─────────────────────────── Lowering ───────────────────────────
 
 pub fn lower(program: &Program) -> BackendResult<SemProgram> {
+    let owned;
+    let program = if program.has_structured_bodies() {
+        let mut lowered = program.clone();
+        lowered
+            .ensure_lowered()
+            .map_err(|msg| BackendError::invalid("E011", msg))?;
+        owned = lowered;
+        &owned
+    } else {
+        program
+    };
+
     let module_names: Vec<String> = program.modules.iter().map(|m| m.name.clone()).collect();
     let mut module_ids = BTreeMap::new();
     for (i, name) in module_names.iter().enumerate() {
@@ -668,6 +696,7 @@ fn lower_function_body(
         body.push(SemStmt {
             id,
             sid: s.sid.clone(),
+            req: s.effective_req(),
             op,
         });
     }
@@ -1267,13 +1296,59 @@ fn lower_op(l: &mut Lowerer, ctx: &BodyCtx, s: &ast::Stmt) -> BackendResult<SemO
             "abstract_step",
             "opaque concurrent steps are not given semantics by the precise backend",
         ),
-        ast::Op::SeqHole { .. } => unsupported_op(
-            l,
-            ctx,
-            s,
-            "seq_hole",
-            "sequential fill sites have no defined semantics yet",
-        ),
+        ast::Op::SeqHole {
+            id,
+            desc,
+            reads,
+            writes,
+            updates_modeled,
+            expected_type,
+            req,
+        } => {
+            let mut lowered_updates = Vec::with_capacity(updates_modeled.len());
+            for u in updates_modeled {
+                let target = ctx.writable_slot(&u.target, &at)?;
+                match target {
+                    SlotRef::Local(_) => {}
+                    SlotRef::Shared(rid)
+                        if ctx.resource_kinds.get(&rid) == Some(&ResKind::Var) => {}
+                    SlotRef::Shared(_) => {
+                        return Err(BackendError::invalid(
+                            "E310",
+                            format!(
+                                "seq_hole '{}' modeled update target '{}' must be a local or shared Var",
+                                id, u.target
+                            ),
+                        )
+                        .at(&at));
+                    }
+                    SlotRef::Discard => {
+                        return Err(BackendError::invalid(
+                            "E921",
+                            format!("seq_hole '{}' modeled update target cannot be '_'", id),
+                        )
+                        .at(&at));
+                    }
+                }
+                let expr = ctx.expr(&u.expr, &at)?;
+                lowered_updates.push(SemModeledUpdate { target, expr });
+            }
+            let mut merged_req = s.req.clone();
+            for r in req {
+                if !merged_req.contains(r) {
+                    merged_req.push(r.clone());
+                }
+            }
+            SemOp::SeqHole {
+                id: id.clone(),
+                desc: desc.clone(),
+                reads: reads.clone(),
+                writes: writes.clone(),
+                updates_modeled: lowered_updates,
+                expected_type: expected_type.clone().unwrap_or_else(|| "()".to_string()),
+                req: merged_req,
+            }
+        }
     })
 }
 

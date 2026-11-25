@@ -16,7 +16,9 @@ use crate::sem::ids::{
     FrameId, FunctionId, HandleId, ResourceId, ScopeId, SlotId, SlotRef, ThreadId,
 };
 use crate::sem::outcome::Phase;
-use crate::sem::program::{ResKind, SemFunction, SemOp, SemProgram, SlotClass};
+use crate::sem::program::{
+    ResKind, SemFunction, SemModeledUpdate, SemOp, SemProgram, SlotClass,
+};
 use crate::sem::value::{default_value, Value};
 
 pub type PlaceId = u32;
@@ -302,6 +304,9 @@ pub enum NetOp {
     },
     ReturnFinal {
         value: Option<LExpr>,
+    },
+    SeqHole {
+        updates_modeled: Vec<SemModeledUpdate>,
     },
 }
 
@@ -1118,6 +1123,28 @@ fn build_stmt(b: &mut Builder, f: &SemFunction, si: usize, stmt: &crate::sem::pr
                 Binding::Control(input),
                 None,
                 Vec::new(),
+                origin,
+            );
+        }
+        SemOp::SeqHole {
+            updates_modeled, ..
+        } => {
+            let mut outputs = vec![fall];
+            for u in updates_modeled {
+                if let SlotRef::Shared(rid) = u.target {
+                    let var = b.place(PlaceKey::Var(rid));
+                    if !outputs.contains(&var) {
+                        outputs.push(var);
+                    }
+                }
+            }
+            b.add(
+                NetOp::SeqHole {
+                    updates_modeled: updates_modeled.clone(),
+                },
+                Binding::Control(input),
+                Some(fall),
+                outputs,
                 origin,
             );
         }

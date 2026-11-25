@@ -15,6 +15,21 @@ use crate::diagnostic::{Diagnostic, Severity, ValidationReport};
 /// Run all validation passes on a parsed ConcIR program, returning the full report.
 /// Order: E0xx → E1xx → E2xx → E3xx → E7xx → E4xx → E5xx → E8xx → E6xx → E9xx.
 pub fn validate(program: &Program) -> ValidationReport {
+    let owned;
+    let program = if program.has_structured_bodies() {
+        let mut lowered = program.clone();
+        if let Err(msg) = lowered.ensure_lowered() {
+            return ValidationReport {
+                valid: false,
+                diagnostics: vec![Diagnostic::error("E011", msg)],
+            };
+        }
+        owned = lowered;
+        &owned
+    } else {
+        program
+    };
+
     let mut diags = Vec::new();
 
     structure::check(program, &mut diags);
@@ -81,10 +96,22 @@ fn unused_resources(program: &Program, diags: &mut Vec<Diagnostic>) {
                     Op::CondvarNotify { condvar } | Op::CondvarNotifyAll { condvar } => {
                         note_resource(&mut used, condvar)
                     }
-                    Op::AbstractStep { reads, writes, .. }
-                    | Op::SeqHole { reads, writes, .. } => {
+                    Op::AbstractStep { reads, writes, .. } => {
                         for r in reads.iter().chain(writes.iter()) {
                             note_resource(&mut used, r);
+                        }
+                    }
+                    Op::SeqHole {
+                        reads,
+                        writes,
+                        updates_modeled,
+                        ..
+                    } => {
+                        for r in reads.iter().chain(writes.iter()) {
+                            note_resource(&mut used, r);
+                        }
+                        for u in updates_modeled {
+                            note_resource(&mut used, &u.target);
                         }
                     }
                     _ => {}
