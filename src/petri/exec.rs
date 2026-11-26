@@ -23,7 +23,7 @@ use crate::sem::value::{within_type, Value};
 use super::net::{
     build, default_locals, Binding, MutexToken, NetAlloc, NetFrame, NetFrameView, NetOp,
     NetRetAddr, NetScope, NetState, NetStore, NetThread, NetToken, PetriNet, PlaceId, PlaceKey,
-    Transition,
+    RwLockToken, Transition,
 };
 
 pub struct PetriEngine<'a> {
@@ -594,6 +594,123 @@ impl<'a> PetriEngine<'a> {
                 next.set_mutex(mtx, MutexToken::Held(thread));
                 self.put_control_next(&mut next, &token)?;
                 let _ = frame;
+            }
+            NetOp::RwLockReadGrant { resource } => {
+                let (thread, frame) = control.unwrap();
+                let rw = self.place(&PlaceKey::RwLock(*resource)).unwrap();
+                match next.read_rwlock(rw) {
+                    Some(RwLockToken::Free) => {
+                        let mut readers = BTreeSet::new();
+                        readers.insert(thread);
+                        next.set_rwlock(rw, RwLockToken::Reading(readers));
+                    }
+                    Some(RwLockToken::Reading(mut readers)) => {
+                        readers.insert(thread);
+                        next.set_rwlock(rw, RwLockToken::Reading(readers));
+                    }
+                    _ => disabled!(),
+                }
+                let out = t.next.unwrap();
+                self.place_control(&mut next, out, thread, frame);
+            }
+            NetOp::RwLockReadBlock { resource } => {
+                let (thread, frame) = control.unwrap();
+                let rw = self.place(&PlaceKey::RwLock(*resource)).unwrap();
+                if !matches!(next.read_rwlock(rw), Some(RwLockToken::Writing(_))) {
+                    disabled!();
+                }
+                let out = t.next.unwrap();
+                next.put(out, NetToken::RwLockReadWait { thread, frame });
+                self.set_blocked(&mut next, thread, PlaceKey::RwLockReadWait(*resource));
+            }
+            NetOp::RwLockWriteGrant { resource } => {
+                let (thread, frame) = control.unwrap();
+                let rw = self.place(&PlaceKey::RwLock(*resource)).unwrap();
+                if !matches!(next.read_rwlock(rw), Some(RwLockToken::Free)) {
+                    disabled!();
+                }
+                next.set_rwlock(rw, RwLockToken::Writing(thread));
+                let out = t.next.unwrap();
+                self.place_control(&mut next, out, thread, frame);
+            }
+            NetOp::RwLockWriteBlock { resource } => {
+                let (thread, frame) = control.unwrap();
+                let rw = self.place(&PlaceKey::RwLock(*resource)).unwrap();
+                if matches!(next.read_rwlock(rw), Some(RwLockToken::Free)) {
+                    disabled!();
+                }
+                let out = t.next.unwrap();
+                next.put(out, NetToken::RwLockWriteWait { thread, frame });
+                self.set_blocked(&mut next, thread, PlaceKey::RwLockWriteWait(*resource));
+            }
+            NetOp::RwLockUnlock { resource } => {
+                let (thread, frame) = control.unwrap();
+                let rw = self.place(&PlaceKey::RwLock(*resource)).unwrap();
+                match next.read_rwlock(rw) {
+                    Some(RwLockToken::Writing(owner)) if owner == thread => {
+                        next.set_rwlock(rw, RwLockToken::Free);
+                    }
+                    Some(RwLockToken::Reading(mut readers)) if readers.contains(&thread) => {
+                        readers.remove(&thread);
+                        if readers.is_empty() {
+                            next.set_rwlock(rw, RwLockToken::Free);
+                        } else {
+                            next.set_rwlock(rw, RwLockToken::Reading(readers));
+                        }
+                    }
+                    _ => {
+                        return Err(BackendError::invalid(
+                            "E510",
+                            format!("thread {thread} unlocked RwLock {resource} it does not hold"),
+                        )
+                        .at(&at))
+                    }
+                }
+                let out = t.next.unwrap();
+                self.place_control(&mut next, out, thread, frame);
+            }
+            NetOp::RwLockReadWaitAcquire { resource } => {
+                let token = match bind {
+                    FireBind::Wait(token) => token.clone(),
+                    _ => disabled!(),
+                };
+                let (thread, _frame) = (token.thread().unwrap(), token.frame().unwrap());
+                let rw = self.place(&PlaceKey::RwLock(*resource)).unwrap();
+                let next_tok = match next.read_rwlock(rw) {
+                    Some(RwLockToken::Free) => {
+                        let mut readers = BTreeSet::new();
+                        readers.insert(thread);
+                        RwLockToken::Reading(readers)
+                    }
+                    Some(RwLockToken::Reading(mut readers)) => {
+                        readers.insert(thread);
+                        RwLockToken::Reading(readers)
+                    }
+                    _ => disabled!(),
+                };
+                let rwait = self.place(&PlaceKey::RwLockReadWait(*resource)).unwrap();
+                if !next.take_token(rwait, &token) {
+                    disabled!();
+                }
+                next.set_rwlock(rw, next_tok);
+                self.put_control_next(&mut next, &token)?;
+            }
+            NetOp::RwLockWriteWaitAcquire { resource } => {
+                let token = match bind {
+                    FireBind::Wait(token) => token.clone(),
+                    _ => disabled!(),
+                };
+                let (thread, _frame) = (token.thread().unwrap(), token.frame().unwrap());
+                let rw = self.place(&PlaceKey::RwLock(*resource)).unwrap();
+                if !matches!(next.read_rwlock(rw), Some(RwLockToken::Free)) {
+                    disabled!();
+                }
+                let wwait = self.place(&PlaceKey::RwLockWriteWait(*resource)).unwrap();
+                if !next.take_token(wwait, &token) {
+                    disabled!();
+                }
+                next.set_rwlock(rw, RwLockToken::Writing(thread));
+                self.put_control_next(&mut next, &token)?;
             }
             NetOp::CondvarWait { condvar, lock } => {
                 let (thread, frame) = control.unwrap();
@@ -1523,6 +1640,15 @@ impl<'a> PetriEngine<'a> {
                         .any(|x| matches!(x, NetToken::Mutex(MutexToken::Held(h)) if *h == tid))
                 })
                 .unwrap_or(false),
+            ResKind::RwLock => self
+                .place(&PlaceKey::RwLock(r))
+                .and_then(|p| state.read_rwlock(p))
+                .map(|tok| match tok {
+                    RwLockToken::Writing(h) => h == tid,
+                    RwLockToken::Reading(rs) => rs.contains(&tid),
+                    RwLockToken::Free => false,
+                })
+                .unwrap_or(false),
             ResKind::Semaphore => self
                 .place(&PlaceKey::Semaphore(r))
                 .and_then(|p| state.read_data(p))
@@ -1568,6 +1694,7 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                     }
                 }
                 PlaceKey::Mutex(_) => state.set_mutex(place.id, MutexToken::Free),
+                PlaceKey::RwLock(_) => state.set_rwlock(place.id, RwLockToken::Free),
                 PlaceKey::Semaphore(r) => {
                     let n = self.program.resource(*r).permits;
                     state.set_data(place.id, Value::Int(n));
@@ -1763,6 +1890,26 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                         "waiting for a lock".to_string(),
                     )
                 }
+                PlaceKey::RwLockReadWait(r) | PlaceKey::RwLockWriteWait(r) => {
+                    let pid = self.place(key).unwrap();
+                    let rw = self.place(&PlaceKey::RwLock(*r));
+                    let holder = rw.and_then(|p| match state.read_rwlock(p) {
+                        Some(RwLockToken::Writing(h)) => Some(h),
+                        Some(RwLockToken::Reading(rs)) => rs.iter().next().copied(),
+                        _ => None,
+                    });
+                    (
+                        BlockKind::Lock,
+                        Some(*r),
+                        holder,
+                        state.place_tokens(pid).len(),
+                        if matches!(key, PlaceKey::RwLockReadWait(_)) {
+                            "waiting for rwlock read".to_string()
+                        } else {
+                            "waiting for rwlock write".to_string()
+                        },
+                    )
+                }
                 PlaceKey::ChannelSend(c) => (
                     BlockKind::ChannelSend,
                     Some(*c),
@@ -1857,6 +2004,10 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                 {
                     free.push(fqn(r));
                 }
+            } else if let PlaceKey::RwLock(r) = place.key {
+                if matches!(state.read_rwlock(place.id), Some(RwLockToken::Free)) {
+                    free.push(fqn(r));
+                }
             }
         }
         free.sort();
@@ -1875,6 +2026,15 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                         })
                         .unwrap_or(false)
                     {
+                        holds.push(fqn(r));
+                    }
+                } else if let PlaceKey::RwLock(r) = place.key {
+                    let held = match state.read_rwlock(place.id) {
+                        Some(RwLockToken::Writing(h)) => h == *tid,
+                        Some(RwLockToken::Reading(rs)) => rs.contains(tid),
+                        _ => false,
+                    };
+                    if held {
                         holds.push(fqn(r));
                     }
                 }
@@ -1899,6 +2059,8 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
             };
             let waiting_on = t.blocked_at.as_ref().map(|key| match key {
                 PlaceKey::LockWait(r) => DoomWait { kind: "mutex".into(), resource: Some(fqn(*r)) },
+                PlaceKey::RwLockReadWait(r) => DoomWait { kind: "rwlock_read".into(), resource: Some(fqn(*r)) },
+                PlaceKey::RwLockWriteWait(r) => DoomWait { kind: "rwlock_write".into(), resource: Some(fqn(*r)) },
                 PlaceKey::SemWait(r) => DoomWait { kind: "semaphore".into(), resource: Some(fqn(*r)) },
                 PlaceKey::ChannelSend(r) => DoomWait { kind: "channel_send".into(), resource: Some(fqn(*r)) },
                 PlaceKey::ChannelRecv(r) => DoomWait { kind: "channel_recv".into(), resource: Some(fqn(*r)) },
@@ -1971,12 +2133,22 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                 .place(&PlaceKey::Mutex(*r))
                 .and_then(|p| state.read_mutex(p))
                 .map(|m| matches!(m, MutexToken::Free))
-                .unwrap_or(false),
+                .unwrap_or_else(|| {
+                    self.place(&PlaceKey::RwLock(*r))
+                        .and_then(|p| state.read_rwlock(p))
+                        .map(|m| matches!(m, RwLockToken::Free))
+                        .unwrap_or(false)
+                }),
             Predicate::MutexHeld(r) => self
                 .place(&PlaceKey::Mutex(*r))
                 .and_then(|p| state.read_mutex(p))
                 .map(|m| matches!(m, MutexToken::Held(_)))
-                .unwrap_or(false),
+                .unwrap_or_else(|| {
+                    self.place(&PlaceKey::RwLock(*r))
+                        .and_then(|p| state.read_rwlock(p))
+                        .map(|m| matches!(m, RwLockToken::Reading(_) | RwLockToken::Writing(_)))
+                        .unwrap_or(false)
+                }),
             Predicate::ChannelEmpty(r) => self
                 .place(&PlaceKey::Channel(*r))
                 .and_then(|p| state.read_data(p))
@@ -2004,7 +2176,7 @@ impl<'a> TransitionSystem for PetriEngine<'a> {
                 })
             }
             Predicate::MutexExclusive(r) => match self.program.resource(*r).kind {
-                crate::sem::program::ResKind::Mutex => true,
+                crate::sem::program::ResKind::Mutex | crate::sem::program::ResKind::RwLock => true,
                 crate::sem::program::ResKind::Semaphore => self
                     .place(&PlaceKey::Semaphore(*r))
                     .and_then(|p| state.read_data(p))
@@ -2206,7 +2378,16 @@ fn render_token(
         NetToken::Data(v) => format!("D({})", enc(v)),
         NetToken::Mutex(MutexToken::Free) => "M(free)".into(),
         NetToken::Mutex(MutexToken::Held(t)) => format!("M(held:{})", tname(*t)),
+        NetToken::RwLock(RwLockToken::Free) => "RW(free)".into(),
+        NetToken::RwLock(RwLockToken::Writing(t)) => format!("RW(write:{})", tname(*t)),
+        NetToken::RwLock(RwLockToken::Reading(rs)) => {
+            let mut names: Vec<String> = rs.iter().map(|t| tname(*t)).collect();
+            names.sort();
+            format!("RW(read:[{}])", names.join(","))
+        }
         NetToken::LockWait { thread, .. } => format!("L({})", tname(*thread)),
+        NetToken::RwLockReadWait { thread, .. } => format!("RL({})", tname(*thread)),
+        NetToken::RwLockWriteWait { thread, .. } => format!("WL({})", tname(*thread)),
         NetToken::CondvarWait { thread, lock, .. } => {
             format!("CV({},r{})", tname(*thread), lock.0)
         }

@@ -24,6 +24,13 @@ pub enum MutexState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum RwLockState {
+    Free,
+    Reading(BTreeSet<ThreadId>),
+    Writing(ThreadId),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PendingSend {
     pub thread: ThreadId,
     pub value: Value,
@@ -66,6 +73,7 @@ pub struct Store {
     pub vars: BTreeMap<ResourceId, Value>,
     pub atomics: BTreeMap<ResourceId, Value>,
     pub mutexes: BTreeMap<ResourceId, MutexState>,
+    pub rwlocks: BTreeMap<ResourceId, RwLockState>,
     pub semaphores: BTreeMap<ResourceId, i64>,
     pub channels: BTreeMap<ResourceId, ChannelState>,
     pub condvars: BTreeMap<ResourceId, CondvarState>,
@@ -99,6 +107,8 @@ impl Store {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BlockReason {
     Lock(ResourceId),
+    RwLockRead(ResourceId),
+    RwLockWrite(ResourceId),
     ChannelSend(ResourceId),
     ChannelRecv(ResourceId),
     Condvar(ResourceId, ResourceId),
@@ -275,7 +285,9 @@ impl MachineState {
                 crate::sem::program::ResKind::Channel => {
                     self.store.channels.insert(r.id, ChannelState::default());
                 }
-                crate::sem::program::ResKind::RwLock => {}
+                crate::sem::program::ResKind::RwLock => {
+                    self.store.rwlocks.insert(r.id, RwLockState::Free);
+                }
             }
         }
     }

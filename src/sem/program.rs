@@ -25,13 +25,25 @@ pub enum ResKind {
 }
 
 #[derive(Debug, Clone)]
+pub struct SemTypeDef {
+    pub module: ModuleId,
+    pub name: String,
+    /// Fully resolved type (aliases expanded).
+    pub ty: BaseType,
+    /// Original declared AST type (preserving named type references).
+    pub raw_ty: BaseType,
+}
+
+#[derive(Debug, Clone)]
 pub struct SemResource {
     pub id: ResourceId,
     pub module: ModuleId,
     pub name: String,
     pub kind: ResKind,
-    /// Payload / value type for Var, Atomic, Channel.
+    /// Payload / value type for Var, Atomic, Channel, and optional payload for Mutex/RwLock.
     pub ty: Option<BaseType>,
+    /// Original declared AST `base` type (preserving named TypeDef references for codegen).
+    pub raw_ty: Option<BaseType>,
     pub capacity: usize,
     pub permits: i64,
     pub init: Option<Value>,
@@ -49,6 +61,8 @@ pub enum SlotClass {
 pub struct SemSlot {
     pub name: String,
     pub ty: BaseType,
+    /// Original declared AST type (preserving named TypeDef references for codegen).
+    pub raw_ty: BaseType,
     pub modeled: bool,
     pub class: SlotClass,
     pub init: Option<Value>,
@@ -101,6 +115,15 @@ pub enum SemOp {
         resource: ResourceId,
     },
     MutexUnlock {
+        resource: ResourceId,
+    },
+    RwLockRead {
+        resource: ResourceId,
+    },
+    RwLockWrite {
+        resource: ResourceId,
+    },
+    RwLockUnlock {
         resource: ResourceId,
     },
     ChannelSend {
@@ -213,6 +236,7 @@ impl SemFunction {
 #[derive(Debug, Clone)]
 pub struct SemProgram {
     module_names: Vec<String>,
+    types: Vec<SemTypeDef>,
     functions: Vec<SemFunction>,
     resources: Vec<SemResource>,
     protection: BTreeMap<ResourceId, ResourceId>,
@@ -223,6 +247,24 @@ pub struct SemProgram {
 impl SemProgram {
     pub fn module_name(&self, m: ModuleId) -> &str {
         &self.module_names[m.index()]
+    }
+
+    pub fn module_names(&self) -> &[String] {
+        &self.module_names
+    }
+
+    pub fn types(&self) -> &[SemTypeDef] {
+        &self.types
+    }
+
+    pub fn resolve_type_def(&self, from: ModuleId, name: &str) -> Option<&SemTypeDef> {
+        let (module_id, entity) = match fqn::split_fqn(name) {
+            Some((m, e)) => (self.module_id(m)?, e),
+            None => (from, name),
+        };
+        self.types
+            .iter()
+            .find(|t| t.module == module_id && t.name == entity)
     }
 
     pub fn module_id(&self, name: &str) -> Option<ModuleId> {
@@ -326,6 +368,22 @@ pub fn lower(program: &Program) -> BackendResult<SemProgram> {
     }
     let type_env = TypeEnv::from_program(program);
 
+    let mut types = Vec::new();
+    for (mi, m) in program.modules.iter().enumerate() {
+        let mid = ModuleId(mi as u32);
+        for t in &m.types {
+            let resolved = type_env
+                .resolve(&m.name, &t.ty)
+                .unwrap_or_else(|| t.ty.clone());
+            types.push(SemTypeDef {
+                module: mid,
+                name: t.name.clone(),
+                ty: resolved,
+                raw_ty: t.ty.clone(),
+            });
+        }
+    }
+
     let mut lowerer = Lowerer {
         module_names,
         module_ids,
@@ -409,6 +467,7 @@ pub fn lower(program: &Program) -> BackendResult<SemProgram> {
 
     Ok(SemProgram {
         module_names: lowerer.module_names,
+        types,
         functions: lowerer.functions,
         resources: lowerer.resources,
         protection,
@@ -512,6 +571,10 @@ fn lower_resource(
                     .unwrap_or_else(|| base.clone()),
             )
         }
+        ResKind::Mutex | ResKind::RwLock => r.base.as_ref().map(|base| {
+            tenv.resolve(module_name, base)
+                .unwrap_or_else(|| base.clone())
+        }),
         _ => None,
     };
     let mut init = None;
@@ -538,6 +601,7 @@ fn lower_resource(
         name: r.name.clone(),
         kind,
         ty,
+        raw_ty: r.base.clone(),
         capacity,
         permits,
         init,
@@ -593,6 +657,7 @@ fn lower_function_body(
         slots.push(SemSlot {
             name: p.name.clone(),
             ty,
+            raw_ty: p.param_type.clone(),
             modeled: p.modeled,
             class: SlotClass::Param,
             init: None,
@@ -615,6 +680,7 @@ fn lower_function_body(
         slots.push(SemSlot {
             name: local.name.clone(),
             ty,
+            raw_ty: local.local_type.clone(),
             modeled: local.modeled,
             class: SlotClass::Local,
             init,
@@ -630,6 +696,7 @@ fn lower_function_body(
         SemSlot {
             name: ret.name.clone(),
             ty,
+            raw_ty: ret.param_type.clone(),
             modeled: ret.modeled,
             class: SlotClass::Return,
             init: None,
@@ -1273,14 +1340,38 @@ fn lower_op(l: &mut Lowerer, ctx: &BodyCtx, s: &ast::Stmt) -> BackendResult<SemO
                 None => None,
             },
         },
-        ast::Op::RwLockRead { .. } | ast::Op::RwLockWrite { .. } | ast::Op::RwLockUnlock { .. } => {
-            unsupported_op(
-                l,
-                ctx,
-                s,
-                "rwlock",
-                "RwLock operations are not supported in v1",
-            )
+        ast::Op::RwLockRead { resource } => {
+            let r = ctx.resource(resource, &at)?;
+            if ctx.resource_kinds.get(&r) != Some(&ResKind::RwLock) {
+                return Err(BackendError::invalid(
+                    "E301",
+                    format!("rwlock_read requires an RwLock, found '{resource}'"),
+                )
+                .at(&at));
+            }
+            SemOp::RwLockRead { resource: r }
+        }
+        ast::Op::RwLockWrite { resource } => {
+            let r = ctx.resource(resource, &at)?;
+            if ctx.resource_kinds.get(&r) != Some(&ResKind::RwLock) {
+                return Err(BackendError::invalid(
+                    "E301",
+                    format!("rwlock_write requires an RwLock, found '{resource}'"),
+                )
+                .at(&at));
+            }
+            SemOp::RwLockWrite { resource: r }
+        }
+        ast::Op::RwLockUnlock { resource } => {
+            let r = ctx.resource(resource, &at)?;
+            if ctx.resource_kinds.get(&r) != Some(&ResKind::RwLock) {
+                return Err(BackendError::invalid(
+                    "E301",
+                    format!("rwlock_unlock requires an RwLock, found '{resource}'"),
+                )
+                .at(&at));
+            }
+            SemOp::RwLockUnlock { resource: r }
         }
         ast::Op::Select { .. } => {
             unsupported_op(l, ctx, s, "select", "select is not supported in v1")

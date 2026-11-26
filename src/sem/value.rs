@@ -254,6 +254,7 @@ pub fn within_type(v: &Value, ty: &BaseType) -> bool {
                 }
                 _ => false,
             },
+            ComplexBaseType::Hole { .. } => true,
         },
     }
 }
@@ -284,6 +285,7 @@ pub fn default_value(ty: &BaseType) -> Value {
                     .collect(),
             ),
             ComplexBaseType::BoundedInt { lo, hi } => Value::Int(0i64.clamp(*lo, *hi)),
+            ComplexBaseType::Hole { .. } => Value::Struct(BTreeMap::new()),
         },
     }
 }
@@ -359,6 +361,7 @@ pub fn from_json(json: &Json, ty: &BaseType) -> Result<Value, String> {
                 }
                 Ok(Value::Array(out))
             }
+            ComplexBaseType::Hole { .. } => Ok(Value::Struct(BTreeMap::new())),
         },
     }
 }

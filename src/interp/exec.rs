@@ -23,8 +23,8 @@ use crate::sem::system::{
 use crate::sem::value::{within_type, Value};
 
 use super::state::{
-    BlockReason, FrameView, MachineState, MutexState, PendingSend, RetAddr, ScopeState,
-    ThreadState, ThreadStatus,
+    BlockReason, FrameView, MachineState, MutexState, PendingSend, RetAddr, RwLockState,
+    ScopeState, ThreadState, ThreadStatus,
 };
 
 pub struct Interpreter<'a> {
@@ -173,6 +173,11 @@ impl<'a> Interpreter<'a> {
             ResKind::Mutex => {
                 matches!(state.store.mutexes.get(&r), Some(MutexState::Held(h)) if *h == tid)
             }
+            ResKind::RwLock => match state.store.rwlocks.get(&r) {
+                Some(RwLockState::Reading(readers)) => readers.contains(&tid),
+                Some(RwLockState::Writing(w)) => *w == tid,
+                _ => false,
+            },
             ResKind::Semaphore => {
                 state.store.semaphores.get(&r).copied().unwrap_or(0)
                     < self.program.resource(r).permits
@@ -531,6 +536,60 @@ impl<'a> Interpreter<'a> {
                 next.store.mutexes.insert(resource, MutexState::Free);
                 next.advance(tid);
             }
+            SemOp::RwLockRead { resource } => match next.store.rwlocks.get(&resource).cloned() {
+                Some(RwLockState::Free) => {
+                    let mut readers = std::collections::BTreeSet::new();
+                    readers.insert(tid);
+                    next.store
+                        .rwlocks
+                        .insert(resource, RwLockState::Reading(readers));
+                    next.advance(tid);
+                }
+                Some(RwLockState::Reading(mut readers)) => {
+                    readers.insert(tid);
+                    next.store
+                        .rwlocks
+                        .insert(resource, RwLockState::Reading(readers));
+                    next.advance(tid);
+                }
+                _ => {
+                    next.block(tid, BlockReason::RwLockRead(resource));
+                }
+            },
+            SemOp::RwLockWrite { resource } => {
+                if matches!(next.store.rwlocks.get(&resource), Some(RwLockState::Free)) {
+                    next.store
+                        .rwlocks
+                        .insert(resource, RwLockState::Writing(tid));
+                    next.advance(tid);
+                } else {
+                    next.block(tid, BlockReason::RwLockWrite(resource));
+                }
+            }
+            SemOp::RwLockUnlock { resource } => match next.store.rwlocks.get(&resource).cloned() {
+                Some(RwLockState::Writing(owner)) if owner == tid => {
+                    next.store.rwlocks.insert(resource, RwLockState::Free);
+                    next.advance(tid);
+                }
+                Some(RwLockState::Reading(mut readers)) if readers.contains(&tid) => {
+                    readers.remove(&tid);
+                    if readers.is_empty() {
+                        next.store.rwlocks.insert(resource, RwLockState::Free);
+                    } else {
+                        next.store
+                            .rwlocks
+                            .insert(resource, RwLockState::Reading(readers));
+                    }
+                    next.advance(tid);
+                }
+                _ => {
+                    return Err(BackendError::invalid(
+                        "E510",
+                        format!("thread {tid} unlocked RwLock {resource} it does not hold"),
+                    )
+                    .at(&at))
+                }
+            },
             SemOp::ChannelSend { channel, value } => {
                 let v = self.eval(&next, fid, &value, &at)?;
                 let base_ty = self.program.resource(channel).ty.clone();
@@ -1045,6 +1104,30 @@ impl<'a> Interpreter<'a> {
                 next.set_runnable(tid);
                 next.advance(tid);
             }
+            BlockReason::RwLockRead(r) => match next.store.rwlocks.get(r).cloned() {
+                Some(RwLockState::Free) => {
+                    let mut readers = std::collections::BTreeSet::new();
+                    readers.insert(tid);
+                    next.store.rwlocks.insert(*r, RwLockState::Reading(readers));
+                    next.set_runnable(tid);
+                    next.advance(tid);
+                }
+                Some(RwLockState::Reading(mut readers)) => {
+                    readers.insert(tid);
+                    next.store.rwlocks.insert(*r, RwLockState::Reading(readers));
+                    next.set_runnable(tid);
+                    next.advance(tid);
+                }
+                _ => return Ok(Vec::new()),
+            },
+            BlockReason::RwLockWrite(r) => {
+                if !matches!(next.store.rwlocks.get(r), Some(RwLockState::Free)) {
+                    return Ok(Vec::new());
+                }
+                next.store.rwlocks.insert(*r, RwLockState::Writing(tid));
+                next.set_runnable(tid);
+                next.advance(tid);
+            }
             BlockReason::Semaphore(r) => {
                 let need = next
                     .sem_waiters
@@ -1268,6 +1351,31 @@ impl<'a> TransitionSystem for Interpreter<'a> {
                         waiting: count_lock(r),
                         detail: "waiting for mutex".into(),
                     },
+                    BlockReason::RwLockRead(r) => BlockedRecord {
+                        thread: t.id,
+                        kind: BlockKind::Lock,
+                        resource: Some(*r),
+                        resource_name: Some(self.rname(*r)),
+                        holder: match state.store.rwlocks.get(r) {
+                            Some(RwLockState::Writing(h)) => Some(*h),
+                            _ => None,
+                        },
+                        waiting: 1,
+                        detail: "waiting for rwlock read".into(),
+                    },
+                    BlockReason::RwLockWrite(r) => BlockedRecord {
+                        thread: t.id,
+                        kind: BlockKind::Lock,
+                        resource: Some(*r),
+                        resource_name: Some(self.rname(*r)),
+                        holder: match state.store.rwlocks.get(r) {
+                            Some(RwLockState::Writing(h)) => Some(*h),
+                            Some(RwLockState::Reading(rs)) => rs.iter().next().copied(),
+                            _ => None,
+                        },
+                        waiting: 1,
+                        detail: "waiting for rwlock write".into(),
+                    },
                     BlockReason::ChannelSend(c) => BlockedRecord {
                         thread: t.id,
                         kind: BlockKind::ChannelSend,
@@ -1379,16 +1487,32 @@ impl<'a> TransitionSystem for Interpreter<'a> {
             .filter(|(_, m)| matches!(m, MutexState::Free))
             .map(|(r, _)| self.rname(*r))
             .collect();
+        for (r, rw) in &state.store.rwlocks {
+            if matches!(rw, RwLockState::Free) {
+                free.push(self.rname(*r));
+            }
+        }
         free.sort();
         let mut threads = Vec::new();
         for t in state.threads.values() {
-            let holds: Vec<String> = state
+            let mut holds: Vec<String> = state
                 .store
                 .mutexes
                 .iter()
                 .filter(|(_, m)| matches!(m, MutexState::Held(h) if *h == t.id))
                 .map(|(r, _)| self.rname(*r))
                 .collect();
+            for (r, rw) in &state.store.rwlocks {
+                let held = match rw {
+                    RwLockState::Writing(h) => *h == t.id,
+                    RwLockState::Reading(rs) => rs.contains(&t.id),
+                    RwLockState::Free => false,
+                };
+                if held {
+                    holds.push(self.rname(*r));
+                }
+            }
+            holds.sort();
             let (function, at_sid) = match t.current_frame() {
                 Some(fid) => {
                     let f = state.frame(fid);
@@ -1409,6 +1533,8 @@ impl<'a> TransitionSystem for Interpreter<'a> {
             let waiting_on = match &t.status {
                 ThreadStatus::Blocked(reason) => Some(match reason {
                     BlockReason::Lock(r) => DoomWait { kind: "mutex".into(), resource: Some(self.rname(*r)) },
+                    BlockReason::RwLockRead(r) => DoomWait { kind: "rwlock_read".into(), resource: Some(self.rname(*r)) },
+                    BlockReason::RwLockWrite(r) => DoomWait { kind: "rwlock_write".into(), resource: Some(self.rname(*r)) },
                     BlockReason::Semaphore(r) => DoomWait { kind: "semaphore".into(), resource: Some(self.rname(*r)) },
                     BlockReason::Condvar(cv, _) => DoomWait { kind: "condvar".into(), resource: Some(self.rname(*cv)) },
                     BlockReason::ChannelSend(c) => DoomWait { kind: "channel_send".into(), resource: Some(self.rname(*c)) },
@@ -1461,9 +1587,14 @@ impl<'a> TransitionSystem for Interpreter<'a> {
             Predicate::StatementReached { func, sid } => state.reached.contains(&(*func, *sid)),
             Predicate::MutexFree(r) => {
                 matches!(state.store.mutexes.get(r), Some(MutexState::Free))
+                    || matches!(state.store.rwlocks.get(r), Some(RwLockState::Free))
             }
             Predicate::MutexHeld(r) => {
                 matches!(state.store.mutexes.get(r), Some(MutexState::Held(_)))
+                    || matches!(
+                        state.store.rwlocks.get(r),
+                        Some(RwLockState::Reading(_) | RwLockState::Writing(_))
+                    )
             }
             Predicate::ChannelEmpty(r) => state
                 .store
@@ -1489,7 +1620,7 @@ impl<'a> TransitionSystem for Interpreter<'a> {
                 executes && resources.iter().all(|r| self.thread_holds(state, t.id, *r))
             }),
             Predicate::MutexExclusive(r) => match self.program.resource(*r).kind {
-                crate::sem::program::ResKind::Mutex => true,
+                crate::sem::program::ResKind::Mutex | crate::sem::program::ResKind::RwLock => true,
                 crate::sem::program::ResKind::Semaphore => {
                     state.store.semaphores.get(r).copied().unwrap_or(0) >= 0
                 }
@@ -1593,6 +1724,18 @@ fn render_state(
             MutexState::Held(t) => format!("held({})", tname(*t)),
         };
         out.push_str(&format!("  mutex r{}={}\n", r.0, s));
+    }
+    for (r, rw) in &state.store.rwlocks {
+        let s = match rw {
+            RwLockState::Free => "free".to_string(),
+            RwLockState::Writing(t) => format!("write({})", tname(*t)),
+            RwLockState::Reading(rs) => {
+                let mut names: Vec<String> = rs.iter().map(|t| tname(*t)).collect();
+                names.sort();
+                format!("read([{}])", names.join(","))
+            }
+        };
+        out.push_str(&format!("  rwlock r{}={}\n", r.0, s));
     }
     for (r, n) in &state.store.semaphores {
         out.push_str(&format!("  sem r{}={}\n", r.0, n));
@@ -1722,6 +1865,8 @@ fn block_reason_text(
 ) -> String {
     match b {
         BlockReason::Lock(r) => format!("lock:{}", r.0),
+        BlockReason::RwLockRead(r) => format!("rwread:{}", r.0),
+        BlockReason::RwLockWrite(r) => format!("rwwrite:{}", r.0),
         BlockReason::ChannelSend(r) => format!("send:{}", r.0),
         BlockReason::ChannelRecv(r) => format!("recv:{}", r.0),
         BlockReason::Condvar(cv, lk) => format!("condvar:{}:{}", cv.0, lk.0),

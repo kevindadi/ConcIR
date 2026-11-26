@@ -173,7 +173,7 @@ pub struct Module {
 #[serde(deny_unknown_fields)]
 pub struct TypeDef {
     pub name: String,
-    #[serde(rename = "type")]
+    #[serde(rename = "type", alias = "ty")]
     pub ty: BaseType,
 }
 
@@ -224,6 +224,22 @@ pub enum ComplexBaseType {
         lo: i64,
         hi: i64,
     },
+    /// Opaque sequential domain-data type hole (`{"Hole": {"description": ..., "req": [...]}}`
+    /// or `{"Hole": "description"}`). Lowered to a compilable placeholder struct in
+    /// `src/domain.rs` and filled in Stage 3 without introducing concurrency primitives.
+    Hole {
+        description: Option<String>,
+        req: Vec<String>,
+    },
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RawTypeHole {
+    #[serde(default, alias = "desc", skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    req: Vec<String>,
 }
 
 impl Serialize for ComplexBaseType {
@@ -235,6 +251,13 @@ impl Serialize for ComplexBaseType {
             ComplexBaseType::Struct(fields) => map.serialize_entry("Struct", fields)?,
             ComplexBaseType::Array(def) => map.serialize_entry("Array", def)?,
             ComplexBaseType::BoundedInt { lo, hi } => map.serialize_entry("Int", &(*lo, *hi))?,
+            ComplexBaseType::Hole { description, req } => map.serialize_entry(
+                "Hole",
+                &RawTypeHole {
+                    description: description.clone(),
+                    req: req.clone(),
+                },
+            )?,
         }
         map.end()
     }
@@ -275,6 +298,27 @@ impl<'de> Deserialize<'de> for ComplexBaseType {
                     hi: bounds[1],
                 })
             }
+            "Hole" => match val {
+                serde_json::Value::String(s) => Ok(ComplexBaseType::Hole {
+                    description: Some(s.clone()),
+                    req: Vec::new(),
+                }),
+                serde_json::Value::Null => Ok(ComplexBaseType::Hole {
+                    description: None,
+                    req: Vec::new(),
+                }),
+                serde_json::Value::Object(_) => {
+                    let raw: RawTypeHole =
+                        serde_json::from_value(val.clone()).map_err(de::Error::custom)?;
+                    Ok(ComplexBaseType::Hole {
+                        description: raw.description,
+                        req: raw.req,
+                    })
+                }
+                _ => Err(de::Error::custom(
+                    "Hole type must be an object {\"description\": ..., \"req\": [...]} or a string",
+                )),
+            },
             other => Err(de::Error::custom(format!(
                 "unknown complex base type key: \"{other}\""
             ))),
@@ -329,6 +373,10 @@ impl fmt::Display for BaseType {
             BaseType::Complex(ComplexBaseType::BoundedInt { lo, hi }) => {
                 write!(f, "Int{{{lo}..={hi}}}")
             }
+            BaseType::Complex(ComplexBaseType::Hole { description, .. }) => match description {
+                Some(d) => write!(f, "Hole({d})"),
+                None => write!(f, "Hole"),
+            },
         }
     }
 }

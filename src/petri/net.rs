@@ -34,6 +34,7 @@ pub enum PlaceKey {
     Var(ResourceId),
     Atomic(ResourceId),
     Mutex(ResourceId),
+    RwLock(ResourceId),
     Semaphore(ResourceId),
     /// Single colored token holding the buffered message queue.
     Channel(ResourceId),
@@ -41,6 +42,8 @@ pub enum PlaceKey {
     ChannelRecv(ResourceId),
     Condvar(ResourceId),
     LockWait(ResourceId),
+    RwLockReadWait(ResourceId),
+    RwLockWriteWait(ResourceId),
     SemWait(ResourceId),
     JoinWait {
         function: FunctionId,
@@ -60,7 +63,16 @@ pub enum NetToken {
     },
     Data(Value),
     Mutex(MutexToken),
+    RwLock(RwLockToken),
     LockWait {
+        thread: ThreadId,
+        frame: FrameId,
+    },
+    RwLockReadWait {
+        thread: ThreadId,
+        frame: FrameId,
+    },
+    RwLockWriteWait {
         thread: ThreadId,
         frame: FrameId,
     },
@@ -102,6 +114,8 @@ impl NetToken {
         Some(match self {
             NetToken::Control { thread, .. }
             | NetToken::LockWait { thread, .. }
+            | NetToken::RwLockReadWait { thread, .. }
+            | NetToken::RwLockWriteWait { thread, .. }
             | NetToken::CondvarWait { thread, .. }
             | NetToken::SendWait { thread, .. }
             | NetToken::RecvWait { thread, .. }
@@ -116,6 +130,8 @@ impl NetToken {
         Some(match self {
             NetToken::Control { frame, .. }
             | NetToken::LockWait { frame, .. }
+            | NetToken::RwLockReadWait { frame, .. }
+            | NetToken::RwLockWriteWait { frame, .. }
             | NetToken::CondvarWait { frame, .. }
             | NetToken::SendWait { frame, .. }
             | NetToken::RecvWait { frame, .. }
@@ -131,6 +147,13 @@ impl NetToken {
 pub enum MutexToken {
     Free,
     Held(ThreadId),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum RwLockToken {
+    Free,
+    Reading(BTreeSet<ThreadId>),
+    Writing(ThreadId),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -194,6 +217,27 @@ pub enum NetOp {
         resource: ResourceId,
     },
     LockWaitAcquire {
+        resource: ResourceId,
+    },
+    RwLockReadGrant {
+        resource: ResourceId,
+    },
+    RwLockReadBlock {
+        resource: ResourceId,
+    },
+    RwLockWriteGrant {
+        resource: ResourceId,
+    },
+    RwLockWriteBlock {
+        resource: ResourceId,
+    },
+    RwLockUnlock {
+        resource: ResourceId,
+    },
+    RwLockReadWaitAcquire {
+        resource: ResourceId,
+    },
+    RwLockWriteWaitAcquire {
         resource: ResourceId,
     },
     CondvarWait {
@@ -478,6 +522,17 @@ impl NetState {
     pub fn set_mutex(&mut self, pid: PlaceId, m: MutexToken) {
         self.set_single(pid, NetToken::Mutex(m));
     }
+
+    pub fn read_rwlock(&self, pid: PlaceId) -> Option<RwLockToken> {
+        match self.single(pid) {
+            Some(NetToken::RwLock(m)) => Some(m.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn set_rwlock(&mut self, pid: PlaceId, m: RwLockToken) {
+        self.set_single(pid, NetToken::RwLock(m));
+    }
 }
 
 // ───────────────────────────── Build ─────────────────────────────
@@ -598,6 +653,35 @@ pub fn build(program: &SemProgram) -> PetriNet {
                     Binding::Wait(lw),
                     None,
                     vec![mtx],
+                    crate::sem::outcome::TransitionOrigin {
+                        module: program.resource(rid).module,
+                        function: program.entry(),
+                        sid: None,
+                        phase: Phase::Reacquire,
+                    },
+                );
+            }
+            ResKind::RwLock => {
+                let rw = b.place(PlaceKey::RwLock(rid));
+                let rwait = b.place(PlaceKey::RwLockReadWait(rid));
+                let wwait = b.place(PlaceKey::RwLockWriteWait(rid));
+                b.add(
+                    NetOp::RwLockReadWaitAcquire { resource: rid },
+                    Binding::Wait(rwait),
+                    None,
+                    vec![rw],
+                    crate::sem::outcome::TransitionOrigin {
+                        module: program.resource(rid).module,
+                        function: program.entry(),
+                        sid: None,
+                        phase: Phase::Reacquire,
+                    },
+                );
+                b.add(
+                    NetOp::RwLockWriteWaitAcquire { resource: rid },
+                    Binding::Wait(wwait),
+                    None,
+                    vec![rw],
                     crate::sem::outcome::TransitionOrigin {
                         module: program.resource(rid).module,
                         function: program.entry(),
@@ -796,6 +880,62 @@ fn build_stmt(b: &mut Builder, f: &SemFunction, si: usize, stmt: &crate::sem::pr
                 Binding::Control(input),
                 Some(fall),
                 vec![fall, mtx],
+                origin,
+            );
+        }
+        SemOp::RwLockRead { resource } => {
+            let rw = b.place(PlaceKey::RwLock(*resource));
+            let rwait = b.place(PlaceKey::RwLockReadWait(*resource));
+            b.add(
+                NetOp::RwLockReadGrant {
+                    resource: *resource,
+                },
+                Binding::Control(input),
+                Some(fall),
+                vec![fall, rw],
+                origin.clone(),
+            );
+            b.add(
+                NetOp::RwLockReadBlock {
+                    resource: *resource,
+                },
+                Binding::Control(input),
+                Some(rwait),
+                vec![rwait, rw],
+                origin,
+            );
+        }
+        SemOp::RwLockWrite { resource } => {
+            let rw = b.place(PlaceKey::RwLock(*resource));
+            let wwait = b.place(PlaceKey::RwLockWriteWait(*resource));
+            b.add(
+                NetOp::RwLockWriteGrant {
+                    resource: *resource,
+                },
+                Binding::Control(input),
+                Some(fall),
+                vec![fall, rw],
+                origin.clone(),
+            );
+            b.add(
+                NetOp::RwLockWriteBlock {
+                    resource: *resource,
+                },
+                Binding::Control(input),
+                Some(wwait),
+                vec![wwait, rw],
+                origin,
+            );
+        }
+        SemOp::RwLockUnlock { resource } => {
+            let rw = b.place(PlaceKey::RwLock(*resource));
+            b.add(
+                NetOp::RwLockUnlock {
+                    resource: *resource,
+                },
+                Binding::Control(input),
+                Some(fall),
+                vec![fall, rw],
                 origin,
             );
         }

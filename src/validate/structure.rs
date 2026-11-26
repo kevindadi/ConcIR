@@ -166,8 +166,15 @@ fn check_var_resource(
         );
     }
 
-    // E001: init is required
-    if r.init.is_none() {
+    // E001: init is required (except for opaque TypeHole base types, which default to Default::default())
+    let is_hole_base = r.base.as_ref().is_some_and(|b| {
+        let resolved = tenv.resolve(module, b);
+        matches!(
+            resolved.as_ref().unwrap_or(b),
+            BaseType::Complex(ComplexBaseType::Hole { .. })
+        )
+    });
+    if r.init.is_none() && !is_hole_base {
         diags.push(
             Diagnostic::error(
                 "E001",
@@ -219,6 +226,7 @@ fn check_init_type_match(
             Some(v) => v < *lo || v > *hi,
             None => true,
         },
+        BaseType::Complex(ComplexBaseType::Hole { .. }) => false,
     };
 
     if mismatch {
