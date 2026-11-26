@@ -3,12 +3,17 @@
 //! modified by a candidate patch.
 
 use serde::{Deserialize, Serialize};
+use unipn::analysis::temporal::{
+    explain_ctl, explain_ltl, CtlFormula, FairnessConstraint, LtlFormula,
+};
 
 use crate::expr::CmpOp;
 use crate::sem::ids::{FunctionId, ResourceId};
 use crate::sem::program::{ResKind, SemProgram};
 use crate::sem::system::Predicate;
 use crate::sem::value::{from_json, Value};
+
+pub const CONTRACT_EXPLANATION_SCHEMA: &str = "concir-contract-explanation/1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Assumptions {
@@ -107,15 +112,56 @@ pub enum PropertySpec {
     Safety {
         id: String,
         invariant: PredicateSpec,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        req: Vec<String>,
     },
     /// No reachable deadlock state.
-    DeadlockFree { id: String },
+    DeadlockFree {
+        id: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        req: Vec<String>,
+    },
     /// Some reachable state satisfies `goal` (EF).
-    Reachability { id: String, goal: PredicateSpec },
+    Reachability {
+        id: String,
+        goal: PredicateSpec,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        req: Vec<String>,
+    },
     /// Every reachable state can still reach `goal` (AG EF).
-    AlwaysReachable { id: String, goal: PredicateSpec },
+    AlwaysReachable {
+        id: String,
+        goal: PredicateSpec,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        req: Vec<String>,
+    },
     /// No reachable state satisfies `bad`.
-    Unreachable { id: String, bad: PredicateSpec },
+    Unreachable {
+        id: String,
+        bad: PredicateSpec,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        req: Vec<String>,
+    },
+    /// Full CTL temporal formula evaluated via `unipn::analysis::temporal::check_ctl_graph`.
+    Ctl {
+        id: String,
+        formula: CtlFormula<PredicateSpec>,
+        #[serde(default)]
+        non_vacuous: bool,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        req: Vec<String>,
+    },
+    /// Full LTL temporal formula (with optional fairness) evaluated via `unipn::analysis::temporal::check_ltl_graph`.
+    Ltl {
+        id: String,
+        formula: LtlFormula<PredicateSpec>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        fairness: Vec<FairnessConstraint<PredicateSpec>>,
+        #[serde(default)]
+        non_vacuous: bool,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        req: Vec<String>,
+    },
 }
 
 /// An observable behaviour a patch must preserve.
@@ -126,11 +172,15 @@ pub enum PreservedSpec {
     Reachable {
         description: String,
         goal: PredicateSpec,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        req: Vec<String>,
     },
     /// `invariant` must remain true in every reachable state.
     Always {
         description: String,
         invariant: PredicateSpec,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        req: Vec<String>,
     },
 }
 
@@ -210,11 +260,30 @@ pub struct PropertySpecResolved {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Property {
-    Safety { invariant: Predicate },
+    Safety {
+        invariant: Predicate,
+    },
     DeadlockFree,
-    Reachability { goal: Predicate },
-    AlwaysReachable { goal: Predicate },
-    Unreachable { bad: Predicate },
+    Reachability {
+        goal: Predicate,
+    },
+    AlwaysReachable {
+        goal: Predicate,
+    },
+    Unreachable {
+        bad: Predicate,
+    },
+    Ctl {
+        formula: CtlFormula<Predicate>,
+        non_vacuous: bool,
+        explanation: String,
+    },
+    Ltl {
+        formula: LtlFormula<Predicate>,
+        fairness: Vec<FairnessConstraint<Predicate>>,
+        non_vacuous: bool,
+        explanation: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -265,6 +334,53 @@ impl VerificationContract {
     }
 }
 
+fn collect_ctl_predicates<'a>(f: &'a CtlFormula<Predicate>, out: &mut Vec<&'a Predicate>) {
+    match f {
+        CtlFormula::True | CtlFormula::False => {}
+        CtlFormula::Atom { atom } => out.push(atom),
+        CtlFormula::Not { arg }
+        | CtlFormula::Ex { arg }
+        | CtlFormula::Ax { arg }
+        | CtlFormula::Ef { arg }
+        | CtlFormula::Af { arg }
+        | CtlFormula::Eg { arg }
+        | CtlFormula::Ag { arg } => collect_ctl_predicates(arg, out),
+        CtlFormula::And { args } | CtlFormula::Or { args } => {
+            for a in args {
+                collect_ctl_predicates(a, out);
+            }
+        }
+        CtlFormula::Implies { lhs, rhs }
+        | CtlFormula::Eu { lhs, rhs }
+        | CtlFormula::Au { lhs, rhs } => {
+            collect_ctl_predicates(lhs, out);
+            collect_ctl_predicates(rhs, out);
+        }
+    }
+}
+
+fn collect_ltl_predicates<'a>(f: &'a LtlFormula<Predicate>, out: &mut Vec<&'a Predicate>) {
+    match f {
+        LtlFormula::True | LtlFormula::False => {}
+        LtlFormula::Atom { atom } => out.push(atom),
+        LtlFormula::Not { arg }
+        | LtlFormula::Next { arg }
+        | LtlFormula::Eventually { arg }
+        | LtlFormula::Always { arg } => collect_ltl_predicates(arg, out),
+        LtlFormula::And { args } | LtlFormula::Or { args } => {
+            for a in args {
+                collect_ltl_predicates(a, out);
+            }
+        }
+        LtlFormula::Implies { lhs, rhs }
+        | LtlFormula::Until { lhs, rhs }
+        | LtlFormula::Release { lhs, rhs } => {
+            collect_ltl_predicates(lhs, out);
+            collect_ltl_predicates(rhs, out);
+        }
+    }
+}
+
 fn collect_property_predicates<'a>(p: &'a Property, out: &mut Vec<&'a Predicate>) {
     match p {
         Property::Safety { invariant } | Property::Unreachable { bad: invariant } => {
@@ -272,6 +388,21 @@ fn collect_property_predicates<'a>(p: &'a Property, out: &mut Vec<&'a Predicate>
         }
         Property::Reachability { goal } | Property::AlwaysReachable { goal } => out.push(goal),
         Property::DeadlockFree => {}
+        Property::Ctl { formula, .. } => collect_ctl_predicates(formula, out),
+        Property::Ltl {
+            formula, fairness, ..
+        } => {
+            collect_ltl_predicates(formula, out);
+            for fc in fairness {
+                match fc {
+                    FairnessConstraint::Justice { atom } => out.push(atom),
+                    FairnessConstraint::Compassion { enabled, taken } => {
+                        out.push(enabled);
+                        out.push(taken);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -373,27 +504,67 @@ impl ContractSpec {
                     .map_err(ContractError::Invalid)
             };
             let (id, property) = match p {
-                PropertySpec::Safety { id, invariant } => (
+                PropertySpec::Safety { id, invariant, .. } => (
                     id.clone(),
                     Property::Safety {
                         invariant: resolve(invariant)?,
                     },
                 ),
-                PropertySpec::DeadlockFree { id } => (id.clone(), Property::DeadlockFree),
-                PropertySpec::Reachability { id, goal } => (
+                PropertySpec::DeadlockFree { id, .. } => (id.clone(), Property::DeadlockFree),
+                PropertySpec::Reachability { id, goal, .. } => (
                     id.clone(),
                     Property::Reachability {
                         goal: resolve(goal)?,
                     },
                 ),
-                PropertySpec::AlwaysReachable { id, goal } => (
+                PropertySpec::AlwaysReachable { id, goal, .. } => (
                     id.clone(),
                     Property::AlwaysReachable {
                         goal: resolve(goal)?,
                     },
                 ),
-                PropertySpec::Unreachable { id, bad } => {
+                PropertySpec::Unreachable { id, bad, .. } => {
                     (id.clone(), Property::Unreachable { bad: resolve(bad)? })
+                }
+                PropertySpec::Ctl {
+                    id,
+                    formula,
+                    non_vacuous,
+                    ..
+                } => {
+                    let resolved = resolve_ctl(formula, &resolve)?;
+                    let explanation = explain_ctl(formula, PredicateSpec::explain);
+                    (
+                        id.clone(),
+                        Property::Ctl {
+                            formula: resolved,
+                            non_vacuous: *non_vacuous,
+                            explanation,
+                        },
+                    )
+                }
+                PropertySpec::Ltl {
+                    id,
+                    formula,
+                    fairness,
+                    non_vacuous,
+                    ..
+                } => {
+                    let resolved = resolve_ltl(formula, &resolve)?;
+                    let mut resolved_fairness = Vec::with_capacity(fairness.len());
+                    for fc in fairness {
+                        resolved_fairness.push(resolve_fairness(fc, &resolve)?);
+                    }
+                    let explanation = explain_ltl(formula, fairness, PredicateSpec::explain);
+                    (
+                        id.clone(),
+                        Property::Ltl {
+                            formula: resolved,
+                            fairness: resolved_fairness,
+                            non_vacuous: *non_vacuous,
+                            explanation,
+                        },
+                    )
                 }
             };
             properties.push(PropertySpecResolved { id, property });
@@ -401,7 +572,9 @@ impl ContractSpec {
         let mut preserved = Vec::new();
         for p in &self.preserved {
             preserved.push(match p {
-                PreservedSpec::Reachable { description, goal } => PreservedBehavior {
+                PreservedSpec::Reachable {
+                    description, goal, ..
+                } => PreservedBehavior {
                     description: description.clone(),
                     behavior: Preserved::Reachable(
                         goal.resolve(program, default_module)
@@ -411,6 +584,7 @@ impl ContractSpec {
                 PreservedSpec::Always {
                     description,
                     invariant,
+                    ..
                 } => PreservedBehavior {
                     description: description.clone(),
                     behavior: Preserved::Always(
@@ -431,15 +605,286 @@ impl ContractSpec {
             source: self.clone(),
         })
     }
+
+    /// Produce a deterministic natural-language explanation of every property
+    /// and preserved requirement in this contract (`concir-contract-explanation/1`).
+    pub fn explain(&self) -> ContractExplanation {
+        let properties = self
+            .properties
+            .iter()
+            .map(|p| match p {
+                PropertySpec::Safety { id, invariant, req } => PropertyExplanation {
+                    id: id.clone(),
+                    kind: "safety".to_string(),
+                    req: req.clone(),
+                    non_vacuous: false,
+                    explanation: format!("In every reachable state, {}.", invariant.explain()),
+                },
+                PropertySpec::DeadlockFree { id, req } => PropertyExplanation {
+                    id: id.clone(),
+                    kind: "deadlock_free".to_string(),
+                    req: req.clone(),
+                    non_vacuous: false,
+                    explanation: "No reachable state is a global deadlock.".to_string(),
+                },
+                PropertySpec::Reachability { id, goal, req } => PropertyExplanation {
+                    id: id.clone(),
+                    kind: "reachability".to_string(),
+                    req: req.clone(),
+                    non_vacuous: false,
+                    explanation: format!("There exists a reachable state where {}.", goal.explain()),
+                },
+                PropertySpec::AlwaysReachable { id, goal, req } => PropertyExplanation {
+                    id: id.clone(),
+                    kind: "always_reachable".to_string(),
+                    req: req.clone(),
+                    non_vacuous: false,
+                    explanation: format!(
+                        "From every reachable state, it remains possible to reach a state where {}.",
+                        goal.explain()
+                    ),
+                },
+                PropertySpec::Unreachable { id, bad, req } => PropertyExplanation {
+                    id: id.clone(),
+                    kind: "unreachable".to_string(),
+                    req: req.clone(),
+                    non_vacuous: false,
+                    explanation: format!("No reachable state satisfies {}.", bad.explain()),
+                },
+                PropertySpec::Ctl {
+                    id,
+                    formula,
+                    non_vacuous,
+                    req,
+                } => PropertyExplanation {
+                    id: id.clone(),
+                    kind: "ctl".to_string(),
+                    req: req.clone(),
+                    non_vacuous: *non_vacuous,
+                    explanation: explain_ctl(formula, PredicateSpec::explain),
+                },
+                PropertySpec::Ltl {
+                    id,
+                    formula,
+                    fairness,
+                    non_vacuous,
+                    req,
+                } => PropertyExplanation {
+                    id: id.clone(),
+                    kind: "ltl".to_string(),
+                    req: req.clone(),
+                    non_vacuous: *non_vacuous,
+                    explanation: explain_ltl(formula, fairness, PredicateSpec::explain),
+                },
+            })
+            .collect();
+
+        let preserved = self
+            .preserved
+            .iter()
+            .map(|p| match p {
+                PreservedSpec::Reachable {
+                    description,
+                    goal,
+                    req,
+                } => PreservedExplanation {
+                    description: description.clone(),
+                    req: req.clone(),
+                    explanation: format!(
+                        "Behavior '{}' must remain reachable ({}).",
+                        description,
+                        goal.explain()
+                    ),
+                },
+                PreservedSpec::Always {
+                    description,
+                    invariant,
+                    req,
+                } => PreservedExplanation {
+                    description: description.clone(),
+                    req: req.clone(),
+                    explanation: format!(
+                        "Invariant '{}' must always hold ({}).",
+                        description,
+                        invariant.explain()
+                    ),
+                },
+            })
+            .collect();
+
+        ContractExplanation {
+            schema: CONTRACT_EXPLANATION_SCHEMA.to_string(),
+            name: self.name.clone(),
+            properties,
+            preserved,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PropertyExplanation {
+    pub id: String,
+    pub kind: String,
+    pub req: Vec<String>,
+    pub non_vacuous: bool,
+    pub explanation: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PreservedExplanation {
+    pub description: String,
+    pub req: Vec<String>,
+    pub explanation: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContractExplanation {
+    pub schema: String,
+    pub name: String,
+    pub properties: Vec<PropertyExplanation>,
+    pub preserved: Vec<PreservedExplanation>,
+}
+
+fn resolve_ctl<F>(
+    f: &CtlFormula<PredicateSpec>,
+    resolve: &F,
+) -> Result<CtlFormula<Predicate>, ContractError>
+where
+    F: Fn(&PredicateSpec) -> Result<Predicate, ContractError>,
+{
+    Ok(match f {
+        CtlFormula::True => CtlFormula::True,
+        CtlFormula::False => CtlFormula::False,
+        CtlFormula::Atom { atom } => CtlFormula::Atom {
+            atom: resolve(atom)?,
+        },
+        CtlFormula::Not { arg } => CtlFormula::Not {
+            arg: Box::new(resolve_ctl(arg, resolve)?),
+        },
+        CtlFormula::And { args } => CtlFormula::And {
+            args: args
+                .iter()
+                .map(|a| resolve_ctl(a, resolve))
+                .collect::<Result<Vec<_>, _>>()?,
+        },
+        CtlFormula::Or { args } => CtlFormula::Or {
+            args: args
+                .iter()
+                .map(|a| resolve_ctl(a, resolve))
+                .collect::<Result<Vec<_>, _>>()?,
+        },
+        CtlFormula::Implies { lhs, rhs } => CtlFormula::Implies {
+            lhs: Box::new(resolve_ctl(lhs, resolve)?),
+            rhs: Box::new(resolve_ctl(rhs, resolve)?),
+        },
+        CtlFormula::Ex { arg } => CtlFormula::Ex {
+            arg: Box::new(resolve_ctl(arg, resolve)?),
+        },
+        CtlFormula::Ax { arg } => CtlFormula::Ax {
+            arg: Box::new(resolve_ctl(arg, resolve)?),
+        },
+        CtlFormula::Ef { arg } => CtlFormula::Ef {
+            arg: Box::new(resolve_ctl(arg, resolve)?),
+        },
+        CtlFormula::Af { arg } => CtlFormula::Af {
+            arg: Box::new(resolve_ctl(arg, resolve)?),
+        },
+        CtlFormula::Eg { arg } => CtlFormula::Eg {
+            arg: Box::new(resolve_ctl(arg, resolve)?),
+        },
+        CtlFormula::Ag { arg } => CtlFormula::Ag {
+            arg: Box::new(resolve_ctl(arg, resolve)?),
+        },
+        CtlFormula::Eu { lhs, rhs } => CtlFormula::Eu {
+            lhs: Box::new(resolve_ctl(lhs, resolve)?),
+            rhs: Box::new(resolve_ctl(rhs, resolve)?),
+        },
+        CtlFormula::Au { lhs, rhs } => CtlFormula::Au {
+            lhs: Box::new(resolve_ctl(lhs, resolve)?),
+            rhs: Box::new(resolve_ctl(rhs, resolve)?),
+        },
+    })
+}
+
+fn resolve_ltl<F>(
+    f: &LtlFormula<PredicateSpec>,
+    resolve: &F,
+) -> Result<LtlFormula<Predicate>, ContractError>
+where
+    F: Fn(&PredicateSpec) -> Result<Predicate, ContractError>,
+{
+    Ok(match f {
+        LtlFormula::True => LtlFormula::True,
+        LtlFormula::False => LtlFormula::False,
+        LtlFormula::Atom { atom } => LtlFormula::Atom {
+            atom: resolve(atom)?,
+        },
+        LtlFormula::Not { arg } => LtlFormula::Not {
+            arg: Box::new(resolve_ltl(arg, resolve)?),
+        },
+        LtlFormula::And { args } => LtlFormula::And {
+            args: args
+                .iter()
+                .map(|a| resolve_ltl(a, resolve))
+                .collect::<Result<Vec<_>, _>>()?,
+        },
+        LtlFormula::Or { args } => LtlFormula::Or {
+            args: args
+                .iter()
+                .map(|a| resolve_ltl(a, resolve))
+                .collect::<Result<Vec<_>, _>>()?,
+        },
+        LtlFormula::Implies { lhs, rhs } => LtlFormula::Implies {
+            lhs: Box::new(resolve_ltl(lhs, resolve)?),
+            rhs: Box::new(resolve_ltl(rhs, resolve)?),
+        },
+        LtlFormula::Next { arg } => LtlFormula::Next {
+            arg: Box::new(resolve_ltl(arg, resolve)?),
+        },
+        LtlFormula::Eventually { arg } => LtlFormula::Eventually {
+            arg: Box::new(resolve_ltl(arg, resolve)?),
+        },
+        LtlFormula::Always { arg } => LtlFormula::Always {
+            arg: Box::new(resolve_ltl(arg, resolve)?),
+        },
+        LtlFormula::Until { lhs, rhs } => LtlFormula::Until {
+            lhs: Box::new(resolve_ltl(lhs, resolve)?),
+            rhs: Box::new(resolve_ltl(rhs, resolve)?),
+        },
+        LtlFormula::Release { lhs, rhs } => LtlFormula::Release {
+            lhs: Box::new(resolve_ltl(lhs, resolve)?),
+            rhs: Box::new(resolve_ltl(rhs, resolve)?),
+        },
+    })
+}
+
+fn resolve_fairness<F>(
+    fc: &FairnessConstraint<PredicateSpec>,
+    resolve: &F,
+) -> Result<FairnessConstraint<Predicate>, ContractError>
+where
+    F: Fn(&PredicateSpec) -> Result<Predicate, ContractError>,
+{
+    Ok(match fc {
+        FairnessConstraint::Justice { atom } => FairnessConstraint::Justice {
+            atom: resolve(atom)?,
+        },
+        FairnessConstraint::Compassion { enabled, taken } => FairnessConstraint::Compassion {
+            enabled: resolve(enabled)?,
+            taken: resolve(taken)?,
+        },
+    })
 }
 
 fn property_id(p: &PropertySpec) -> &str {
     match p {
         PropertySpec::Safety { id, .. }
-        | PropertySpec::DeadlockFree { id }
+        | PropertySpec::DeadlockFree { id, .. }
         | PropertySpec::Reachability { id, .. }
         | PropertySpec::AlwaysReachable { id, .. }
-        | PropertySpec::Unreachable { id, .. } => id,
+        | PropertySpec::Unreachable { id, .. }
+        | PropertySpec::Ctl { id, .. }
+        | PropertySpec::Ltl { id, .. } => id,
     }
 }
 
@@ -473,6 +918,72 @@ fn validate_bounds(b: &BoundsSpec) -> Result<(), ContractError> {
 }
 
 impl PredicateSpec {
+    /// Deterministic human-readable rendering of this predicate for `explain-contract`.
+    pub fn explain(&self) -> String {
+        match self {
+            PredicateSpec::True => "true".to_string(),
+            PredicateSpec::False => "false".to_string(),
+            PredicateSpec::VarEq { resource, value } => format!("{resource} == {value}"),
+            PredicateSpec::VarCmp {
+                resource,
+                op,
+                value,
+            } => format!("{resource} {op} {value}"),
+            PredicateSpec::FunctionCompleted { function } => {
+                format!("function '{function}' has completed")
+            }
+            PredicateSpec::FunctionCompletedAtLeast { function, n } => {
+                format!("function '{function}' has completed at least {n} time(s)")
+            }
+            PredicateSpec::ScopeCompleted { function, sid } => {
+                format!("scope at '{function}::{sid}' has completed")
+            }
+            PredicateSpec::StatementReached { function, sid } => {
+                format!("statement '{function}::{sid}' is reached")
+            }
+            PredicateSpec::MutexFree { resource } => format!("lock '{resource}' is free"),
+            PredicateSpec::MutexHeld { resource } => format!("lock '{resource}' is held"),
+            PredicateSpec::HoldsAll {
+                function,
+                resources,
+            } => format!(
+                "a thread in '{function}' holds all of [{}]",
+                resources.join(", ")
+            ),
+            PredicateSpec::MutexExclusive { resource } => {
+                format!("lock '{resource}' maintains mutual exclusion")
+            }
+            PredicateSpec::NeverHoldsAll {
+                function,
+                resources,
+            } => format!(
+                "no thread in '{function}' simultaneously holds all of [{}]",
+                resources.join(", ")
+            ),
+            PredicateSpec::ChannelEmpty { resource } => format!("channel '{resource}' is empty"),
+            PredicateSpec::ChannelAtLeast { resource, len } => {
+                format!("channel '{resource}' has at least {len} buffered item(s)")
+            }
+            PredicateSpec::Not { predicate } => format!("not ({})", predicate.explain()),
+            PredicateSpec::And { predicates } => {
+                if predicates.is_empty() {
+                    "true".to_string()
+                } else {
+                    let parts: Vec<String> = predicates.iter().map(PredicateSpec::explain).collect();
+                    format!("({})", parts.join(" and "))
+                }
+            }
+            PredicateSpec::Or { predicates } => {
+                if predicates.is_empty() {
+                    "false".to_string()
+                } else {
+                    let parts: Vec<String> = predicates.iter().map(PredicateSpec::explain).collect();
+                    format!("({})", parts.join(" or "))
+                }
+            }
+        }
+    }
+
     pub fn resolve(
         &self,
         program: &SemProgram,
@@ -529,12 +1040,12 @@ impl PredicateSpec {
             }
             PredicateSpec::MutexFree { resource } => {
                 let rid = resolve_resource(program, default_module, resource)?;
-                expect_kind(program, rid, resource, &[ResKind::Mutex])?;
+                expect_kind(program, rid, resource, &[ResKind::Mutex, ResKind::RwLock])?;
                 Predicate::MutexFree(rid)
             }
             PredicateSpec::MutexHeld { resource } => {
                 let rid = resolve_resource(program, default_module, resource)?;
-                expect_kind(program, rid, resource, &[ResKind::Mutex])?;
+                expect_kind(program, rid, resource, &[ResKind::Mutex, ResKind::RwLock])?;
                 Predicate::MutexHeld(rid)
             }
             PredicateSpec::HoldsAll {
@@ -549,7 +1060,7 @@ impl PredicateSpec {
                         program,
                         rid,
                         name,
-                        &[ResKind::Mutex, ResKind::Semaphore],
+                        &[ResKind::Mutex, ResKind::RwLock, ResKind::Semaphore],
                     )?;
                     rids.push(rid);
                 }
@@ -564,7 +1075,7 @@ impl PredicateSpec {
                     program,
                     rid,
                     resource,
-                    &[ResKind::Mutex, ResKind::Semaphore],
+                    &[ResKind::Mutex, ResKind::RwLock, ResKind::Semaphore],
                 )?;
                 Predicate::MutexExclusive(rid)
             }
@@ -580,7 +1091,7 @@ impl PredicateSpec {
                         program,
                         rid,
                         name,
-                        &[ResKind::Mutex, ResKind::Semaphore],
+                        &[ResKind::Mutex, ResKind::RwLock, ResKind::Semaphore],
                     )?;
                     rids.push(rid);
                 }

@@ -59,7 +59,9 @@ fn usage() -> ! {
          concir-backend schema\n  \
          concir-backend lower   <program.json> [--out <lowered.json>] [--trace-map <map.json>]\n  \
          concir-backend summarize <program.json> [--module <name>] [--out <summary.json>]\n  \
-         concir-backend verify-refinement --spec <program.json> --impl-net <impl_net.json> [--contract <contract.json>] [--codegen-map <codegen.json>] [--out <report.json>]\n  \
+         concir-backend verify-refinement --spec <program.json> --impl-net <impl_net.json> [--contract <contract.json>] [--codegen-map <codegen.json>] [--module <name>] [--out <report.json>]\n  \
+         concir-backend explain-contract <contract.json> [--output <file>]\n  \
+         concir-backend export-cvn <program.json> [--output <file>]\n  \
          concir-backend codegen <program.json> --out <dir>\n  \
          concir-backend conform <program.json> <trace.jsonl> [--lenient-unlock] [--attempt-events] [--op-resource]\n  \
          concir-backend monitor --contract <contract.json> [--resources <resources.json>] --traces <dir> [--mapping <mapping.json>]\n  \
@@ -291,7 +293,8 @@ fn main() {
             let impl_net_path = flag_value(&args, "--impl-net").unwrap_or_else(|| usage());
             let contract_path = flag_value(&args, "--contract");
             let codegen_map_path = flag_value(&args, "--codegen-map");
-            let out_path = flag_value(&args, "--out");
+            let module_filter = flag_value(&args, "--module");
+            let out_path = flag_value(&args, "--out").or_else(|| flag_value(&args, "--output"));
 
             let mut program = parse_program_raw(&spec_path, EXIT_INVALID);
             if let Err(e) = program.ensure_lowered() {
@@ -325,11 +328,12 @@ fn main() {
                 }
             });
 
-            let report = match concir::refinement::verify_refinement(
+            let report = match concir::refinement::verify_refinement_for_module(
                 &program,
                 &impl_net,
                 contract.as_ref(),
                 codegen_map.as_ref(),
+                module_filter.as_deref(),
             ) {
                 Ok(r) => r,
                 Err(e) => {
@@ -350,6 +354,66 @@ fn main() {
                 "unknown" => process::exit(EXIT_UNKNOWN),
                 _ => process::exit(EXIT_FAIL),
             }
+        }
+        "explain-contract" => {
+            let path = args.get(2).unwrap_or_else(|| usage());
+            let out_path = flag_value(&args, "--output").or_else(|| flag_value(&args, "--out"));
+            let spec = parse_contract(Some(path));
+            let explanation = spec.explain();
+            let json = serde_json::to_string_pretty(&explanation).expect("serialize");
+            if let Some(p) = &out_path {
+                if let Err(e) = fs::write(p, format!("{json}\n")) {
+                    eprintln!("error writing contract explanation '{p}': {e}");
+                    process::exit(EXIT_USAGE);
+                }
+            }
+            println!("{json}");
+        }
+        "export-cvn" => {
+            let path = args.get(2).unwrap_or_else(|| usage());
+            let out_path = flag_value(&args, "--output").or_else(|| flag_value(&args, "--out"));
+            let program = parse_program(path);
+            let lowered_json = serde_json::to_string(&program).expect("serialize");
+            let lowered = match unipn_transfer::cvn_from_concir_json(&lowered_json) {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("export-cvn error: {e}");
+                    process::exit(EXIT_UNSUPPORTED);
+                }
+            };
+            let degraded: Vec<serde_json::Value> = lowered
+                .report
+                .degraded
+                .iter()
+                .map(|d| {
+                    serde_json::json!({
+                        "scope": d.scope,
+                        "sid": d.sid,
+                        "role": d.role,
+                        "source": d.source,
+                        "message": d.to_string(),
+                    })
+                })
+                .collect();
+            let out = serde_json::json!({
+                "schema": "concir-cvn-export/1",
+                "program": program.program,
+                "net": lowered.net,
+                "initial": lowered.initial,
+                "report": {
+                    "degraded": degraded,
+                    "defaulted_rwlock_readers": lowered.report.defaulted_rwlock_readers,
+                    "unmodeled_slots": lowered.report.unmodeled_slots,
+                }
+            });
+            let json = serde_json::to_string_pretty(&out).expect("serialize");
+            if let Some(p) = &out_path {
+                if let Err(e) = fs::write(p, format!("{json}\n")) {
+                    eprintln!("error writing CVN export '{p}': {e}");
+                    process::exit(EXIT_USAGE);
+                }
+            }
+            println!("{json}");
         }
         "codegen" => {
             let path = args.get(2).unwrap_or_else(|| usage());

@@ -56,6 +56,25 @@ pub struct PropertyResult {
     pub id: String,
     pub outcome: Outcome,
     pub detail: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub vacuous: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vacuous_antecedents: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explanation: Option<String>,
+}
+
+impl PropertyResult {
+    fn simple(id: impl Into<String>, outcome: Outcome, detail: impl Into<String>) -> Self {
+        PropertyResult {
+            id: id.into(),
+            outcome,
+            detail: detail.into(),
+            vacuous: false,
+            vacuous_antecedents: Vec::new(),
+            explanation: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -410,11 +429,11 @@ pub fn verify<S: TransitionSystem>(
                         doom_state: Default::default(),
                     });
                 }
-                results.push(PropertyResult {
-                    id: pid,
+                results.push(PropertyResult::simple(
+                    pid,
                     outcome,
-                    detail: format!("preserved reachability: {}", goal.description()),
-                });
+                    format!("preserved reachability: {}", goal.description()),
+                ));
             }
             Preserved::Always(invariant) => {
                 let violated = graph
@@ -438,11 +457,11 @@ pub fn verify<S: TransitionSystem>(
                         complete,
                     ));
                 }
-                results.push(PropertyResult {
-                    id: pid,
+                results.push(PropertyResult::simple(
+                    pid,
                     outcome,
-                    detail: format!("preserved invariant: {}", invariant.description()),
-                });
+                    format!("preserved invariant: {}", invariant.description()),
+                ));
             }
         }
     }
@@ -529,25 +548,25 @@ fn check_property<S: TransitionSystem>(
                         idx,
                         complete,
                     ));
-                    PropertyResult {
-                        id: id.into(),
-                        outcome: Outcome::Fail,
-                        detail: "counterexample reached a violating state".into(),
-                    }
+                    PropertyResult::simple(
+                        id,
+                        Outcome::Fail,
+                        "counterexample reached a violating state",
+                    )
                 }
-                None => PropertyResult {
-                    id: id.into(),
-                    outcome: if complete {
+                None => PropertyResult::simple(
+                    id,
+                    if complete {
                         Outcome::Pass
                     } else {
                         Outcome::Unknown
                     },
-                    detail: if complete {
-                        "invariant held in all reachable states".into()
+                    if complete {
+                        "invariant held in all reachable states"
                     } else {
-                        "no violation found, but the search was incomplete".into()
+                        "no violation found, but the search was incomplete"
                     },
-                },
+                ),
             }
         }
         Property::Unreachable { bad } => {
@@ -564,25 +583,25 @@ fn check_property<S: TransitionSystem>(
                         idx,
                         complete,
                     ));
-                    PropertyResult {
-                        id: id.into(),
-                        outcome: Outcome::Fail,
-                        detail: "counterexample reached a forbidden state".into(),
-                    }
+                    PropertyResult::simple(
+                        id,
+                        Outcome::Fail,
+                        "counterexample reached a forbidden state",
+                    )
                 }
-                None => PropertyResult {
-                    id: id.into(),
-                    outcome: if complete {
+                None => PropertyResult::simple(
+                    id,
+                    if complete {
                         Outcome::Pass
                     } else {
                         Outcome::Unknown
                     },
-                    detail: if complete {
-                        "forbidden state is unreachable".into()
+                    if complete {
+                        "forbidden state is unreachable"
                     } else {
-                        "not found, but the search was incomplete".into()
+                        "not found, but the search was incomplete"
                     },
-                },
+                ),
             }
         }
         Property::DeadlockFree => {
@@ -609,26 +628,25 @@ fn check_property<S: TransitionSystem>(
                             .into(),
                     );
                     diagnostics.push(d);
-                    PropertyResult {
-                        id: id.into(),
-                        outcome: Outcome::Fail,
-                        detail: "a reachable state has no enabled step and unfinished threads"
-                            .into(),
-                    }
+                    PropertyResult::simple(
+                        id,
+                        Outcome::Fail,
+                        "a reachable state has no enabled step and unfinished threads",
+                    )
                 }
-                None => PropertyResult {
-                    id: id.into(),
-                    outcome: if complete {
+                None => PropertyResult::simple(
+                    id,
+                    if complete {
                         Outcome::Pass
                     } else {
                         Outcome::Unknown
                     },
-                    detail: if complete {
-                        "no deadlock state reachable".into()
+                    if complete {
+                        "no deadlock state reachable"
                     } else {
-                        "no deadlock found, but the search was incomplete".into()
+                        "no deadlock found, but the search was incomplete"
                     },
-                },
+                ),
             }
         }
         Property::Reachability { goal } => {
@@ -636,15 +654,15 @@ fn check_property<S: TransitionSystem>(
             match found {
                 Some(idx) => {
                     let ce = counterexample(graph, idx);
-                    PropertyResult {
-                        id: id.into(),
-                        outcome: Outcome::Pass,
-                        detail: format!(
+                    PropertyResult::simple(
+                        id,
+                        Outcome::Pass,
+                        format!(
                             "goal reachable via {} step(s) ({})",
                             ce.len(),
                             goal.description()
                         ),
-                    }
+                    )
                 }
                 None => {
                     let outcome = if complete {
@@ -676,10 +694,10 @@ fn check_property<S: TransitionSystem>(
                             doom_state,
                         });
                     }
-                    PropertyResult {
-                        id: id.into(),
+                    PropertyResult::simple(
+                        id,
                         outcome,
-                        detail: if outcome == Outcome::Fail {
+                        if outcome == Outcome::Fail {
                             format!(
                                 "goal '{}' is not reachable in any execution",
                                 goal.description()
@@ -687,7 +705,7 @@ fn check_property<S: TransitionSystem>(
                         } else {
                             format!("goal '{}' not found; search incomplete", goal.description())
                         },
-                    }
+                    )
                 }
             }
         }
@@ -720,11 +738,7 @@ fn check_property<S: TransitionSystem>(
                     counterexample_names: ce_names,
                     doom_state,
                 });
-                return PropertyResult {
-                    id: id.into(),
-                    outcome: Outcome::Fail,
-                    detail: "goal never reachable".into(),
-                };
+                return PropertyResult::simple(id, Outcome::Fail, "goal never reachable");
             }
             let can_reach = reverse_reachable(graph, &goal_states);
             let bad = (0..graph.states.len()).find(|i| !can_reach.contains(i));
@@ -745,27 +759,262 @@ fn check_property<S: TransitionSystem>(
                             .into(),
                     );
                     diagnostics.push(d);
-                    PropertyResult {
-                        id: id.into(),
-                        outcome: Outcome::Fail,
-                        detail: "AG EF violated: a reachable state cannot reach the goal".into(),
-                    }
+                    PropertyResult::simple(
+                        id,
+                        Outcome::Fail,
+                        "AG EF violated: a reachable state cannot reach the goal",
+                    )
                 }
-                None => PropertyResult {
-                    id: id.into(),
-                    outcome: if complete {
+                None => PropertyResult::simple(
+                    id,
+                    if complete {
                         Outcome::Pass
                     } else {
                         Outcome::Unknown
                     },
-                    detail: if complete {
-                        "every reachable state can reach the goal".into()
+                    if complete {
+                        "every reachable state can reach the goal"
                     } else {
-                        "AG EF held on the explored fragment, but the search was incomplete".into()
+                        "AG EF held on the explored fragment, but the search was incomplete"
                     },
-                },
+                ),
             }
         }
+        Property::Ctl {
+            formula,
+            non_vacuous,
+            explanation,
+        } => {
+            let (edges, edge_labels) = flatten_graph_edges(graph);
+            let res = unipn::analysis::temporal::check_ctl_graph(
+                graph.states.len(),
+                0,
+                &edges,
+                formula,
+                |s, pred| system.satisfied(&graph.states[s], pred),
+                |pred| pred.description(),
+            );
+            finalize_temporal_result(
+                system,
+                program,
+                graph,
+                id,
+                "CTL",
+                *non_vacuous,
+                explanation,
+                res,
+                &edge_labels,
+                complete,
+                diagnostics,
+            )
+        }
+        Property::Ltl {
+            formula,
+            fairness,
+            non_vacuous,
+            explanation,
+        } => {
+            let (edges, edge_labels) = flatten_graph_edges(graph);
+            let res = unipn::analysis::temporal::check_ltl_graph(
+                graph.states.len(),
+                0,
+                &edges,
+                formula,
+                fairness,
+                |s, pred| system.satisfied(&graph.states[s], pred),
+                |pred| pred.description(),
+            );
+            finalize_temporal_result(
+                system,
+                program,
+                graph,
+                id,
+                "LTL",
+                *non_vacuous,
+                explanation,
+                res,
+                &edge_labels,
+                complete,
+                diagnostics,
+            )
+        }
+    }
+}
+
+fn flatten_graph_edges<S>(graph: &Graph<S>) -> (Vec<(usize, usize, usize)>, Vec<StepLabel>) {
+    let mut edges = Vec::new();
+    let mut labels = Vec::new();
+    for (src, outs) in graph.edges.iter().enumerate() {
+        for (dst, label) in outs {
+            let tag = labels.len();
+            labels.push(label.clone());
+            edges.push((src, *dst, tag));
+        }
+    }
+    (edges, labels)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn finalize_temporal_result<S: TransitionSystem>(
+    system: &S,
+    program: &SemProgram,
+    graph: &Graph<S::State>,
+    id: &str,
+    logic: &str,
+    non_vacuous: bool,
+    explanation: &str,
+    res: unipn::analysis::temporal::TemporalCheckResult,
+    edge_labels: &[StepLabel],
+    complete: bool,
+    diagnostics: &mut Vec<DiagnosticRecord>,
+) -> PropertyResult {
+    if res.satisfied {
+        if !complete {
+            return PropertyResult {
+                id: id.into(),
+                outcome: Outcome::Unknown,
+                detail: format!("{logic} property held on the explored fragment, but the search was incomplete"),
+                vacuous: res.vacuous,
+                vacuous_antecedents: res.vacuous_antecedents,
+                explanation: Some(explanation.to_string()),
+            };
+        }
+        if non_vacuous && res.vacuous {
+            let antecedents = if res.vacuous_antecedents.is_empty() {
+                "implication antecedent".to_string()
+            } else {
+                res.vacuous_antecedents.join("; ")
+            };
+            diagnostics.push(DiagnosticRecord {
+                property: id.into(),
+                outcome: Outcome::Fail,
+                message: format!(
+                    "{logic} property '{id}' passed vacuously because implication antecedent(s) [{antecedents}] are never reachable in any execution"
+                ),
+                complete,
+                counterexample: Vec::new(),
+                final_instances: Vec::new(),
+                blocked: Vec::new(),
+                cir_statements: Vec::new(),
+                proven_facts: vec![
+                    format!("exhaustively explored {} reachable states", graph.states.len()),
+                    format!("unreachable antecedent(s): {antecedents}"),
+                ],
+                repair_hints: vec![
+                    "ensure the modeled program can reach the trigger/antecedent condition, or check whether a dead branch/wrong initial state prevents it".into(),
+                ],
+                counterexample_names: Vec::new(),
+                doom_state: Default::default(),
+            });
+            return PropertyResult {
+                id: id.into(),
+                outcome: Outcome::Fail,
+                detail: format!(
+                    "vacuous pass rejected (non_vacuous=true): implication antecedent(s) [{antecedents}] are never reachable in any execution"
+                ),
+                vacuous: true,
+                vacuous_antecedents: res.vacuous_antecedents,
+                explanation: Some(explanation.to_string()),
+            };
+        }
+        return PropertyResult {
+            id: id.into(),
+            outcome: Outcome::Pass,
+            detail: format!("{logic} formula satisfied across all {} reachable states", graph.states.len()),
+            vacuous: res.vacuous,
+            vacuous_antecedents: res.vacuous_antecedents,
+            explanation: Some(explanation.to_string()),
+        };
+    }
+
+    // Formula not satisfied: check whether a counterexample trace touches an
+    // incomplete truncation boundary when `!complete`.
+    if !complete {
+        let touches_boundary = res.trace.as_ref().is_none_or(|tr| {
+            tr.prefix_states
+                .iter()
+                .chain(tr.cycle_states.iter())
+                .any(|&s| !graph.processed[s] || graph.had_boundary[s])
+        });
+        if touches_boundary {
+            return PropertyResult {
+                id: id.into(),
+                outcome: Outcome::Unknown,
+                detail: format!("{logic} check inconclusive because state-space exploration was incomplete"),
+                vacuous: false,
+                vacuous_antecedents: Vec::new(),
+                explanation: Some(explanation.to_string()),
+            };
+        }
+    }
+
+    let (ce, final_idx, cycle_len) = if let Some(tr) = &res.trace {
+        let mut steps = Vec::new();
+        for &tag in &tr.prefix_edges {
+            if let Some(lbl) = edge_labels.get(tag) {
+                steps.push(lbl.clone());
+            }
+        }
+        for &tag in &tr.cycle_edges {
+            if let Some(lbl) = edge_labels.get(tag) {
+                steps.push(lbl.clone());
+            }
+        }
+        let idx = tr
+            .cycle_states
+            .last()
+            .or_else(|| tr.prefix_states.last())
+            .copied()
+            .unwrap_or(0);
+        (steps, idx, tr.cycle_states.len())
+    } else {
+        (Vec::new(), 0, 0)
+    };
+
+    let state = &graph.states[final_idx];
+    let instances = system.instances(state);
+    let blocked = system.blocked(state);
+    let cir_statements = instances
+        .iter()
+        .map(|i| cir_ref(program, i.function, i.sid))
+        .collect();
+    let ce_names: Vec<String> = ce.iter().map(|l| render_step_label(program, l)).collect();
+    let doom_state = system.doom_snapshot(state);
+    let mut hints = doom_hints(&doom_state);
+    if cycle_len > 0 {
+        hints.push(format!(
+            "{logic} counterexample contains a repeating cycle of {cycle_len} state(s); check fairness/progress conditions"
+        ));
+    }
+    let mut proven_facts = vec![
+        format!("explored {} reachable states", graph.states.len()),
+        format!("{logic} counterexample has {} transition(s)", ce.len()),
+    ];
+    if cycle_len > 0 {
+        proven_facts.push(format!("counterexample lasso cycle length: {cycle_len}"));
+    }
+    diagnostics.push(DiagnosticRecord {
+        property: id.into(),
+        outcome: Outcome::Fail,
+        message: format!("{logic} property '{id}' violated: {explanation}"),
+        complete,
+        counterexample: ce,
+        final_instances: instances,
+        blocked,
+        cir_statements,
+        proven_facts,
+        repair_hints: hints,
+        counterexample_names: ce_names,
+        doom_state,
+    });
+
+    PropertyResult {
+        id: id.into(),
+        outcome: Outcome::Fail,
+        detail: format!("{logic} property violated"),
+        vacuous: false,
+        vacuous_antecedents: Vec::new(),
+        explanation: Some(explanation.to_string()),
     }
 }
 
