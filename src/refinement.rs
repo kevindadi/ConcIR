@@ -16,13 +16,14 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
+use unipn::analysis::refinement::check_stuttering_refinement;
 
 use crate::ast::Program;
 use crate::codegen::CodegenMap;
 use crate::explore::contract::{ContractSpec, PredicateSpec, PreservedSpec};
 use crate::explore::explore;
 use crate::fqn;
-use crate::petri::net::{MutexToken, NetState, PlaceKey};
+use crate::petri::net::{MutexToken, NetState, PlaceKey, RwLockToken};
 use crate::petri::PetriEngine;
 use crate::sem::ids::ResourceId;
 use crate::sem::outcome::{AnalysisBounds, Phase};
@@ -149,6 +150,8 @@ pub struct ImplNet {
     pub crate_name: String,
     #[serde(default)]
     pub entry_mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus_module: Option<String>,
     #[serde(default)]
     pub truncated: bool,
     #[serde(default)]
@@ -245,6 +248,10 @@ pub fn is_sync_resource_op(op: &str) -> bool {
             | "rwlock_read"
             | "rwlock_write"
             | "rwlock_unlock"
+            | "rwlock_read_lock"
+            | "rwlock_read_unlock"
+            | "rwlock_write_lock"
+            | "rwlock_write_unlock"
             | "condvar_wait"
             | "condvar_notify"
             | "condvar_notify_all"
@@ -258,18 +265,113 @@ pub fn is_sync_resource_op(op: &str) -> bool {
     )
 }
 
-fn actions_match(impl_act: &SyncAction, spec_act: &SyncAction) -> bool {
-    if impl_act.resource != spec_act.resource {
-        return false;
+fn normalize_op_for_matching(
+    op: &str,
+    collapse_notify_all: bool,
+    collapse_rwlock_unlock: bool,
+) -> String {
+    match op {
+        "rwlock_read" | "rwlock_read_lock" => "rwlock_read_lock".to_string(),
+        "rwlock_write" | "rwlock_write_lock" => "rwlock_write_lock".to_string(),
+        "rwlock_read_unlock" | "rwlock_write_unlock" | "rwlock_unlock"
+            if collapse_rwlock_unlock =>
+        {
+            "rwlock_unlock".to_string()
+        }
+        "condvar_notify_all" if collapse_notify_all => "condvar_notify".to_string(),
+        other => other.to_string(),
     }
-    if impl_act.op == spec_act.op {
-        return true;
+}
+
+struct ModuleScope {
+    mod_name: String,
+    mod_id: crate::sem::ids::ModuleId,
+    sanitized_mod: String,
+    in_scope_resources: HashSet<String>,
+    in_scope_fn_short: HashSet<String>,
+}
+
+impl ModuleScope {
+    fn from_program(program: &Program, sem: &SemProgram, mod_name: &str) -> Result<Self, String> {
+        let Some(ast_mod) = program.lookup_module(mod_name) else {
+            return Err(format!("module '{mod_name}' not found in program"));
+        };
+        let Some(mod_id) = sem.module_id(mod_name) else {
+            return Err(format!("module '{mod_name}' not found in lowered program"));
+        };
+        let mut in_scope_resources = HashSet::new();
+        for r in &ast_mod.resources {
+            in_scope_resources.insert(fqn::fqn(&ast_mod.name, &r.name));
+        }
+        let in_scope_fn_short: HashSet<String> = ast_mod
+            .functions
+            .iter()
+            .map(|f| f.name.clone())
+            .collect();
+        Ok(ModuleScope {
+            mod_name: mod_name.to_string(),
+            mod_id,
+            sanitized_mod: sanitize_ident(mod_name),
+            in_scope_resources,
+            in_scope_fn_short,
+        })
     }
-    // `spn`'s TransitionType::Notify may emit `condvar_notify` for `notify_all`.
-    if impl_act.op == "condvar_notify" && spec_act.op == "condvar_notify_all" {
-        return true;
+
+    fn fn_path_in_module(&self, fn_def_path: Option<&str>) -> bool {
+        let Some(path) = fn_def_path else {
+            return false;
+        };
+        let seg_mod = format!("::{}::", self.sanitized_mod);
+        let seg_raw = format!("::{}::", self.mod_name);
+        let prefix_mod = format!("{}::", self.sanitized_mod);
+        let prefix_raw = format!("{}::", self.mod_name);
+        path.contains(&seg_mod)
+            || path.contains(&seg_raw)
+            || path.starts_with(&prefix_mod)
+            || path.starts_with(&prefix_raw)
     }
-    false
+
+    fn impl_edge_in_scope(&self, resource_fqn: &str, fn_def_path: Option<&str>) -> bool {
+        if self.in_scope_resources.contains(resource_fqn) {
+            return true;
+        }
+        // Keep unauthorized/unknown sync operations inside this module visible!
+        self.fn_path_in_module(fn_def_path)
+    }
+
+    fn spec_edge_in_scope(
+        &self,
+        resource_fqn: &str,
+        origin_mod: crate::sem::ids::ModuleId,
+    ) -> bool {
+        self.in_scope_resources.contains(resource_fqn) || origin_mod == self.mod_id
+    }
+
+    fn fn_in_scope(&self, func_name: &str) -> bool {
+        match fqn::split_fqn(func_name) {
+            Some((m, e)) => m == self.mod_name && self.in_scope_fn_short.contains(e),
+            None => self.in_scope_fn_short.contains(func_name),
+        }
+    }
+
+    fn purity_violation_in_scope(
+        &self,
+        pv: &ImplPurityViolation,
+        codegen_map: Option<&CodegenMap>,
+    ) -> bool {
+        if let (Some(hid), Some(cm)) = (pv.hole_id.as_deref(), codegen_map) {
+            if let Some(h) = cm.holes.iter().find(|h| h.id == hid) {
+                return h.module == self.mod_name;
+            }
+            if let Some(th) = cm.type_holes.iter().find(|th| th.id == hid) {
+                return th.module == self.mod_name;
+            }
+        }
+        if pv.fn_def_path.is_some() {
+            return self.fn_path_in_module(pv.fn_def_path.as_deref());
+        }
+        true
+    }
 }
 
 #[derive(Clone)]
@@ -288,12 +390,25 @@ struct Lts {
     holds_lock: Vec<bool>,
 }
 
-/// Run branch-pruning stuttering refinement checking.
+/// Run branch-pruning stuttering refinement checking across the whole program.
 pub fn verify_refinement(
     program: &Program,
     impl_net: &ImplNet,
     contract: Option<&ContractSpec>,
     codegen_map: Option<&CodegenMap>,
+) -> Result<RefinementReport, String> {
+    verify_refinement_for_module(program, impl_net, contract, codegen_map, None)
+}
+
+/// Run branch-pruning stuttering refinement checking, optionally projected to a
+/// single module (`--module <MOD>`) combined with `summarize_program` lock-order
+/// cycle freedom verification.
+pub fn verify_refinement_for_module(
+    program: &Program,
+    impl_net: &ImplNet,
+    contract: Option<&ContractSpec>,
+    codegen_map: Option<&CodegenMap>,
+    module_filter: Option<&str>,
 ) -> Result<RefinementReport, String> {
     let owned;
     let program = if program.has_structured_bodies() {
@@ -317,6 +432,11 @@ pub fn verify_refinement(
     }
 
     let sem = program::lower(program).map_err(|e| e.to_string())?;
+    let module_scope = match module_filter {
+        Some(m) => Some(ModuleScope::from_program(program, &sem, m)?),
+        None => None,
+    };
+
     let bounds = contract
         .map(|c| AnalysisBounds::from(&c.bounds))
         .unwrap_or_default();
@@ -324,17 +444,24 @@ pub fn verify_refinement(
     // 1. Explore specification Petri net.
     let engine = PetriEngine::new(&sem, bounds.clone());
     let spec_reach = explore(&engine, &bounds);
-    let spec_lts = build_spec_lts(&sem, &engine, &spec_reach);
+    let spec_lts = build_spec_lts(&sem, &engine, &spec_reach, module_scope.as_ref());
 
     // 2. Build (or explore) implementation LTS with canonicalized sync labels.
     let canon = ResourceCanonicalizer::new(&sem, codegen_map);
-    let (impl_lts, impl_truncated) = build_impl_lts(impl_net, &canon);
+    let (impl_lts, impl_truncated) = build_impl_lts(impl_net, &canon, module_scope.as_ref());
     let any_truncated = impl_net.truncated || impl_truncated || spec_reach.truncated;
 
     let mut violations: Vec<RefinementViolation> = Vec::new();
 
     // ── Check 1: O1 Hole Purity ──
+    let mut relevant_purity_violations = 0usize;
     for pv in &impl_net.purity_violations {
+        if let Some(scope) = module_scope.as_ref() {
+            if !scope.purity_violation_in_scope(pv, codegen_map) {
+                continue;
+            }
+        }
+        relevant_purity_violations += 1;
         let (sid, req_clauses) = hole_metadata(pv.hole_id.as_deref(), codegen_map);
         violations.push(RefinementViolation {
             obligation: "O1_purity".to_string(),
@@ -356,36 +483,64 @@ pub fn verify_refinement(
             expected_spec_ops: Vec::new(),
         });
     }
-    let hole_purity = impl_net.purity_violations.is_empty();
+    let hole_purity = relevant_purity_violations == 0;
 
-    // ── Check 2: O2 Weak / Stuttering Simulation ──
-    let weak_sim_violation = check_weak_simulation(&impl_lts, &spec_lts, codegen_map);
+    // ── Checks 2 & 3: Delegate weak simulation, deadlock, and lock-divergence to UniPN ──
+    let spec_has_lock_tau_cycle = has_lock_holding_tau_cycle(&spec_lts).is_some();
+    let (weak_sim_violation, deadlock_violation, lock_div_violation) =
+        run_unipn_refinement(&impl_lts, &spec_lts, spec_has_lock_tau_cycle, codegen_map);
+
     let weak_simulation = weak_sim_violation.is_none();
     if let Some(v) = weak_sim_violation {
         violations.push(v);
     }
 
-    // ── Check 3a: Deadlock Freedom ──
-    let deadlock_violation = check_deadlock_free(&impl_lts);
-    let deadlock_free = deadlock_violation.is_none();
+    let mut deadlock_free = deadlock_violation.is_none();
     if let Some(v) = deadlock_violation {
         violations.push(v);
     }
 
-    // ── Check 3b: Lock-Divergence Freedom ──
-    let spec_has_lock_tau_cycle = has_lock_holding_tau_cycle(&spec_lts).is_some();
-    let lock_div_violation = if !spec_has_lock_tau_cycle {
-        check_lock_divergence_free(&impl_lts, codegen_map)
-    } else {
-        None
-    };
     let lock_divergence_free = lock_div_violation.is_none();
     if let Some(v) = lock_div_violation {
         violations.push(v);
     }
 
+    // ── Compositional lock-order cycle check when `--module <MOD>` is specified ──
+    if let Some(mod_name) = module_filter {
+        let summary = crate::summarize::summarize_program(program, Some(mod_name))?;
+        let mod_in_cycle = summary
+            .modules
+            .first()
+            .map(|m| m.cross_module_lock_cycle)
+            .unwrap_or(false)
+            || summary.cross_module_lock_cycle;
+        if mod_in_cycle {
+            deadlock_free = false;
+            let cycles_desc: Vec<String> = summary
+                .lock_cycles
+                .iter()
+                .map(|c| format!("[{}]", c.join(" -> ")))
+                .collect();
+            violations.push(RefinementViolation {
+                obligation: "O2_refinement".to_string(),
+                kind: "cross_module_lock_cycle".to_string(),
+                message: format!(
+                    "module '{mod_name}' participates in a cross-module lock-order cycle: {}",
+                    cycles_desc.join(", ")
+                ),
+                hole_id: None,
+                sid: None,
+                req_clauses: Vec::new(),
+                rust_span: None,
+                witness_trace: Vec::new(),
+                expected_spec_ops: Vec::new(),
+            });
+        }
+    }
+
     // ── Check 4: Preserved Goals & Non-Triviality ──
-    let preserved_violations = check_preserved_goals(&impl_lts, &spec_lts, impl_net, contract);
+    let preserved_violations =
+        check_preserved_goals(&impl_lts, &spec_lts, impl_net, contract, module_scope.as_ref());
     let preserved_goals = preserved_violations.is_empty();
     violations.extend(preserved_violations);
 
@@ -434,6 +589,9 @@ fn hole_metadata(
             Some(h.sid.clone())
         };
         return (sid, h.req.clone());
+    }
+    if let Some(th) = cm.type_holes.iter().find(|th| th.id == hid) {
+        return (None, th.req.clone());
     }
     (None, Vec::new())
 }
@@ -532,6 +690,7 @@ fn build_spec_lts(
     sem: &SemProgram,
     engine: &PetriEngine,
     reach: &crate::explore::Reachability<NetState>,
+    module_scope: Option<&ModuleScope>,
 ) -> Lts {
     let n = reach.states.len();
     let mut tau_edges: Vec<Vec<(usize, EdgeMeta)>> = vec![Vec::new(); n];
@@ -557,7 +716,14 @@ fn build_spec_lts(
         for (v, label) in &reach.edges[u] {
             let dst_state = &reach.states[*v];
             if let Some(action) = classify_spec_edge(sem, engine, state, dst_state, label) {
-                obs_edges[u].push((action, *v, empty_meta.clone()));
+                let keep = module_scope.map_or(true, |sc| {
+                    sc.spec_edge_in_scope(&action.resource, label.origin.module)
+                });
+                if keep {
+                    obs_edges[u].push((action, *v, empty_meta.clone()));
+                } else {
+                    tau_edges[u].push((*v, empty_meta.clone()));
+                }
             } else {
                 tau_edges[u].push((*v, empty_meta.clone()));
             }
@@ -585,6 +751,15 @@ fn spec_state_holds_lock(sem: &SemProgram, engine: &PetriEngine, state: &NetStat
         if r.kind == ResKind::Mutex {
             if let Some(&pid) = engine.net.place_of.get(&PlaceKey::Mutex(r.id)) {
                 if matches!(state.read_mutex(pid), Some(MutexToken::Held(_))) {
+                    return true;
+                }
+            }
+        } else if r.kind == ResKind::RwLock {
+            if let Some(&pid) = engine.net.place_of.get(&PlaceKey::RwLock(r.id)) {
+                if matches!(
+                    state.read_rwlock(pid),
+                    Some(RwLockToken::Reading(_) | RwLockToken::Writing(_))
+                ) {
                     return true;
                 }
             }
@@ -626,6 +801,57 @@ fn classify_spec_edge(
                     op: "mutex_unlock".into(),
                     resource: fqn_of(*resource),
                 }),
+                SemOp::RwLockRead { resource } => {
+                    if let Some(tid) = label.thread {
+                        let blocked = dst
+                            .store
+                            .threads
+                            .get(&tid)
+                            .and_then(|t| t.blocked_at.as_ref())
+                            .is_some();
+                        if blocked {
+                            return None;
+                        }
+                    }
+                    Some(SyncAction {
+                        op: "rwlock_read_lock".into(),
+                        resource: fqn_of(*resource),
+                    })
+                }
+                SemOp::RwLockWrite { resource } => {
+                    if let Some(tid) = label.thread {
+                        let blocked = dst
+                            .store
+                            .threads
+                            .get(&tid)
+                            .and_then(|t| t.blocked_at.as_ref())
+                            .is_some();
+                        if blocked {
+                            return None;
+                        }
+                    }
+                    Some(SyncAction {
+                        op: "rwlock_write_lock".into(),
+                        resource: fqn_of(*resource),
+                    })
+                }
+                SemOp::RwLockUnlock { resource } => {
+                    let op = engine
+                        .net
+                        .place_of
+                        .get(&PlaceKey::RwLock(*resource))
+                        .and_then(|pid| src.read_rwlock(*pid))
+                        .map(|tok| match tok {
+                            RwLockToken::Writing(_) => "rwlock_write_unlock",
+                            RwLockToken::Reading(_) => "rwlock_read_unlock",
+                            RwLockToken::Free => "rwlock_unlock",
+                        })
+                        .unwrap_or("rwlock_unlock");
+                    Some(SyncAction {
+                        op: op.into(),
+                        resource: fqn_of(*resource),
+                    })
+                }
                 SemOp::CondvarWait { condvar, .. } => Some(SyncAction {
                     op: "condvar_wait".into(),
                     resource: fqn_of(*condvar),
@@ -715,6 +941,14 @@ fn classify_spec_edge(
                     op: "mutex_lock".into(),
                     resource: fqn_of(*resource),
                 }),
+                SemOp::RwLockRead { resource } => Some(SyncAction {
+                    op: "rwlock_read_lock".into(),
+                    resource: fqn_of(*resource),
+                }),
+                SemOp::RwLockWrite { resource } => Some(SyncAction {
+                    op: "rwlock_write_lock".into(),
+                    resource: fqn_of(*resource),
+                }),
                 // CondvarWait lock re-acquisition is internal to condvar_wait.
                 SemOp::CondvarWait { .. } => None,
                 SemOp::SemaphoreAcquire { resource, .. } => Some(SyncAction {
@@ -738,9 +972,13 @@ fn classify_spec_edge(
 
 // ──────────────────── Impl LTS Construction ────────────────────
 
-fn build_impl_lts(impl_net: &ImplNet, canon: &ResourceCanonicalizer) -> (Lts, bool) {
+fn build_impl_lts(
+    impl_net: &ImplNet,
+    canon: &ResourceCanonicalizer,
+    module_scope: Option<&ModuleScope>,
+) -> (Lts, bool) {
     if impl_net.states.is_empty() && !impl_net.places.is_empty() {
-        return explore_impl_petri_net(impl_net, canon);
+        return explore_impl_petri_net(impl_net, canon, module_scope);
     }
 
     let trans_by_id: HashMap<usize, &ImplTransition> =
@@ -788,15 +1026,19 @@ fn build_impl_lts(impl_net: &ImplNet, canon: &ResourceCanonicalizer) -> (Lts, bo
                     .as_deref()
                     .map(|r| canon.canonicalize(r))
                     .unwrap_or_default();
-                obs_edges[u].push((
-                    SyncAction {
-                        op: tr.op.clone(),
-                        resource: res,
-                    },
-                    v,
-                    meta,
-                ));
-                continue;
+                let keep = module_scope
+                    .map_or(true, |sc| sc.impl_edge_in_scope(&res, tr.fn_def_path.as_deref()));
+                if keep {
+                    obs_edges[u].push((
+                        SyncAction {
+                            op: tr.op.clone(),
+                            resource: res,
+                        },
+                        v,
+                        meta,
+                    ));
+                    continue;
+                }
             }
         }
         tau_edges[u].push((v, meta));
@@ -818,7 +1060,11 @@ fn build_impl_lts(impl_net: &ImplNet, canon: &ResourceCanonicalizer) -> (Lts, bo
 
 /// Fallback Petri-net reachability exploration when `impl_sync_net.json`
 /// supplies `places` + `transitions` without a pre-computed `states`/`edges` graph.
-fn explore_impl_petri_net(impl_net: &ImplNet, canon: &ResourceCanonicalizer) -> (Lts, bool) {
+fn explore_impl_petri_net(
+    impl_net: &ImplNet,
+    canon: &ResourceCanonicalizer,
+    module_scope: Option<&ModuleScope>,
+) -> (Lts, bool) {
     const MAX_IMPL_STATES: usize = 50_000;
 
     let place_idx: HashMap<usize, usize> = impl_net
@@ -924,14 +1170,20 @@ fn explore_impl_petri_net(impl_net: &ImplNet, canon: &ResourceCanonicalizer) -> 
                     .as_deref()
                     .map(|r| canon.canonicalize(r))
                     .unwrap_or_default();
-                obs_edges[u].push((
-                    SyncAction {
-                        op: tr.op.clone(),
-                        resource: res,
-                    },
-                    v,
-                    meta,
-                ));
+                let keep = module_scope
+                    .map_or(true, |sc| sc.impl_edge_in_scope(&res, tr.fn_def_path.as_deref()));
+                if keep {
+                    obs_edges[u].push((
+                        SyncAction {
+                            op: tr.op.clone(),
+                            resource: res,
+                        },
+                        v,
+                        meta,
+                    ));
+                } else {
+                    tau_edges[u].push((v, meta));
+                }
             } else {
                 tau_edges[u].push((v, meta));
             }
@@ -969,7 +1221,7 @@ fn explore_impl_petri_net(impl_net: &ImplNet, canon: &ResourceCanonicalizer) -> 
     )
 }
 
-// ──────────────────── Weak Simulation & Witness Trace ────────────────────
+// ──────────────────── UniPN Stuttering Refinement Bridge ────────────────────
 
 fn compute_tau_closure(lts: &Lts) -> Vec<BTreeSet<usize>> {
     let mut closures = vec![BTreeSet::new(); lts.num_states];
@@ -993,13 +1245,23 @@ fn compute_tau_closure(lts: &Lts) -> Vec<BTreeSet<usize>> {
 fn compute_spec_weak_map(
     spec: &Lts,
     spec_tau: &[BTreeSet<usize>],
+    collapse_notify_all: bool,
+    collapse_rwlock_unlock: bool,
 ) -> Vec<BTreeMap<SyncAction, BTreeSet<usize>>> {
     let mut out = vec![BTreeMap::new(); spec.num_states];
     for q in 0..spec.num_states {
         let map = &mut out[q];
         for &q_mid in &spec_tau[q] {
             for (act, q_after, _) in &spec.obs_edges[q_mid] {
-                let entry = map.entry(act.clone()).or_insert_with(BTreeSet::new);
+                let norm = SyncAction {
+                    op: normalize_op_for_matching(
+                        &act.op,
+                        collapse_notify_all,
+                        collapse_rwlock_unlock,
+                    ),
+                    resource: act.resource.clone(),
+                };
+                let entry = map.entry(norm).or_insert_with(BTreeSet::new);
                 for &q_end in &spec_tau[*q_after] {
                     entry.insert(q_end);
                 }
@@ -1009,247 +1271,255 @@ fn compute_spec_weak_map(
     out
 }
 
-fn spec_matching_targets(
-    spec_weak_q: &BTreeMap<SyncAction, BTreeSet<usize>>,
-    impl_act: &SyncAction,
-) -> BTreeSet<usize> {
-    let mut targets = BTreeSet::new();
-    for (spec_act, dests) in spec_weak_q {
-        if actions_match(impl_act, spec_act) {
-            targets.extend(dests.iter().copied());
-        }
-    }
-    targets
-}
-
-fn compute_impl_weak_steps(
-    impl_lts: &Lts,
-    impl_tau: &[BTreeSet<usize>],
-) -> Vec<Vec<(SyncAction, usize, EdgeMeta)>> {
-    let mut out = vec![Vec::new(); impl_lts.num_states];
-    for p in 0..impl_lts.num_states {
-        let mut seen: BTreeSet<(SyncAction, usize)> = BTreeSet::new();
-        for &p_mid in &impl_tau[p] {
-            for (act, p_next, meta) in &impl_lts.obs_edges[p_mid] {
-                if seen.insert((act.clone(), *p_next)) {
-                    out[p].push((act.clone(), *p_next, meta.clone()));
-                }
-            }
-        }
-    }
-    out
-}
-
-fn check_weak_simulation(
+fn run_unipn_refinement(
     impl_lts: &Lts,
     spec_lts: &Lts,
+    spec_has_lock_tau_cycle: bool,
     codegen_map: Option<&CodegenMap>,
-) -> Option<RefinementViolation> {
+) -> (
+    Option<RefinementViolation>,
+    Option<RefinementViolation>,
+    Option<RefinementViolation>,
+) {
     if impl_lts.num_states == 0 || spec_lts.num_states == 0 {
-        return None;
+        return (None, None, None);
     }
 
-    let impl_tau = compute_tau_closure(impl_lts);
-    let spec_tau = compute_tau_closure(spec_lts);
-    let impl_weak = compute_impl_weak_steps(impl_lts, &impl_tau);
-    let spec_weak = compute_spec_weak_map(spec_lts, &spec_tau);
+    // Decide whether `spn`'s coarse notify or generic rwlock_unlock normalization applies.
+    let impl_has_notify_all = impl_lts
+        .obs_edges
+        .iter()
+        .flatten()
+        .any(|(a, _, _)| a.op == "condvar_notify_all");
+    let collapse_notify_all = !impl_has_notify_all;
 
-    // 1. Trace-refinement BFS: finds the shortest distinguishing observable trace
-    //    whenever impl can perform an observable sequence not allowed by spec.
-    if let Some(v) = bfs_trace_refinement(
+    let impl_has_generic_rw_unlock = impl_lts
+        .obs_edges
+        .iter()
+        .flatten()
+        .any(|(a, _, _)| a.op == "rwlock_unlock");
+    let collapse_rwlock_unlock = impl_has_generic_rw_unlock;
+
+    let mut impl_edges: Vec<(usize, usize, Option<SyncAction>, usize)> = Vec::new();
+    let mut impl_edge_info: Vec<(Option<SyncAction>, EdgeMeta)> = Vec::new();
+    for u in 0..impl_lts.num_states {
+        for (v, meta) in &impl_lts.tau_edges[u] {
+            let tag = impl_edge_info.len();
+            impl_edge_info.push((None, meta.clone()));
+            impl_edges.push((u, *v, None, tag));
+        }
+        for (act, v, meta) in &impl_lts.obs_edges[u] {
+            let tag = impl_edge_info.len();
+            impl_edge_info.push((Some(act.clone()), meta.clone()));
+            let norm = SyncAction {
+                op: normalize_op_for_matching(
+                    &act.op,
+                    collapse_notify_all,
+                    collapse_rwlock_unlock,
+                ),
+                resource: act.resource.clone(),
+            };
+            impl_edges.push((u, *v, Some(norm), tag));
+        }
+    }
+
+    let mut spec_edges: Vec<(usize, usize, Option<SyncAction>)> = Vec::new();
+    for u in 0..spec_lts.num_states {
+        for (v, _) in &spec_lts.tau_edges[u] {
+            spec_edges.push((u, *v, None));
+        }
+        for (act, v, _) in &spec_lts.obs_edges[u] {
+            let norm = SyncAction {
+                op: normalize_op_for_matching(
+                    &act.op,
+                    collapse_notify_all,
+                    collapse_rwlock_unlock,
+                ),
+                resource: act.resource.clone(),
+            };
+            spec_edges.push((u, *v, Some(norm)));
+        }
+    }
+
+    let res = check_stuttering_refinement(
+        impl_lts.num_states,
         impl_lts.initial,
+        &impl_edges,
+        spec_lts.num_states,
         spec_lts.initial,
-        &impl_weak,
-        &spec_weak,
-        &spec_tau,
-        codegen_map,
-    ) {
-        return Some(v);
-    }
+        &spec_edges,
+        |s| impl_lts.deadlock[s],
+        |s| spec_lts.deadlock[s],
+        |s| impl_lts.holds_lock[s],
+        spec_has_lock_tau_cycle,
+    );
 
-    // 2. Greatest fixed-point weak simulation (branching-time refinement) when
-    //    the product size is tractable.
-    let product = impl_lts.num_states.saturating_mul(spec_lts.num_states);
-    if product <= 250_000 {
-        let mut sim = vec![vec![true; spec_lts.num_states]; impl_lts.num_states];
-        let mut changed = true;
-        while changed {
-            changed = false;
-            for p in 0..impl_lts.num_states {
-                for q in 0..spec_lts.num_states {
-                    if !sim[p][q] {
-                        continue;
-                    }
-                    let mut ok = true;
-                    for (act, p_next, _) in &impl_weak[p] {
-                        let targets = spec_matching_targets(&spec_weak[q], act);
-                        if !targets.iter().any(|&q_next| sim[*p_next][q_next]) {
-                            ok = false;
-                            break;
-                        }
-                    }
-                    if !ok {
-                        sim[p][q] = false;
-                        changed = true;
+    // ── Map weak simulation violation ──
+    let weak_sim_violation = if res.simulated {
+        None
+    } else {
+        let spec_tau = compute_tau_closure(spec_lts);
+        let spec_weak = compute_spec_weak_map(
+            spec_lts,
+            &spec_tau,
+            collapse_notify_all,
+            collapse_rwlock_unlock,
+        );
+
+        let mut witness_trace = Vec::new();
+        let mut last_meta = EdgeMeta {
+            span: None,
+            hole_id: None,
+        };
+        let mut prefix_norm_actions: Vec<SyncAction> = Vec::new();
+
+        if let Some(w) = &res.simulation_witness {
+            for &tag in &w.impl_edge_tags {
+                if let Some((act_opt, meta)) = impl_edge_info.get(tag) {
+                    if let Some(act) = act_opt {
+                        witness_trace.push(WitnessStep {
+                            step: witness_trace.len(),
+                            op: act.op.clone(),
+                            resource: act.resource.clone(),
+                            span: meta.span.clone(),
+                        });
+                        prefix_norm_actions.push(SyncAction {
+                            op: normalize_op_for_matching(
+                                &act.op,
+                                collapse_notify_all,
+                                collapse_rwlock_unlock,
+                            ),
+                            resource: act.resource.clone(),
+                        });
+                        last_meta = meta.clone();
                     }
                 }
             }
         }
 
-        // Initial pair holds if any tau-successor of spec_init simulates impl_init.
-        let init_simulated = spec_tau[spec_lts.initial]
-            .iter()
-            .any(|&q0| sim[impl_lts.initial][q0]);
-        if !init_simulated {
-            // Find shortest witness path to a non-simulable step from (impl_init, spec_init).
-            return Some(branching_witness(
-                impl_lts.initial,
-                spec_lts.initial,
-                &impl_weak,
-                &spec_weak,
-                &sim,
-                codegen_map,
-            ));
-        }
-    }
-
-    None
-}
-
-fn bfs_trace_refinement(
-    impl_init: usize,
-    spec_init: usize,
-    impl_weak: &[Vec<(SyncAction, usize, EdgeMeta)>],
-    spec_weak: &[BTreeMap<SyncAction, BTreeSet<usize>>],
-    spec_tau: &[BTreeSet<usize>],
-    codegen_map: Option<&CodegenMap>,
-) -> Option<RefinementViolation> {
-    const MAX_FRONTIER_STATES: usize = 50_000;
-
-    let init_frontier = spec_tau[spec_init].clone();
-    let mut visited: HashSet<(usize, BTreeSet<usize>)> = HashSet::new();
-    let mut queue: VecDeque<(usize, BTreeSet<usize>, Vec<WitnessStep>)> = VecDeque::new();
-
-    visited.insert((impl_init, init_frontier.clone()));
-    queue.push_back((impl_init, init_frontier, Vec::new()));
-
-    while let Some((p, frontier, trace)) = queue.pop_front() {
-        for (act, p_next, meta) in &impl_weak[p] {
+        // Compute the spec frontier right before the final failing action so we
+        // report exact `expected_spec_ops`.
+        let mut frontier: BTreeSet<usize> = spec_tau[spec_lts.initial].clone();
+        let prefix_len = prefix_norm_actions.len().saturating_sub(1);
+        for act in &prefix_norm_actions[..prefix_len] {
             let mut next_frontier = BTreeSet::new();
             for &q in &frontier {
-                next_frontier.extend(spec_matching_targets(&spec_weak[q], act));
-            }
-            let mut step_trace = trace.clone();
-            step_trace.push(WitnessStep {
-                step: step_trace.len(),
-                op: act.op.clone(),
-                resource: act.resource.clone(),
-                span: meta.span.clone(),
-            });
-
-            if next_frontier.is_empty() {
-                let mut expected: BTreeSet<String> = BTreeSet::new();
-                for &q in &frontier {
-                    for spec_act in spec_weak[q].keys() {
-                        expected.insert(spec_act.display());
-                    }
+                if let Some(dests) = spec_weak[q].get(act) {
+                    next_frontier.extend(dests.iter().copied());
                 }
-                let (sid, req_clauses) = hole_metadata(meta.hole_id.as_deref(), codegen_map);
-                return Some(RefinementViolation {
-                    obligation: "O2_refinement".to_string(),
-                    kind: "unexpected_sync_step".to_string(),
-                    message: format!(
-                        "implementation performed unauthorized synchronization step '{}' after {} observable step(s)",
-                        act.display(),
-                        trace.len()
-                    ),
-                    hole_id: meta.hole_id.clone(),
-                    sid,
-                    req_clauses,
-                    rust_span: meta.span.clone(),
-                    witness_trace: step_trace,
-                    expected_spec_ops: expected.into_iter().collect(),
-                });
             }
-
-            if visited.len() < MAX_FRONTIER_STATES
-                && visited.insert((*p_next, next_frontier.clone()))
-            {
-                queue.push_back((*p_next, next_frontier, step_trace));
+            if next_frontier.is_empty() {
+                break;
+            }
+            frontier = next_frontier;
+        }
+        let mut expected: BTreeSet<String> = BTreeSet::new();
+        for &q in &frontier {
+            for spec_act in spec_weak[q].keys() {
+                expected.insert(spec_act.display());
             }
         }
-    }
 
-    None
-}
+        let failed_display = res
+            .simulation_witness
+            .as_ref()
+            .and_then(|w| w.failed_action.as_ref())
+            .map(|a| a.display())
+            .or_else(|| {
+                witness_trace
+                    .last()
+                    .map(|s| format!("{}({})", s.op, s.resource))
+            })
+            .unwrap_or_else(|| "<step>".to_string());
 
-fn branching_witness(
-    impl_init: usize,
-    spec_init: usize,
-    impl_weak: &[Vec<(SyncAction, usize, EdgeMeta)>],
-    spec_weak: &[BTreeMap<SyncAction, BTreeSet<usize>>],
-    sim: &[Vec<bool>],
-    codegen_map: Option<&CodegenMap>,
-) -> RefinementViolation {
-    let mut visited: HashSet<(usize, usize)> = HashSet::new();
-    let mut queue: VecDeque<(usize, usize, Vec<WitnessStep>)> = VecDeque::new();
-    visited.insert((impl_init, spec_init));
-    queue.push_back((impl_init, spec_init, Vec::new()));
+        let (sid, req_clauses) = hole_metadata(last_meta.hole_id.as_deref(), codegen_map);
+        Some(RefinementViolation {
+            obligation: "O2_refinement".to_string(),
+            kind: "unexpected_sync_step".to_string(),
+            message: format!(
+                "implementation performed unauthorized synchronization step '{failed_display}' after {} observable step(s)",
+                witness_trace.len().saturating_sub(1)
+            ),
+            hole_id: last_meta.hole_id,
+            sid,
+            req_clauses,
+            rust_span: last_meta.span,
+            witness_trace,
+            expected_spec_ops: expected.into_iter().collect(),
+        })
+    };
 
-    while let Some((p, q, trace)) = queue.pop_front() {
-        for (act, p_next, meta) in &impl_weak[p] {
-            let targets = spec_matching_targets(&spec_weak[q], act);
-            if !targets.iter().any(|&q_next| sim[*p_next][q_next]) {
-                let mut step_trace = trace.clone();
-                step_trace.push(WitnessStep {
-                    step: step_trace.len(),
+    // ── Map deadlock violation ──
+    let deadlock_violation = if res.deadlocked_impl_states.is_empty() {
+        None
+    } else {
+        let traces = reachable_states_with_trace(impl_lts);
+        let mut dls = res.deadlocked_impl_states.clone();
+        dls.sort_by_key(|&s| (traces.get(&s).map_or(usize::MAX, Vec::len), s));
+        let dl = dls[0];
+        let witness = traces.get(&dl).cloned().unwrap_or_default();
+        Some(RefinementViolation {
+            obligation: "O2_refinement".to_string(),
+            kind: "deadlock_introduced".to_string(),
+            message: format!(
+                "implementation reaches a deadlock state (state {dl}) after {} observable step(s)",
+                witness.len()
+            ),
+            hole_id: None,
+            sid: None,
+            req_clauses: Vec::new(),
+            rust_span: witness.last().and_then(|s| s.span.clone()),
+            witness_trace: witness,
+            expected_spec_ops: Vec::new(),
+        })
+    };
+
+    // ── Map lock-divergence violation ──
+    let lock_div_violation = res.lock_divergences.first().map(|div| {
+        let mut witness = Vec::new();
+        for &tag in &div.prefix_edge_tags {
+            if let Some((Some(act), meta)) = impl_edge_info.get(tag) {
+                witness.push(WitnessStep {
+                    step: witness.len(),
                     op: act.op.clone(),
                     resource: act.resource.clone(),
                     span: meta.span.clone(),
                 });
-                let expected: Vec<String> = spec_weak[q].keys().map(|a| a.display()).collect();
-                let (sid, req_clauses) = hole_metadata(meta.hole_id.as_deref(), codegen_map);
-                return RefinementViolation {
-                    obligation: "O2_refinement".to_string(),
-                    kind: "unexpected_sync_step".to_string(),
-                    message: format!(
-                        "branching weak simulation failed at step '{}'",
-                        act.display()
-                    ),
-                    hole_id: meta.hole_id.clone(),
-                    sid,
-                    req_clauses,
-                    rust_span: meta.span.clone(),
-                    witness_trace: step_trace,
-                    expected_spec_ops: expected,
-                };
             }
-            for q_next in targets {
-                if !sim[*p_next][q_next] && visited.insert((*p_next, q_next)) {
-                    let mut next_trace = trace.clone();
-                    next_trace.push(WitnessStep {
-                        step: next_trace.len(),
-                        op: act.op.clone(),
-                        resource: act.resource.clone(),
-                        span: meta.span.clone(),
-                    });
-                    queue.push_back((*p_next, q_next, next_trace));
+        }
+        let mut chosen_meta = EdgeMeta {
+            span: None,
+            hole_id: None,
+        };
+        for &tag in &div.cycle_edge_tags {
+            if let Some((_, meta)) = impl_edge_info.get(tag) {
+                if meta.hole_id.is_some() {
+                    chosen_meta = meta.clone();
+                    break;
+                }
+                if chosen_meta.span.is_none() && meta.span.is_some() {
+                    chosen_meta = meta.clone();
                 }
             }
         }
-    }
+        let cyc_state = div.cycle_states.first().copied().unwrap_or(0);
+        let (sid, req_clauses) = hole_metadata(chosen_meta.hole_id.as_deref(), codegen_map);
+        RefinementViolation {
+            obligation: "O2_refinement".to_string(),
+            kind: "lock_divergence".to_string(),
+            message: format!(
+                "reachable tau-cycle detected while holding lock(s) at implementation state {cyc_state}"
+            ),
+            hole_id: chosen_meta.hole_id,
+            sid,
+            req_clauses,
+            rust_span: chosen_meta.span,
+            witness_trace: witness,
+            expected_spec_ops: Vec::new(),
+        }
+    });
 
-    RefinementViolation {
-        obligation: "O2_refinement".to_string(),
-        kind: "unexpected_sync_step".to_string(),
-        message: "implementation is not weakly simulated by specification".to_string(),
-        hole_id: None,
-        sid: None,
-        req_clauses: Vec::new(),
-        rust_span: None,
-        witness_trace: Vec::new(),
-        expected_spec_ops: Vec::new(),
-    }
+    (weak_sim_violation, deadlock_violation, lock_div_violation)
 }
 
 // ──────────────────── Deadlock & Lock-Divergence Checks ────────────────────
@@ -1283,32 +1553,6 @@ fn reachable_states_with_trace(lts: &Lts) -> HashMap<usize, Vec<WitnessStep>> {
         }
     }
     traces
-}
-
-fn check_deadlock_free(impl_lts: &Lts) -> Option<RefinementViolation> {
-    let traces = reachable_states_with_trace(impl_lts);
-    let mut deadlocks: Vec<usize> = traces
-        .keys()
-        .copied()
-        .filter(|&s| impl_lts.deadlock[s])
-        .collect();
-    deadlocks.sort_by_key(|&s| (traces[&s].len(), s));
-    let dl = deadlocks.first().copied()?;
-    let witness = traces[&dl].clone();
-    Some(RefinementViolation {
-        obligation: "O2_refinement".to_string(),
-        kind: "deadlock_introduced".to_string(),
-        message: format!(
-            "implementation reaches a deadlock state (state {dl}) after {} observable step(s)",
-            witness.len()
-        ),
-        hole_id: None,
-        sid: None,
-        req_clauses: Vec::new(),
-        rust_span: witness.last().and_then(|s| s.span.clone()),
-        witness_trace: witness,
-        expected_spec_ops: Vec::new(),
-    })
 }
 
 /// Returns `(cycle_state, optional_meta)` if the LTS has a reachable $\tau$-cycle
@@ -1414,29 +1658,6 @@ fn has_lock_holding_tau_cycle(lts: &Lts) -> Option<(usize, EdgeMeta)> {
     None
 }
 
-fn check_lock_divergence_free(
-    impl_lts: &Lts,
-    codegen_map: Option<&CodegenMap>,
-) -> Option<RefinementViolation> {
-    let (cyc_state, meta) = has_lock_holding_tau_cycle(impl_lts)?;
-    let traces = reachable_states_with_trace(impl_lts);
-    let witness = traces.get(&cyc_state).cloned().unwrap_or_default();
-    let (sid, req_clauses) = hole_metadata(meta.hole_id.as_deref(), codegen_map);
-    Some(RefinementViolation {
-        obligation: "O2_refinement".to_string(),
-        kind: "lock_divergence".to_string(),
-        message: format!(
-            "reachable tau-cycle detected while holding lock(s) at implementation state {cyc_state}"
-        ),
-        hole_id: meta.hole_id,
-        sid,
-        req_clauses,
-        rust_span: meta.span,
-        witness_trace: witness,
-        expected_spec_ops: Vec::new(),
-    })
-}
-
 // ──────────────────── Preserved Goals & Non-Triviality ────────────────────
 
 fn collect_preserved_functions(pred: &PredicateSpec, out: &mut BTreeSet<String>) {
@@ -1472,6 +1693,7 @@ fn check_preserved_goals(
     spec_lts: &Lts,
     impl_net: &ImplNet,
     contract: Option<&ContractSpec>,
+    module_scope: Option<&ModuleScope>,
 ) -> Vec<RefinementViolation> {
     let mut violations = Vec::new();
 
@@ -1488,6 +1710,11 @@ fn check_preserved_goals(
             }
         }
         for func in required_fns {
+            if let Some(scope) = module_scope {
+                if !scope.fn_in_scope(&func) {
+                    continue;
+                }
+            }
             if !matches_completed_function(&func, &impl_net.completed_functions) {
                 violations.push(RefinementViolation {
                     obligation: "O2_refinement".to_string(),
@@ -1536,4 +1763,113 @@ fn check_preserved_goals(
     }
 
     violations
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn module_scope_projects_imported_resource_by_origin_not_requires() {
+        let prog: Program = serde_json::from_str(
+            r#"{
+                "program": "shared_res_mod",
+                "version": "4.0.0",
+                "entry": "app::main",
+                "modules": [
+                    {
+                        "name": "app",
+                        "provides": {"resources": [], "functions": ["main"]},
+                        "requires": {"resources": [], "functions": ["storage::run_s", "worker::run"]},
+                        "resources": [],
+                        "protection": [],
+                        "functions": [{
+                            "name": "main",
+                            "kind": "normal",
+                            "body": [
+                                {"sid": "s1", "kind": "scope", "funcs": ["storage::run_s", "worker::run"]},
+                                {"sid": "s2", "kind": "return"}
+                            ]
+                        }]
+                    },
+                    {
+                        "name": "storage",
+                        "provides": {"resources": ["db_lock"], "functions": ["run_s"]},
+                        "requires": {"resources": [], "functions": []},
+                        "resources": [
+                            {"name": "db_lock", "kind": "sync", "type": "Mutex", "mode": "Sync"}
+                        ],
+                        "protection": [],
+                        "functions": [{
+                            "name": "run_s",
+                            "kind": "normal",
+                            "body": [
+                                {"sid": "s1", "kind": "mutex_lock", "resource": "db_lock"},
+                                {"sid": "s2", "kind": "mutex_unlock", "resource": "db_lock"},
+                                {"sid": "s3", "kind": "return"}
+                            ]
+                        }]
+                    },
+                    {
+                        "name": "worker",
+                        "provides": {"resources": [], "functions": ["run"]},
+                        "requires": {"resources": ["storage::db_lock"], "functions": []},
+                        "resources": [],
+                        "protection": [],
+                        "functions": [{
+                            "name": "run",
+                            "kind": "normal",
+                            "body": [
+                                {"sid": "s1", "kind": "mutex_lock", "resource": "storage::db_lock"},
+                                {"sid": "s2", "kind": "mutex_unlock", "resource": "storage::db_lock"},
+                                {"sid": "s3", "kind": "return"}
+                            ]
+                        }]
+                    }
+                ]
+            }"#,
+        )
+        .expect("parse");
+
+        // In `--focus-module worker` projection:
+        // - `storage`'s transitions on `storage::db_lock` are silent (`observable: false`),
+        // - `worker`'s transitions on `storage::db_lock` are observable (`observable: true`,
+        //   with `fn_def_path: Some("cir_generated::worker::cf_run")`).
+        let impl_net: ImplNet = serde_json::from_str(
+            r#"{
+                "schema": "concir-impl-net/1",
+                "crate": "cir_generated",
+                "focus_module": "worker",
+                "states": [
+                    {"id": 0, "initial": true, "terminal": false, "deadlock": false, "held_locks": []},
+                    {"id": 1, "initial": false, "terminal": false, "deadlock": false, "held_locks": ["storage::db_lock"]},
+                    {"id": 2, "initial": false, "terminal": false, "deadlock": false, "held_locks": []},
+                    {"id": 3, "initial": false, "terminal": false, "deadlock": false, "held_locks": ["storage::db_lock"]},
+                    {"id": 4, "initial": false, "terminal": true, "deadlock": false, "held_locks": []}
+                ],
+                "transitions": [
+                    {"id": 0, "observable": false, "op": "mutex_lock", "resource": "storage::db_lock", "fn_def_path": "cir_generated::storage::cf_run_s"},
+                    {"id": 1, "observable": false, "op": "mutex_unlock", "resource": "storage::db_lock", "fn_def_path": "cir_generated::storage::cf_run_s"},
+                    {"id": 2, "observable": true, "op": "mutex_lock", "resource": "storage::db_lock", "fn_def_path": "cir_generated::worker::cf_run"},
+                    {"id": 3, "observable": true, "op": "mutex_unlock", "resource": "storage::db_lock", "fn_def_path": "cir_generated::worker::cf_run"}
+                ],
+                "edges": [
+                    {"from": 0, "to": 1, "transition": 0},
+                    {"from": 1, "to": 2, "transition": 1},
+                    {"from": 2, "to": 3, "transition": 2},
+                    {"from": 3, "to": 4, "transition": 3}
+                ],
+                "purity_violations": [],
+                "completed_functions": ["worker::run"]
+            }"#,
+        )
+        .expect("impl_net");
+
+        let rep = verify_refinement_for_module(&prog, &impl_net, None, None, Some("worker"))
+            .expect("verify_refinement_for_module");
+        assert_eq!(
+            rep.outcome, "pass",
+            "expected worker modular refinement to pass with silent storage ops: {rep:?}"
+        );
+    }
 }

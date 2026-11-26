@@ -206,6 +206,14 @@ fn resource_matches(model: &str, event: &str) -> bool {
     short(model) == short(event)
 }
 
+/// Operation-name alignment: `cir_trace` emits `"rwlock_read_unlock"` /
+/// `"rwlock_write_unlock"` while `SemOp::RwLockUnlock` reports `"rwlock_unlock"`.
+fn op_matches(model_op: &str, event_op: &str) -> bool {
+    model_op == event_op
+        || (model_op == "rwlock_unlock"
+            && matches!(event_op, "rwlock_read_unlock" | "rwlock_write_unlock"))
+}
+
 fn statement_matches(
     program: &SemProgram,
     f: crate::sem::ids::FunctionId,
@@ -216,7 +224,7 @@ fn statement_matches(
         Target::Sid(s) => sid_of(program, f, idx).as_deref() == Some(s.as_str()),
         Target::OpRes(op, res) => match observable_sig(program, f, idx) {
             Some((mop, mres)) => {
-                mop == *op
+                op_matches(&mop, op)
                     && (matches!(op.as_str(), "spawn" | "scope" | "join")
                         || resource_matches(&mres, res))
             }
@@ -380,6 +388,9 @@ fn op_name(op: &SemOp) -> &'static str {
     match op {
         SemOp::MutexLock { .. } => "mutex_lock",
         SemOp::MutexUnlock { .. } => "mutex_unlock",
+        SemOp::RwLockRead { .. } => "rwlock_read_lock",
+        SemOp::RwLockWrite { .. } => "rwlock_write_lock",
+        SemOp::RwLockUnlock { .. } => "rwlock_unlock",
         SemOp::CondvarWait { .. } => "condvar_wait",
         SemOp::CondvarNotify { .. } => "condvar_notify",
         SemOp::CondvarNotifyAll { .. } => "condvar_notify_all",
@@ -404,7 +415,11 @@ fn observable_sig(program: &SemProgram, f: crate::sem::ids::FunctionId, idx: usi
         return None;
     }
     let resource = match &op {
-        SemOp::MutexLock { resource } | SemOp::MutexUnlock { resource }
+        SemOp::MutexLock { resource }
+        | SemOp::MutexUnlock { resource }
+        | SemOp::RwLockRead { resource }
+        | SemOp::RwLockWrite { resource }
+        | SemOp::RwLockUnlock { resource }
         | SemOp::CondvarWait { condvar: resource, .. }
         | SemOp::CondvarNotify { condvar: resource }
         | SemOp::CondvarNotifyAll { condvar: resource }
@@ -508,8 +523,10 @@ pub fn conform_events(
                     }
                 }
             }
-            let op_ok = sigs.iter().any(|(o, _)| o == op);
-            let res_ok = sigs.iter().any(|(o, r)| o == op && (resource.is_empty() || r == resource));
+            let op_ok = sigs.iter().any(|(o, _)| op_matches(o, op));
+            let res_ok = sigs
+                .iter()
+                .any(|(o, r)| op_matches(o, op) && (resource.is_empty() || r == resource));
             if !op_ok || !res_ok {
                 let kind = if op_ok { "resource" } else { "order" };
                 return Conformance {

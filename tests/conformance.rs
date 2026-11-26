@@ -119,3 +119,49 @@ fn observable_op_classification() {
     }));
     assert!(!is_observable(&SemOp::Nop));
 }
+
+#[test]
+fn conform_events_matches_rwlock_read_and_write_unlock_events() {
+    use concir::conform::conform_events;
+
+    let rw_json = r#"
+    {
+      "program": "rw_conform",
+      "version": "4.0.0",
+      "entry": "main::main",
+      "modules": [{
+        "name": "main",
+        "resources": [
+          {"name": "rw", "kind": "sync", "type": "RwLock", "mode": "Sync"}
+        ],
+        "protection": [],
+        "functions": [
+          {"name": "main", "kind": "normal", "body": [
+            {"sid": "s1", "kind": "rwlock_read", "resource": "main::rw"},
+            {"sid": "s2", "kind": "rwlock_unlock", "resource": "main::rw"},
+            {"sid": "s3", "kind": "rwlock_write", "resource": "main::rw"},
+            {"sid": "s4", "kind": "rwlock_unlock", "resource": "main::rw"},
+            {"sid": "s5", "kind": "return"}
+          ]}
+        ]
+      }]
+    }
+    "#;
+    let prog: Program = serde_json::from_str(rw_json).expect("parse");
+    let sem = program::lower(&prog).expect("lower");
+
+    let trace = vec![
+        ("t0".to_string(), "s1".to_string(), "rwlock_read_lock".to_string(), "main::rw".to_string()),
+        ("t0".to_string(), "s2".to_string(), "rwlock_read_unlock".to_string(), "main::rw".to_string()),
+        ("t0".to_string(), "s3".to_string(), "rwlock_write_lock".to_string(), "main::rw".to_string()),
+        ("t0".to_string(), "s4".to_string(), "rwlock_write_unlock".to_string(), "main::rw".to_string()),
+    ];
+
+    // Default sid mode (`op_resource = false`)
+    let sid_res = conform_events(&sem, &trace, false, false, false);
+    assert_eq!(sid_res.status, "conformant", "sid mode failed: {sid_res:?}");
+
+    // Free-Rust (`op_resource = true`) mode
+    let op_res = conform_events(&sem, &trace, false, false, true);
+    assert_eq!(op_res.status, "conformant", "op_resource mode failed: {op_res:?}");
+}

@@ -260,6 +260,8 @@ fn proj_it(sp: &SemProgram, s: &MachineState) -> String {
 fn block_it(sp: &SemProgram, b: &BlockReason) -> String {
     match b {
         BlockReason::Lock(r) => format!("lock:{}", res_key(sp, *r)),
+        BlockReason::RwLockRead(r) => format!("rwread:{}", res_key(sp, *r)),
+        BlockReason::RwLockWrite(r) => format!("rwwrite:{}", res_key(sp, *r)),
         BlockReason::ChannelSend(r) => format!("send:{}", res_key(sp, *r)),
         BlockReason::ChannelRecv(r) => format!("recv:{}", res_key(sp, *r)),
         BlockReason::Condvar(c, _l) => format!("condvar:{}", res_key(sp, *c)),

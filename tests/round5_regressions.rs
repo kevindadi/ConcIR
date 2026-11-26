@@ -346,6 +346,25 @@ fn shift_pn(s: &NetState) -> NetState {
                     NetToken::Mutex(MutexToken::Held(t)) => {
                         NetToken::Mutex(MutexToken::Held(ThreadId(t.0 + K)))
                     }
+                    NetToken::RwLock(concir::petri::net::RwLockToken::Free) => {
+                        NetToken::RwLock(concir::petri::net::RwLockToken::Free)
+                    }
+                    NetToken::RwLock(concir::petri::net::RwLockToken::Writing(t)) => {
+                        NetToken::RwLock(concir::petri::net::RwLockToken::Writing(ThreadId(t.0 + K)))
+                    }
+                    NetToken::RwLock(concir::petri::net::RwLockToken::Reading(rs)) => {
+                        NetToken::RwLock(concir::petri::net::RwLockToken::Reading(
+                            rs.iter().map(|t| ThreadId(t.0 + K)).collect(),
+                        ))
+                    }
+                    NetToken::RwLockReadWait { thread, frame } => NetToken::RwLockReadWait {
+                        thread: ThreadId(thread.0 + K),
+                        frame: FrameId(frame.0 + K),
+                    },
+                    NetToken::RwLockWriteWait { thread, frame } => NetToken::RwLockWriteWait {
+                        thread: ThreadId(thread.0 + K),
+                        frame: FrameId(frame.0 + K),
+                    },
                     NetToken::Data(v) => NetToken::Data(v.clone()),
                 })
                 .collect();
