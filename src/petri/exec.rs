@@ -419,6 +419,24 @@ impl<'a> PetriEngine<'a> {
                 let out = t.next.expect("nop has next");
                 self.place_control(&mut next, out, control.unwrap().0, control.unwrap().1);
             }
+            NetOp::SeqHole { updates_modeled } => {
+                let (thread, frame) = control.unwrap();
+                let mut evaluated = Vec::with_capacity(updates_modeled.len());
+                for u in updates_modeled {
+                    let v = self.eval(&next, frame, &u.expr, &at)?;
+                    if !self.dst_type_ok(&next, frame, u.target, &v) {
+                        disabled!();
+                    }
+                    evaluated.push((u.target, v));
+                }
+                for (target, v) in evaluated {
+                    if !self.write_dst(&mut next, frame, target, v)? {
+                        disabled!();
+                    }
+                }
+                let out = t.next.unwrap();
+                self.place_control(&mut next, out, thread, frame);
+            }
             NetOp::AssignLocal { target, expr } => {
                 let (_, frame) = control.unwrap();
                 let v = self.eval(&next, frame, expr, &at)?;

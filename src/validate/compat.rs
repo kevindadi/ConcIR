@@ -177,7 +177,12 @@ fn check_op(
                 "atomic_* requires an Atomic",
             );
         }
-        Op::SeqHole { reads, writes, .. } => {
+        Op::SeqHole {
+            reads,
+            writes,
+            updates_modeled,
+            ..
+        } => {
             for name in reads.iter().chain(writes.iter()) {
                 if let Some(rt) = rt_map.get(name) {
                     if !matches!(rt, ResType::Var(_) | ResType::Atomic(_)) {
@@ -193,6 +198,26 @@ fn check_op(
                             .with_location(location)
                             .with_fix(
                                 "move lock/wait/send into the skeleton; keep seq_hole to sequential data",
+                            ),
+                        );
+                    }
+                }
+            }
+            for u in updates_modeled {
+                if let Some(rt) = rt_map.get(&u.target) {
+                    if !matches!(rt, ResType::Var(_)) {
+                        diags.push(
+                            Diagnostic::error(
+                                "E310",
+                                format!(
+                                    "seq_hole updates_modeled target '{}' must be a local or Var resource",
+                                    u.target
+                                ),
+                            )
+                            .with_path(path.to_string())
+                            .with_location(location)
+                            .with_fix(
+                                "target a function local or shared Var in seq_hole.updates_modeled",
                             ),
                         );
                     }

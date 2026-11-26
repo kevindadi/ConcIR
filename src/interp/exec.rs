@@ -948,6 +948,24 @@ impl<'a> Interpreter<'a> {
                     return Ok(Vec::new());
                 }
             }
+            SemOp::SeqHole {
+                updates_modeled, ..
+            } => {
+                // Evaluate all modeled updates in the pre-state, validate domains,
+                // then apply simultaneously as one atomic silent step.
+                let mut evaluated = Vec::with_capacity(updates_modeled.len());
+                for u in &updates_modeled {
+                    let v = self.eval(&next, fid, &u.expr, &at)?;
+                    if !self.dst_type_ok(&next, fid, u.target, &v) {
+                        return Ok(Vec::new());
+                    }
+                    evaluated.push((u.target, v));
+                }
+                for (target, v) in evaluated {
+                    next.write_dst(fid, target, v)?;
+                }
+                next.advance(tid);
+            }
             SemOp::Unsupported { construct } => {
                 return Err(BackendError::unsupported(
                     construct,

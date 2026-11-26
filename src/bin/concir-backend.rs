@@ -57,6 +57,9 @@ fn usage() -> ! {
          concir-backend bench   [--artifact out.json]\n  \
          concir-backend support <program.json>\n  \
          concir-backend schema\n  \
+         concir-backend lower   <program.json> [--out <lowered.json>] [--trace-map <map.json>]\n  \
+         concir-backend summarize <program.json> [--module <name>] [--out <summary.json>]\n  \
+         concir-backend verify-refinement --spec <program.json> --impl-net <impl_net.json> [--contract <contract.json>] [--codegen-map <codegen.json>] [--out <report.json>]\n  \
          concir-backend codegen <program.json> --out <dir>\n  \
          concir-backend conform <program.json> <trace.jsonl> [--lenient-unlock] [--attempt-events] [--op-resource]\n  \
          concir-backend monitor --contract <contract.json> [--resources <resources.json>] --traces <dir> [--mapping <mapping.json>]\n  \
@@ -96,11 +99,28 @@ fn versioned(mut value: serde_json::Value) -> serde_json::Value {
 }
 
 fn parse_program(path: &str) -> Program {
-    match serde_json::from_str(&read(path)) {
+    let mut p: Program = match serde_json::from_str(&read(path)) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("JSON parse error in '{path}': {e}");
             process::exit(EXIT_USAGE);
+        }
+    };
+    if p.has_structured_bodies() {
+        if let Err(e) = p.ensure_lowered() {
+            eprintln!("SCIR lowering error in '{path}': {e}");
+            process::exit(EXIT_INVALID);
+        }
+    }
+    p
+}
+
+fn parse_program_raw(path: &str, parse_err_exit: i32) -> Program {
+    match serde_json::from_str(&read(path)) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("JSON parse error in '{path}': {e}");
+            process::exit(parse_err_exit);
         }
     }
 }
@@ -200,6 +220,136 @@ fn main() {
         "schema" => {
             let value = concir::schema::schema();
             println!("{}", serde_json::to_string_pretty(&value).expect("serialize"));
+        }
+        "lower" => {
+            let path = args.get(2).unwrap_or_else(|| usage());
+            let out_path = flag_value(&args, "--out");
+            let trace_map_path = flag_value(&args, "--trace-map");
+            let mut program = parse_program_raw(path, EXIT_USAGE);
+            let trace_map = match program.ensure_lowered() {
+                Ok(tm) => tm,
+                Err(e) => {
+                    eprintln!("SCIR lowering error: {e}");
+                    process::exit(EXIT_INVALID);
+                }
+            };
+            let lowered_json = serde_json::to_string_pretty(&program).expect("serialize");
+            if let Some(p) = &out_path {
+                if let Err(e) = fs::write(p, format!("{lowered_json}\n")) {
+                    eprintln!("error writing lowered program '{p}': {e}");
+                    process::exit(EXIT_USAGE);
+                }
+            }
+            if let Some(p) = &trace_map_path {
+                let tm_json = serde_json::to_string_pretty(&trace_map).expect("serialize");
+                if let Err(e) = fs::write(p, format!("{tm_json}\n")) {
+                    eprintln!("error writing trace map '{p}': {e}");
+                    process::exit(EXIT_USAGE);
+                }
+            }
+            println!("{lowered_json}");
+        }
+        "summarize" => {
+            let path = args.get(2).unwrap_or_else(|| usage());
+            let module_filter = flag_value(&args, "--module");
+            let out_path = flag_value(&args, "--out");
+            let mut program = parse_program_raw(path, EXIT_INVALID);
+            if let Err(e) = program.ensure_lowered() {
+                eprintln!("SCIR lowering error: {e}");
+                process::exit(EXIT_INVALID);
+            }
+            let static_report = validate::validate(&program);
+            if !static_report.valid {
+                eprintln!(
+                    "{}",
+                    serde_json::to_string_pretty(&static_report).expect("serialize")
+                );
+                process::exit(EXIT_INVALID);
+            }
+            let summary =
+                match concir::summarize::summarize_program(&program, module_filter.as_deref()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("summarize error: {e}");
+                        process::exit(EXIT_INVALID);
+                    }
+                };
+            let json = serde_json::to_string_pretty(&summary).expect("serialize");
+            if let Some(p) = &out_path {
+                if let Err(e) = fs::write(p, format!("{json}\n")) {
+                    eprintln!("error writing summary '{p}': {e}");
+                    process::exit(EXIT_USAGE);
+                }
+            }
+            println!("{json}");
+            if summary.cross_module_lock_cycle {
+                process::exit(EXIT_FAIL);
+            }
+        }
+        "verify-refinement" => {
+            let spec_path = flag_value(&args, "--spec").unwrap_or_else(|| usage());
+            let impl_net_path = flag_value(&args, "--impl-net").unwrap_or_else(|| usage());
+            let contract_path = flag_value(&args, "--contract");
+            let codegen_map_path = flag_value(&args, "--codegen-map");
+            let out_path = flag_value(&args, "--out");
+
+            let mut program = parse_program_raw(&spec_path, EXIT_INVALID);
+            if let Err(e) = program.ensure_lowered() {
+                eprintln!("SCIR lowering error: {e}");
+                process::exit(EXIT_INVALID);
+            }
+            let impl_net: concir::refinement::ImplNet =
+                match serde_json::from_str(&read(&impl_net_path)) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        eprintln!("JSON parse error in '{impl_net_path}': {e}");
+                        process::exit(EXIT_INVALID);
+                    }
+                };
+            let contract = contract_path.as_ref().map(|p| {
+                match serde_json::from_str::<ContractSpec>(&read(p)) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("contract parse error in '{p}': {e}");
+                        process::exit(EXIT_INVALID);
+                    }
+                }
+            });
+            let codegen_map = codegen_map_path.as_ref().map(|p| {
+                match serde_json::from_str::<concir::codegen::CodegenMap>(&read(p)) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        eprintln!("codegen map parse error in '{p}': {e}");
+                        process::exit(EXIT_INVALID);
+                    }
+                }
+            });
+
+            let report = match concir::refinement::verify_refinement(
+                &program,
+                &impl_net,
+                contract.as_ref(),
+                codegen_map.as_ref(),
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("refinement invalid spec: {e}");
+                    process::exit(EXIT_INVALID);
+                }
+            };
+            let json = serde_json::to_string_pretty(&report).expect("serialize");
+            if let Some(p) = &out_path {
+                if let Err(e) = fs::write(p, format!("{json}\n")) {
+                    eprintln!("error writing refinement report '{p}': {e}");
+                    process::exit(EXIT_USAGE);
+                }
+            }
+            println!("{json}");
+            match report.outcome.as_str() {
+                "pass" => {}
+                "unknown" => process::exit(EXIT_UNKNOWN),
+                _ => process::exit(EXIT_FAIL),
+            }
         }
         "codegen" => {
             let path = args.get(2).unwrap_or_else(|| usage());
@@ -333,7 +483,7 @@ fn main() {
         }
         "check" => {
             let path = args.get(2).unwrap_or_else(|| usage());
-            let program = parse_program(path);
+            let program = parse_program_raw(path, EXIT_USAGE);
             let report = validate::validate(&program);
             println!(
                 "{}",

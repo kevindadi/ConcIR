@@ -231,6 +231,13 @@ fn check_destinations(
                     }
                 }
             }
+            Op::SeqHole {
+                updates_modeled, ..
+            } => {
+                for u in updates_modeled {
+                    check_value_dst(env, &u.target, &path, &loc, diags);
+                }
+            }
             _ => {}
         }
     }

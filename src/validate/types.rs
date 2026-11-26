@@ -229,6 +229,14 @@ fn check_exprs(
                     check_expr(arg, &env, None, false, &path, &loc, "E932", diags);
                 }
             }
+            Op::SeqHole {
+                updates_modeled, ..
+            } => {
+                for u in updates_modeled {
+                    let expected = env.ty(&u.target);
+                    check_expr(&u.expr, &env, expected, false, &path, &loc, "E203", diags);
+                }
+            }
             _ => {}
         }
     });

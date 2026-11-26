@@ -1034,6 +1034,22 @@ pub fn verify_program(
     spec: &ContractSpec,
     engine: EngineKind,
 ) -> VerificationReport {
+    let owned;
+    let program = if program.has_structured_bodies() {
+        let mut lowered = program.clone();
+        if let Err(msg) = lowered.ensure_lowered() {
+            let mut report = VerificationReport::synthetic(Outcome::Invalid, true);
+            report.invalid.push(Invalid::new("E011", msg));
+            report.assumptions = spec.assumptions.clone();
+            report.bounds = (&spec.bounds).into();
+            return report;
+        }
+        owned = lowered;
+        &owned
+    } else {
+        program
+    };
+
     let program_fp = fnv(&serde_json::to_string(program).unwrap_or_default());
     let contract_fp = fnv(&serde_json::to_string(spec).unwrap_or_default());
 

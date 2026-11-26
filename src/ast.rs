@@ -164,6 +164,8 @@ pub struct Module {
     pub protection: Vec<Protection>,
     #[serde(default)]
     pub functions: Vec<Function>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub req: Vec<String>,
 }
 
 /// A named type in a module: `{"name": "Record", "type": {"Struct": ...}}`.
@@ -197,6 +199,8 @@ pub struct Resource {
     /// slot into `channel_recv.dst`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capacity: Option<i64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub req: Vec<String>,
 }
 
 // ──────────────────── BaseType ────────────────────
@@ -388,6 +392,10 @@ pub struct Function {
     /// entry. `goto` / `branch` / `switch` / `return` / `select` transfer control.
     #[serde(default)]
     pub body: Vec<Stmt>,
+    /// Structured Surface IR (`SCIR` v4.0) function body. Lowered deterministically
+    /// into `body` by [`Program::ensure_lowered`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub structured_body: Vec<crate::scir::StructuredStmt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effects: Option<FunctionEffects>,
     /// Declared blocking: `true` / `false`. Omitted = infer from the body
@@ -402,6 +410,8 @@ pub struct Function {
     /// `None` = unbounded over-approx.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bound: Option<i64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub req: Vec<String>,
 }
 
 impl Function {
@@ -460,6 +470,14 @@ pub struct FunctionEffects {
 
 // ──────────────────── Statement (CFG node) ────────────────────
 
+/// One modeled data update inside a [`Op::SeqHole`].
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModeledUpdate {
+    pub target: String,
+    pub expr: String,
+}
+
 /// One CFG node: a `sid` plus a tagged [`Op`].
 ///
 /// JSON is flat: `{ "sid": "s1", "kind": "mutex_lock", "resource": "mtx" }`.
@@ -468,6 +486,8 @@ pub struct FunctionEffects {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Stmt {
     pub sid: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub req: Vec<String>,
     #[serde(flatten)]
     pub op: Op,
 }
@@ -497,8 +517,8 @@ pub enum Op {
         #[serde(default)]
         desc: String,
     },
-    /// Sequential fill site. Does **not** enter the concurrent store
-    /// (unlike [`Op::AbstractStep`]). `id` is unique per function.
+    /// Sequential fill site. Executes atomically as a silent (`tau`) step
+    /// applying `updates_modeled` simultaneously. `id` is unique per function.
     #[serde(rename = "seq_hole")]
     SeqHole {
         id: String,
@@ -508,6 +528,12 @@ pub enum Op {
         reads: Vec<String>,
         #[serde(default)]
         writes: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        updates_modeled: Vec<ModeledUpdate>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_type: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        req: Vec<String>,
     },
     #[serde(rename = "atomic_load")]
     AtomicLoad { resource: String, dst: String },
@@ -653,6 +679,19 @@ pub enum SelectGuard {
 // ──────────────────── Helpers ────────────────────
 
 impl Program {
+    /// True if any function carries an unlowered `structured_body`.
+    pub fn has_structured_bodies(&self) -> bool {
+        self.modules
+            .iter()
+            .any(|m| m.functions.iter().any(|f| !f.structured_body.is_empty()))
+    }
+
+    /// Deterministically lower all `structured_body` functions into flat `body`
+    /// statements and return the [`crate::scir::TraceMap`].
+    pub fn ensure_lowered(&mut self) -> Result<crate::scir::TraceMap, String> {
+        crate::scir::lower_program(self)
+    }
+
     pub fn lookup_module(&self, name: &str) -> Option<&Module> {
         self.modules.iter().find(|m| m.name == name)
     }
@@ -725,6 +764,19 @@ impl Program {
 }
 
 impl Stmt {
+    /// Combined requirement tags from this statement and (if `SeqHole`) its op.
+    pub fn effective_req(&self) -> Vec<String> {
+        let mut out = self.req.clone();
+        if let Op::SeqHole { req, .. } = &self.op {
+            for r in req {
+                if !out.contains(r) {
+                    out.push(r.clone());
+                }
+            }
+        }
+        out
+    }
+
     pub fn is_return(&self) -> bool {
         matches!(self.op, Op::Return { .. })
     }
@@ -808,6 +860,9 @@ impl Op {
             }
             Op::Return { value: Some(value) } => vec![value],
             Op::Branch { cond, .. } => vec![cond],
+            Op::SeqHole {
+                updates_modeled, ..
+            } => updates_modeled.iter().map(|u| u.expr.as_str()).collect(),
             _ => vec![],
         }
     }
