@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod codegen;
 pub mod conform;
+pub mod design_refinement;
 pub mod diagnostic;
 pub mod env;
 pub mod explore;
@@ -13,6 +14,7 @@ pub mod interp;
 pub mod monitor;
 pub mod petri;
 pub mod refinement;
+pub mod req_ir;
 pub mod unipn_engine;
 pub mod repair;
 pub mod schema;
