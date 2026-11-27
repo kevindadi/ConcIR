@@ -19,6 +19,7 @@ fn stmt(sid: &str, op: Op) -> Stmt {
     Stmt {
         sid: sid.into(),
         req: vec![],
+        milestone: None,
         op,
     }
 }
