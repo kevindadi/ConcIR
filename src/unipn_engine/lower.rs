@@ -199,6 +199,7 @@ pub fn build(sem: &SemProgram) -> LoweredHlnNet {
                 tr.func_id = Some(f.id.0 as usize);
                 tr.sid_idx = Some(sid_idx);
                 tr.sid = Some(stmt.sid.clone());
+                tr.milestone = stmt.milestone.clone();
                 tr.reads_vars = reads_vars.clone();
                 tr.writes_vars = writes_vars.clone();
                 tr

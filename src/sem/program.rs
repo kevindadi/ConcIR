@@ -73,6 +73,7 @@ pub struct SemStmt {
     pub id: StatementId,
     pub sid: String,
     pub req: Vec<String>,
+    pub milestone: Option<String>,
     pub op: SemOp,
 }
 
@@ -287,6 +288,18 @@ impl SemProgram {
 
     pub fn functions(&self) -> &[SemFunction] {
         &self.functions
+    }
+
+    pub fn milestone_sites(&self, name: &str) -> Vec<(FunctionId, usize)> {
+        let mut sites = Vec::new();
+        for f in &self.functions {
+            for (idx, stmt) in f.body.iter().enumerate() {
+                if stmt.milestone.as_deref() == Some(name) {
+                    sites.push((f.id, idx));
+                }
+            }
+        }
+        sites
     }
 
     pub fn resource(&self, r: ResourceId) -> &SemResource {
@@ -764,6 +777,7 @@ fn lower_function_body(
             id,
             sid: s.sid.clone(),
             req: s.effective_req(),
+            milestone: s.milestone.clone(),
             op,
         });
     }

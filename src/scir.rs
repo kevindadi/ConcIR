@@ -24,6 +24,7 @@ pub enum StructuredStmt {
     Stmt {
         id: String,
         req: Vec<String>,
+        milestone: Option<String>,
         op: Op,
     },
     /// Lexical mutex guard: locks `resource` on entry and unlocks on normal
@@ -170,6 +171,8 @@ struct RawStmtWrapper {
     id: String,
     #[serde(default)]
     req: Vec<String>,
+    #[serde(default)]
+    milestone: Option<String>,
     #[allow(dead_code)]
     kind: String,
     #[serde(default)]
@@ -265,11 +268,12 @@ impl<'de> Deserialize<'de> for StructuredStmt {
                 Ok(StructuredStmt::Stmt {
                     id: raw.id,
                     req: raw.req,
+                    milestone: raw.milestone,
                     op,
                 })
             }
             // Also accept any flat `Op` directly inside `structured_body`,
-            // extracting optional `id` and `req` metadata.
+            // extracting optional `id`, `req`, and `milestone` metadata.
             _ => {
                 let mut map = obj.clone();
                 let id = match map.remove("id") {
@@ -290,9 +294,18 @@ impl<'de> Deserialize<'de> for StructuredStmt {
                     Some(v) => serde_json::from_value(v).map_err(de::Error::custom)?,
                     None => Vec::new(),
                 };
+                let milestone: Option<String> = match map.remove("milestone") {
+                    Some(v) => serde_json::from_value(v).map_err(de::Error::custom)?,
+                    None => None,
+                };
                 let op: Op = serde_json::from_value(serde_json::Value::Object(map))
                     .map_err(de::Error::custom)?;
-                Ok(StructuredStmt::Stmt { id, req, op })
+                Ok(StructuredStmt::Stmt {
+                    id,
+                    req,
+                    milestone,
+                    op,
+                })
             }
         }
     }
@@ -302,12 +315,20 @@ impl Serialize for StructuredStmt {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(None)?;
         match self {
-            StructuredStmt::Stmt { id, req, op } => {
+            StructuredStmt::Stmt {
+                id,
+                req,
+                milestone,
+                op,
+            } => {
                 map.serialize_entry("id", id)?;
                 map.serialize_entry("kind", "stmt")?;
                 map.serialize_entry("op", op)?;
                 if !req.is_empty() {
                     map.serialize_entry("req", req)?;
+                }
+                if let Some(m) = milestone {
+                    map.serialize_entry("milestone", m)?;
                 }
             }
             StructuredStmt::LockGuard {
@@ -419,6 +440,8 @@ pub struct TraceMapEntry {
     pub hole_id: Option<String>,
     #[serde(default)]
     pub req: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub milestone: Option<String>,
 }
 
 /// Traceability map emitted by SCIR lowering (`concir-trace-map/1`).
@@ -481,6 +504,7 @@ pub fn lower_program(program: &mut Program) -> Result<TraceMap, String> {
                             structured_id: None,
                             hole_id,
                             req,
+                            milestone: stmt.milestone.clone(),
                         },
                     );
                 }
@@ -511,6 +535,7 @@ struct PendingStmt {
     structured_id: Option<String>,
     hole_id: Option<String>,
     req: Vec<String>,
+    milestone: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -574,12 +599,14 @@ impl FnLowerer {
         structured_id: Option<String>,
         hole_id: Option<String>,
         req: Vec<String>,
+        milestone: Option<String>,
     ) {
         self.stmts.push(PendingStmt {
             op,
             structured_id,
             hole_id,
             req,
+            milestone,
         });
     }
 
@@ -612,6 +639,7 @@ impl FnLowerer {
             sid_tag.clone(),
             None,
             own_req.clone(),
+            None,
         );
         self.lock_stack.push(ActiveGuard {
             kind,
@@ -625,6 +653,7 @@ impl FnLowerer {
                 sid_tag,
                 None,
                 own_req,
+                None,
             );
         }
         body_ft
@@ -634,8 +663,9 @@ impl FnLowerer {
         let own_req = merge_req(inherited_req, node.req());
         let sid_tag = Self::sid_opt(node.id());
         match node {
-            StructuredStmt::Stmt { op, .. } => {
+            StructuredStmt::Stmt { op, milestone, .. } => {
                 let mut op_cloned = op.clone();
+                let milestone_cloned = milestone.clone();
                 let (hole_id, stmt_req) = match &mut op_cloned {
                     Op::SeqHole { id, req, .. } => {
                         let merged = merge_req(&own_req, req);
@@ -657,6 +687,7 @@ impl FnLowerer {
                                 sid_tag.clone(),
                                 None,
                                 stmt_req.clone(),
+                                None,
                             );
                         }
                         self.emit(
@@ -664,6 +695,7 @@ impl FnLowerer {
                             sid_tag,
                             None,
                             stmt_req,
+                            milestone_cloned,
                         );
                         false
                     }
@@ -671,11 +703,23 @@ impl FnLowerer {
                     | Op::Branch { .. }
                     | Op::Switch { .. }
                     | Op::Select { .. } => {
-                        self.emit(PendingOp::Flat(op_cloned), sid_tag, hole_id, stmt_req);
+                        self.emit(
+                            PendingOp::Flat(op_cloned),
+                            sid_tag,
+                            hole_id,
+                            stmt_req,
+                            milestone_cloned,
+                        );
                         false
                     }
                     other => {
-                        self.emit(PendingOp::Flat(other), sid_tag, hole_id, stmt_req);
+                        self.emit(
+                            PendingOp::Flat(other),
+                            sid_tag,
+                            hole_id,
+                            stmt_req,
+                            milestone_cloned,
+                        );
                         true
                     }
                 }
@@ -696,7 +740,7 @@ impl FnLowerer {
                 ..
             } => {
                 if then_body.is_empty() && else_body.is_empty() {
-                    self.emit(PendingOp::Flat(Op::Nop), sid_tag, None, own_req);
+                    self.emit(PendingOp::Flat(Op::Nop), sid_tag, None, own_req, None);
                     return true;
                 }
                 if else_body.is_empty() {
@@ -711,6 +755,7 @@ impl FnLowerer {
                         sid_tag,
                         None,
                         own_req.clone(),
+                        None,
                     );
                     self.place_label(then_lbl);
                     let _ = self.lower_block(then_body, &own_req);
@@ -729,6 +774,7 @@ impl FnLowerer {
                         sid_tag,
                         None,
                         own_req.clone(),
+                        None,
                     );
                     self.place_label(else_lbl);
                     let _ = self.lower_block(else_body, &own_req);
@@ -747,6 +793,7 @@ impl FnLowerer {
                     sid_tag.clone(),
                     None,
                     own_req.clone(),
+                    None,
                 );
                 self.place_label(then_lbl);
                 let then_ft = self.lower_block(then_body, &own_req);
@@ -756,6 +803,7 @@ impl FnLowerer {
                         sid_tag,
                         None,
                         own_req.clone(),
+                        None,
                     );
                 }
                 self.place_label(else_lbl);
@@ -777,6 +825,7 @@ impl FnLowerer {
                     sid_tag.clone(),
                     None,
                     own_req.clone(),
+                    None,
                 );
                 self.place_label(body_lbl);
                 let body_ft = self.lower_block(body, &own_req);
@@ -786,6 +835,7 @@ impl FnLowerer {
                         sid_tag,
                         None,
                         own_req,
+                        None,
                     );
                 }
                 self.place_label(exit_lbl);
@@ -811,6 +861,7 @@ impl FnLowerer {
                     sid_tag.clone(),
                     None,
                     own_req.clone(),
+                    None,
                 );
                 self.place_label(wait_entry);
                 let body_ft = self.lower_block(body, &own_req);
@@ -823,12 +874,14 @@ impl FnLowerer {
                         sid_tag.clone(),
                         None,
                         own_req.clone(),
+                        None,
                     );
                     self.emit(
                         PendingOp::Goto { target: header_lbl },
                         sid_tag,
                         None,
                         own_req,
+                        None,
                     );
                 }
                 self.place_label(exit_lbl);
@@ -858,6 +911,7 @@ fn lower_function(
             None,
             None,
             base_req.to_vec(),
+            None,
         );
     }
 
@@ -907,11 +961,13 @@ fn lower_function(
                 structured_id: pending.structured_id,
                 hole_id: pending.hole_id,
                 req: pending.req.clone(),
+                milestone: pending.milestone.clone(),
             },
         ));
         flat.push(Stmt {
             sid,
             req: pending.req,
+            milestone: pending.milestone,
             op,
         });
     }

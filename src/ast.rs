@@ -536,6 +536,8 @@ pub struct Stmt {
     pub sid: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub req: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub milestone: Option<String>,
     #[serde(flatten)]
     pub op: Op,
 }

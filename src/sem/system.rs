@@ -45,6 +45,11 @@ pub enum Predicate {
         func: FunctionId,
         sid: usize,
     },
+    /// At least one statement carrying `milestone` was reached.
+    MilestoneReached {
+        milestone: String,
+        sites: Vec<(FunctionId, usize)>,
+    },
     MutexFree(ResourceId),
     MutexHeld(ResourceId),
     /// Some thread currently executing `func` (at any frame depth) holds every
@@ -105,6 +110,7 @@ impl Predicate {
             }
             Predicate::ScopeCompleted { func, sid } => format!("scope_done(f{func}@{sid})"),
             Predicate::StatementReached { func, sid } => format!("reached(f{func}@{sid})"),
+            Predicate::MilestoneReached { milestone, .. } => format!("milestone({milestone})"),
             Predicate::MutexFree(r) => format!("free(r{r})"),
             Predicate::MutexHeld(r) => format!("held(r{r})"),
             Predicate::HoldsAll { func, resources } => {

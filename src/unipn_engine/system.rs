@@ -1911,6 +1911,9 @@ impl TransitionSystem for UnipnEngine<'_> {
             Predicate::StatementReached { func, sid } => {
                 state.reached.contains(&(func.0 as usize, *sid))
             }
+            Predicate::MilestoneReached { sites, .. } => sites
+                .iter()
+                .any(|&(func, sid)| state.reached.contains(&(func.0 as usize, sid))),
             Predicate::MutexFree(r) => {
                 let rid = r.0 as usize;
                 match self.program.resource(*r).kind {

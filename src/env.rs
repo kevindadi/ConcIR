@@ -72,6 +72,10 @@ pub struct NameEnv {
 }
 
 impl NameEnv {
+    pub fn from_slots(slots: HashMap<String, Slot>) -> Self {
+        NameEnv { slots }
+    }
+
     pub fn build(program: &Program, module: &Module, function: &Function) -> Self {
         let tenv = TypeEnv::from_program(program);
         let mut slots = HashMap::new();

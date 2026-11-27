@@ -1585,6 +1585,9 @@ impl<'a> TransitionSystem for Interpreter<'a> {
                 state.completed_scopes.contains(&(*func, *sid))
             }
             Predicate::StatementReached { func, sid } => state.reached.contains(&(*func, *sid)),
+            Predicate::MilestoneReached { sites, .. } => {
+                sites.iter().any(|&(func, sid)| state.reached.contains(&(func, sid)))
+            }
             Predicate::MutexFree(r) => {
                 matches!(state.store.mutexes.get(r), Some(MutexState::Free))
                     || matches!(state.store.rwlocks.get(r), Some(RwLockState::Free))
