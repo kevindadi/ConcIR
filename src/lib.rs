@@ -13,6 +13,7 @@ pub mod interp;
 pub mod monitor;
 pub mod petri;
 pub mod refinement;
+pub mod unipn_engine;
 pub mod repair;
 pub mod schema;
 pub mod scir;

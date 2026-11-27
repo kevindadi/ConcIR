@@ -23,8 +23,8 @@ use crate::codegen::CodegenMap;
 use crate::explore::contract::{ContractSpec, PredicateSpec, PreservedSpec};
 use crate::explore::explore;
 use crate::fqn;
-use crate::petri::net::{MutexToken, NetState, PlaceKey, RwLockToken};
 use crate::petri::PetriEngine;
+use crate::unipn_engine::{HlnState as NetState, RwState};
 use crate::sem::ids::ResourceId;
 use crate::sem::outcome::{AnalysisBounds, Phase};
 use crate::sem::program::{self, ResKind, SemOp, SemProgram};
@@ -746,23 +746,24 @@ fn spec_resource_fqn(sem: &SemProgram, r: ResourceId) -> String {
     fqn::fqn(sem.module_name(res.module), &res.name)
 }
 
-fn spec_state_holds_lock(sem: &SemProgram, engine: &PetriEngine, state: &NetState) -> bool {
+fn spec_state_holds_lock(sem: &SemProgram, _engine: &PetriEngine, state: &NetState) -> bool {
     for r in sem.resources() {
-        if r.kind == ResKind::Mutex {
-            if let Some(&pid) = engine.net.place_of.get(&PlaceKey::Mutex(r.id)) {
-                if matches!(state.read_mutex(pid), Some(MutexToken::Held(_))) {
+        let rid = r.id.0 as usize;
+        match r.kind {
+            ResKind::Mutex => {
+                if state.mutexes.get(&rid).copied().flatten().is_some() {
                     return true;
                 }
             }
-        } else if r.kind == ResKind::RwLock {
-            if let Some(&pid) = engine.net.place_of.get(&PlaceKey::RwLock(r.id)) {
+            ResKind::RwLock => {
                 if matches!(
-                    state.read_rwlock(pid),
-                    Some(RwLockToken::Reading(_) | RwLockToken::Writing(_))
+                    state.rwlocks.get(&rid),
+                    Some(RwState::Reading(_) | RwState::Writing(_))
                 ) {
                     return true;
                 }
             }
+            _ => {}
         }
     }
     false
@@ -770,12 +771,16 @@ fn spec_state_holds_lock(sem: &SemProgram, engine: &PetriEngine, state: &NetStat
 
 fn classify_spec_edge(
     sem: &SemProgram,
-    engine: &PetriEngine,
+    _engine: &PetriEngine,
     src: &NetState,
     dst: &NetState,
     label: &crate::sem::outcome::StepLabel,
 ) -> Option<SyncAction> {
     let fqn_of = |r: ResourceId| spec_resource_fqn(sem, r);
+    let thread_blocked = |st: &NetState, tid: crate::sem::ids::ThreadId| -> bool {
+        st.find_thread(tid.0 as u32)
+            .is_some_and(|(_, tok)| tok.wait_tag.is_some())
+    };
 
     match label.origin.phase {
         Phase::Statement => {
@@ -784,10 +789,10 @@ fn classify_spec_edge(
             match &stmt.op {
                 SemOp::MutexLock { resource } => {
                     // Only emit `mutex_lock` when the lock is actually acquired
-                    // (Free -> Held), not when blocking into LockWait.
-                    let pid = *engine.net.place_of.get(&PlaceKey::Mutex(*resource))?;
-                    let was_free = matches!(src.read_mutex(pid), Some(MutexToken::Free));
-                    let now_held = matches!(dst.read_mutex(pid), Some(MutexToken::Held(_)));
+                    // (Free -> Held), not when blocking into contend.
+                    let rid = resource.0 as usize;
+                    let was_free = src.mutexes.get(&rid).copied().flatten().is_none();
+                    let now_held = dst.mutexes.get(&rid).copied().flatten().is_some();
                     if was_free && now_held {
                         Some(SyncAction {
                             op: "mutex_lock".into(),
@@ -802,16 +807,10 @@ fn classify_spec_edge(
                     resource: fqn_of(*resource),
                 }),
                 SemOp::RwLockRead { resource } => {
-                    if let Some(tid) = label.thread {
-                        let blocked = dst
-                            .store
-                            .threads
-                            .get(&tid)
-                            .and_then(|t| t.blocked_at.as_ref())
-                            .is_some();
-                        if blocked {
-                            return None;
-                        }
+                    if let Some(tid) = label.thread
+                        && thread_blocked(dst, tid)
+                    {
+                        return None;
                     }
                     Some(SyncAction {
                         op: "rwlock_read_lock".into(),
@@ -819,16 +818,10 @@ fn classify_spec_edge(
                     })
                 }
                 SemOp::RwLockWrite { resource } => {
-                    if let Some(tid) = label.thread {
-                        let blocked = dst
-                            .store
-                            .threads
-                            .get(&tid)
-                            .and_then(|t| t.blocked_at.as_ref())
-                            .is_some();
-                        if blocked {
-                            return None;
-                        }
+                    if let Some(tid) = label.thread
+                        && thread_blocked(dst, tid)
+                    {
+                        return None;
                     }
                     Some(SyncAction {
                         op: "rwlock_write_lock".into(),
@@ -836,17 +829,11 @@ fn classify_spec_edge(
                     })
                 }
                 SemOp::RwLockUnlock { resource } => {
-                    let op = engine
-                        .net
-                        .place_of
-                        .get(&PlaceKey::RwLock(*resource))
-                        .and_then(|pid| src.read_rwlock(*pid))
-                        .map(|tok| match tok {
-                            RwLockToken::Writing(_) => "rwlock_write_unlock",
-                            RwLockToken::Reading(_) => "rwlock_read_unlock",
-                            RwLockToken::Free => "rwlock_unlock",
-                        })
-                        .unwrap_or("rwlock_unlock");
+                    let op = match src.rwlocks.get(&(resource.0 as usize)) {
+                        Some(RwState::Writing(_)) => "rwlock_write_unlock",
+                        Some(RwState::Reading(_)) => "rwlock_read_unlock",
+                        _ => "rwlock_unlock",
+                    };
                     Some(SyncAction {
                         op: op.into(),
                         resource: fqn_of(*resource),
@@ -865,9 +852,9 @@ fn classify_spec_edge(
                     resource: fqn_of(*condvar),
                 }),
                 SemOp::SemaphoreAcquire { resource, .. } => {
-                    let pid = *engine.net.place_of.get(&PlaceKey::Semaphore(*resource))?;
-                    let before = src.read_data(pid).and_then(|v| v.as_int()).unwrap_or(0);
-                    let after = dst.read_data(pid).and_then(|v| v.as_int()).unwrap_or(0);
+                    let rid = resource.0 as usize;
+                    let before = src.semaphores.get(&rid).copied().unwrap_or(0);
+                    let after = dst.semaphores.get(&rid).copied().unwrap_or(0);
                     if after < before {
                         Some(SyncAction {
                             op: "sem_acquire".into(),
@@ -882,17 +869,10 @@ fn classify_spec_edge(
                     resource: fqn_of(*resource),
                 }),
                 SemOp::ChannelSend { channel, .. } => {
-                    // Only observable if not blocked in ChannelSend wait place.
-                    if let Some(tid) = label.thread {
-                        let blocked = dst
-                            .store
-                            .threads
-                            .get(&tid)
-                            .and_then(|t| t.blocked_at.as_ref())
-                            .is_some();
-                        if blocked {
-                            return None;
-                        }
+                    if let Some(tid) = label.thread
+                        && thread_blocked(dst, tid)
+                    {
+                        return None;
                     }
                     Some(SyncAction {
                         op: "channel_send".into(),
@@ -900,16 +880,10 @@ fn classify_spec_edge(
                     })
                 }
                 SemOp::ChannelRecv { channel, .. } => {
-                    if let Some(tid) = label.thread {
-                        let blocked = dst
-                            .store
-                            .threads
-                            .get(&tid)
-                            .and_then(|t| t.blocked_at.as_ref())
-                            .is_some();
-                        if blocked {
-                            return None;
-                        }
+                    if let Some(tid) = label.thread
+                        && thread_blocked(dst, tid)
+                    {
+                        return None;
                     }
                     Some(SyncAction {
                         op: "channel_recv".into(),
@@ -932,10 +906,14 @@ fn classify_spec_edge(
             }
         }
         Phase::Reacquire | Phase::Wake => {
-            // A thread resumed from a wait place: inspect the waking frame's statement!
             let frame_id = label.frame?;
-            let frame = src.store.frames.get(&frame_id)?;
-            let stmt = sem.function(frame.function).body.get(frame.pc)?;
+            let frame = src.all_tokens().find_map(|(_, tok)| {
+                tok.stack.iter().find(|fr| fr.frame_id as u64 == frame_id.0)
+            })?;
+            let stmt = sem
+                .function(crate::sem::ids::FunctionId(frame.func as u32))
+                .body
+                .get(frame.pc)?;
             match &stmt.op {
                 SemOp::MutexLock { resource } => Some(SyncAction {
                     op: "mutex_lock".into(),
