@@ -12,10 +12,8 @@ use concir::interp::state::{
     ThreadStatus,
 };
 use concir::interp::Interpreter;
-use concir::petri::exec::PetriEngine;
-use concir::petri::net::{
-    MutexToken, NetAlloc, NetFrame, NetRetAddr, NetScope, NetState, NetStore, NetThread, NetToken,
-};
+use concir::petri::PetriEngine;
+use concir::unipn_engine::{HlnState as NetState, RwState, WaitTag};
 use concir::sem::ids::{FrameId, HandleId, ScopeId, ThreadId};
 use concir::sem::outcome::{AnalysisBounds, Outcome};
 use concir::sem::program;
@@ -287,151 +285,61 @@ fn shift_it(s: &MachineState) -> MachineState {
 }
 
 fn shift_pn(s: &NetState) -> NetState {
+    let shift = K as u32;
     let mut out = s.clone();
-    out.marking = s
-        .marking
-        .iter()
-        .map(|(pid, toks)| {
-            let toks = toks
+    for list in out.control_tokens.values_mut() {
+        for tok in list.iter_mut() {
+            tok.tid += shift;
+            tok.handle_children = tok
+                .handle_children
                 .iter()
-                .map(|t| match t {
-                    NetToken::Control { thread, frame } => NetToken::Control {
-                        thread: ThreadId(thread.0 + K),
-                        frame: FrameId(frame.0 + K),
-                    },
-                    NetToken::LockWait { thread, frame } => NetToken::LockWait {
-                        thread: ThreadId(thread.0 + K),
-                        frame: FrameId(frame.0 + K),
-                    },
-                    NetToken::CondvarWait {
-                        thread,
-                        frame,
-                        lock,
-                    } => NetToken::CondvarWait {
-                        thread: ThreadId(thread.0 + K),
-                        frame: FrameId(frame.0 + K),
-                        lock: *lock,
-                    },
-                    NetToken::SendWait {
-                        thread,
-                        frame,
-                        value,
-                    } => NetToken::SendWait {
-                        thread: ThreadId(thread.0 + K),
-                        frame: FrameId(frame.0 + K),
-                        value: value.clone(),
-                    },
-                    NetToken::RecvWait { thread, frame } => NetToken::RecvWait {
-                        thread: ThreadId(thread.0 + K),
-                        frame: FrameId(frame.0 + K),
-                    },
-                    NetToken::SemWait {
-                        thread,
-                        frame,
-                        count,
-                    } => NetToken::SemWait {
-                        thread: ThreadId(thread.0 + K),
-                        frame: FrameId(frame.0 + K),
-                        count: *count,
-                    },
-                    NetToken::JoinWait { thread, frame } => NetToken::JoinWait {
-                        thread: ThreadId(thread.0 + K),
-                        frame: FrameId(frame.0 + K),
-                    },
-                    NetToken::ScopeWait { thread, frame } => NetToken::ScopeWait {
-                        thread: ThreadId(thread.0 + K),
-                        frame: FrameId(frame.0 + K),
-                    },
-                    NetToken::Mutex(MutexToken::Free) => NetToken::Mutex(MutexToken::Free),
-                    NetToken::Mutex(MutexToken::Held(t)) => {
-                        NetToken::Mutex(MutexToken::Held(ThreadId(t.0 + K)))
-                    }
-                    NetToken::RwLock(concir::petri::net::RwLockToken::Free) => {
-                        NetToken::RwLock(concir::petri::net::RwLockToken::Free)
-                    }
-                    NetToken::RwLock(concir::petri::net::RwLockToken::Writing(t)) => {
-                        NetToken::RwLock(concir::petri::net::RwLockToken::Writing(ThreadId(t.0 + K)))
-                    }
-                    NetToken::RwLock(concir::petri::net::RwLockToken::Reading(rs)) => {
-                        NetToken::RwLock(concir::petri::net::RwLockToken::Reading(
-                            rs.iter().map(|t| ThreadId(t.0 + K)).collect(),
-                        ))
-                    }
-                    NetToken::RwLockReadWait { thread, frame } => NetToken::RwLockReadWait {
-                        thread: ThreadId(thread.0 + K),
-                        frame: FrameId(frame.0 + K),
-                    },
-                    NetToken::RwLockWriteWait { thread, frame } => NetToken::RwLockWriteWait {
-                        thread: ThreadId(thread.0 + K),
-                        frame: FrameId(frame.0 + K),
-                    },
-                    NetToken::Data(v) => NetToken::Data(v.clone()),
-                })
+                .map(|(h, c)| (*h + shift, *c + shift))
                 .collect();
-            (*pid, toks)
+            tok.parent_scope = tok.parent_scope.map(|sc| sc + shift);
+            tok.wait_tag = tok.wait_tag.as_ref().map(|w| match w {
+                WaitTag::Join(h) => WaitTag::Join(*h + shift),
+                WaitTag::Scope(sc) => WaitTag::Scope(*sc + shift),
+                other => other.clone(),
+            });
+            for fr in &mut tok.stack {
+                fr.frame_id += shift;
+                fr.handles = fr.handles.iter().map(|(k, h)| (k.clone(), *h + shift)).collect();
+            }
+        }
+    }
+    out.mutexes = out
+        .mutexes
+        .into_iter()
+        .map(|(r, owner)| (r, owner.map(|t| t + shift)))
+        .collect();
+    out.rwlocks = out
+        .rwlocks
+        .into_iter()
+        .map(|(r, rw)| {
+            let shifted = match rw {
+                RwState::Free => RwState::Free,
+                RwState::Writing(t) => RwState::Writing(t + shift),
+                RwState::Reading(rs) => RwState::Reading(rs.into_iter().map(|t| t + shift).collect()),
+            };
+            (r, shifted)
         })
         .collect();
-    let store = NetStore {
-        frames: s
-            .store
-            .frames
-            .iter()
-            .map(|(id, f)| {
-                let mut f: NetFrame = f.clone();
-                f.id = FrameId(f.id.0 + K);
-                f.handles = f
-                    .handles
-                    .iter()
-                    .map(|(k, h)| (k.clone(), HandleId(h.0 + K)))
-                    .collect();
-                f.ret = f.ret.as_ref().map(|r| NetRetAddr {
-                    pc_next: r.pc_next,
-                    dst: r.dst,
-                });
-                (FrameId(id.0 + K), f)
-            })
-            .collect(),
-        threads: s
-            .store
-            .threads
-            .iter()
-            .map(|(id, t)| {
-                let mut t: NetThread = t.clone();
-                t.stack = t.stack.iter().map(|f| FrameId(f.0 + K)).collect();
-                t.handle_children = t
-                    .handle_children
-                    .iter()
-                    .map(|(h, c)| (HandleId(h.0 + K), ThreadId(c.0 + K)))
-                    .collect();
-                t.parent_scope = t.parent_scope.map(|sc| ScopeId(sc.0 + K));
-                (ThreadId(id.0 + K), t)
-            })
-            .collect(),
-        scopes: s
-            .store
-            .scopes
-            .iter()
-            .map(|(id, sc)| {
-                let mut sc: NetScope = sc.clone();
-                sc.id = ScopeId(sc.id.0 + K);
-                sc.owner = ThreadId(sc.owner.0 + K);
-                sc.owner_frame = FrameId(sc.owner_frame.0 + K);
-                sc.remaining = sc.remaining.iter().map(|t| ThreadId(t.0 + K)).collect();
-                (ScopeId(id.0 + K), sc)
-            })
-            .collect(),
-        finished: s.store.finished.iter().map(|t| ThreadId(t.0 + K)).collect(),
-        completed_functions: s.store.completed_functions.clone(),
-        completed_scopes: s.store.completed_scopes.clone(),
-        reached: s.store.reached.clone(),
-        alloc: NetAlloc {
-            next_thread: s.store.alloc.next_thread + K,
-            next_frame: s.store.alloc.next_frame + K,
-            next_scope: s.store.alloc.next_scope + K,
-            next_handle: s.store.alloc.next_handle + K,
-        },
-    };
-    out.store = store;
+    out.scopes = out
+        .scopes
+        .into_iter()
+        .map(|(id, mut sc)| {
+            sc.id += shift;
+            sc.owner += shift;
+            sc.owner_frame += shift;
+            sc.remaining = sc.remaining.into_iter().map(|t| t + shift).collect();
+            (id + shift, sc)
+        })
+        .collect();
+    out.finished = out.finished.into_iter().map(|t| t + shift).collect();
+    out.alloc.next_thread += shift;
+    out.alloc.next_frame += shift;
+    out.alloc.next_scope += shift;
+    out.alloc.next_handle += shift;
     out
 }
 
@@ -527,7 +435,7 @@ fn c1_identity_translation_preserves_key_predicates_and_successors() {
     let sample = rp
         .states
         .iter()
-        .find(|s| s.store.threads.len() >= 2)
+        .find(|s| s.all_tokens().count() >= 2)
         .expect("a multi-thread net state");
     let shifted = shift_pn(sample);
     assert_eq!(pn.state_key(sample), pn.state_key(&shifted));

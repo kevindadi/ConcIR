@@ -18,9 +18,9 @@ use concir::ast::Program;
 use concir::explore;
 use concir::interp::state::{BlockReason, MachineState, MutexState as ItMutex, ThreadStatus};
 use concir::interp::Interpreter;
-use concir::petri::exec::PetriEngine;
-use concir::petri::net::{MutexToken, NetState, PlaceKey};
-use concir::sem::ids::{FrameId, FunctionId, ResourceId, ThreadId};
+use concir::petri::PetriEngine;
+use concir::sem::ids::{FrameId, FunctionId, ResourceId, SlotRef, ThreadId};
+use concir::unipn_engine::{hln_to_val, ControlToken, HlnFrame, HlnState as NetState, WaitTag};
 use concir::sem::outcome::AnalysisBounds;
 use concir::sem::program::{self, ResKind, SemProgram};
 use concir::sem::value::Value;
@@ -273,74 +273,83 @@ fn block_it(sp: &SemProgram, b: &BlockReason) -> String {
 
 // ── petri full projection ───────────────────────────────────────────
 
-fn proj_pn(pn: &PetriEngine, sp: &SemProgram, s: &NetState) -> String {
-    let thread_order: Vec<ThreadId> = s.store.threads.keys().copied().collect();
+fn proj_pn(_pn: &PetriEngine, sp: &SemProgram, s: &NetState) -> String {
+    let mut tok_map: BTreeMap<u32, &ControlToken> = BTreeMap::new();
+    for (_, tok) in s.all_tokens() {
+        tok_map.insert(tok.tid, tok);
+    }
+    let thread_order: Vec<ThreadId> = tok_map.keys().map(|&t| ThreadId(t as u64)).collect();
     let tmap: BTreeMap<ThreadId, usize> = thread_order
         .iter()
         .enumerate()
         .map(|(i, t)| (*t, i))
         .collect();
     let tn = |t: ThreadId| format!("T{}", tmap.get(&t).copied().unwrap_or(999));
-    let frame_order: Vec<FrameId> = s.store.frames.keys().copied().collect();
+
+    let mut frames: BTreeMap<u32, (&HlnFrame, u32)> = BTreeMap::new();
+    for (&tid, tok) in &tok_map {
+        for fr in &tok.stack {
+            frames.insert(fr.frame_id, (fr, tid));
+        }
+    }
+    let frame_order: Vec<FrameId> = frames.keys().map(|&f| FrameId(f as u64)).collect();
     let fmap: BTreeMap<FrameId, usize> = frame_order
         .iter()
         .enumerate()
         .map(|(i, f)| (*f, i))
         .collect();
     let fnn = |f: FrameId| format!("F{}", fmap.get(&f).copied().unwrap_or(999));
-    let place = |key: &PlaceKey| pn.net.place_of.get(key).copied();
-    let toks = |key: &PlaceKey| -> Vec<concir::petri::net::NetToken> {
-        place(key)
-            .map(|pid| s.place_tokens(pid).to_vec())
-            .unwrap_or_default()
-    };
 
     let mut out = String::new();
     let mut resources: Vec<&concir::sem::program::SemResource> = sp.resources().iter().collect();
     resources.sort_by_key(|r| res_key(sp, r.id));
     for r in resources {
+        let rid = r.id.0 as usize;
         match r.kind {
             ResKind::Var => {
-                if let Some(pid) = place(&PlaceKey::Var(r.id)) {
-                    if let Some(v) = s.read_data(pid) {
-                        out.push_str(&format!("var {}={}\n", res_key(sp, r.id), v.canonical()));
-                    }
+                if let Some(hv) = s.vars.get(&rid) {
+                    out.push_str(&format!(
+                        "var {}={}\n",
+                        res_key(sp, r.id),
+                        hln_to_val(hv).canonical()
+                    ));
                 }
             }
             ResKind::Atomic => {
-                if let Some(pid) = place(&PlaceKey::Atomic(r.id)) {
-                    if let Some(v) = s.read_data(pid) {
-                        out.push_str(&format!("atomic {}={}\n", res_key(sp, r.id), v.canonical()));
-                    }
+                if let Some(hv) = s.vars.get(&rid) {
+                    out.push_str(&format!(
+                        "atomic {}={}\n",
+                        res_key(sp, r.id),
+                        hln_to_val(hv).canonical()
+                    ));
                 }
             }
             ResKind::Mutex => {
-                let m = place(&PlaceKey::Mutex(r.id))
-                    .and_then(|pid| s.read_mutex(pid))
-                    .map(|m| match m {
-                        MutexToken::Free => "free".to_string(),
-                        MutexToken::Held(t) => format!("held:{}", tn(t)),
-                    })
-                    .unwrap_or_else(|| "free".to_string());
+                let m = match s.mutexes.get(&rid).copied().flatten() {
+                    None => "free".to_string(),
+                    Some(t) => format!("held:{}", tn(ThreadId(t as u64))),
+                };
                 out.push_str(&format!("mutex {}={}\n", res_key(sp, r.id), m));
-                let mut waiters: Vec<String> = toks(&PlaceKey::LockWait(r.id))
-                    .iter()
-                    .filter_map(|t| t.thread().map(tn))
+                let mut waiters: Vec<String> = tok_map
+                    .values()
+                    .filter_map(|t| match t.wait_tag {
+                        Some(WaitTag::Mutex(w_rid)) if w_rid == rid => {
+                            Some(tn(ThreadId(t.tid as u64)))
+                        }
+                        _ => None,
+                    })
                     .collect();
                 waiters.sort();
                 out.push_str(&format!("lockwait {}={:?}\n", res_key(sp, r.id), waiters));
             }
             ResKind::Semaphore => {
-                let n = place(&PlaceKey::Semaphore(r.id))
-                    .and_then(|pid| s.read_data(pid))
-                    .and_then(Value::as_int)
-                    .unwrap_or(0);
+                let n = s.semaphores.get(&rid).copied().unwrap_or(0);
                 out.push_str(&format!("sem {}={}\n", res_key(sp, r.id), n));
-                let mut q: Vec<String> = toks(&PlaceKey::SemWait(r.id))
-                    .iter()
-                    .filter_map(|t| match t {
-                        concir::petri::net::NetToken::SemWait { thread, count, .. } => {
-                            Some(format!("{}:{}", tn(*thread), count))
+                let mut q: Vec<String> = tok_map
+                    .values()
+                    .filter_map(|t| match t.wait_tag {
+                        Some(WaitTag::Semaphore { resource, count }) if resource == rid => {
+                            Some(format!("{}:{}", tn(ThreadId(t.tid as u64)), count))
                         }
                         _ => None,
                     })
@@ -349,41 +358,52 @@ fn proj_pn(pn: &PetriEngine, sp: &SemProgram, s: &NetState) -> String {
                 out.push_str(&format!("semwait {}={:?}\n", res_key(sp, r.id), q));
             }
             ResKind::Channel => {
-                let buf: Vec<Value> = place(&PlaceKey::Channel(r.id))
-                    .and_then(|pid| s.read_data(pid))
-                    .and_then(|v| match v {
-                        Value::Array(a) => Some(a.clone()),
-                        _ => None,
-                    })
+                let buf: Vec<Value> = s
+                    .channels
+                    .get(&rid)
+                    .map(|q| q.iter().map(hln_to_val).collect())
                     .unwrap_or_default();
                 out.push_str(&format!(
                     "chan {} buf={:?}\n",
                     res_key(sp, r.id),
                     buf.iter().map(Value::canonical).collect::<Vec<_>>()
                 ));
-                let sendq: Vec<String> = toks(&PlaceKey::ChannelSend(r.id))
-                    .iter()
-                    .filter_map(|t| match t {
-                        concir::petri::net::NetToken::SendWait { thread, value, .. } => {
-                            Some(format!("{}:{}", tn(*thread), value.canonical()))
+                let mut sendq: Vec<String> = tok_map
+                    .values()
+                    .filter_map(|t| match &t.wait_tag {
+                        Some(WaitTag::ChannelSend { channel, value }) if *channel == rid => {
+                            Some(format!(
+                                "{}:{}",
+                                tn(ThreadId(t.tid as u64)),
+                                hln_to_val(value).canonical()
+                            ))
                         }
                         _ => None,
                     })
                     .collect();
-                let recvq: Vec<String> = toks(&PlaceKey::ChannelRecv(r.id))
-                    .iter()
-                    .filter_map(|t| t.thread().map(tn))
+                sendq.sort();
+                let mut recvq: Vec<String> = tok_map
+                    .values()
+                    .filter_map(|t| match t.wait_tag {
+                        Some(WaitTag::ChannelRecv(channel)) if channel == rid => {
+                            Some(tn(ThreadId(t.tid as u64)))
+                        }
+                        _ => None,
+                    })
                     .collect();
+                recvq.sort();
                 out.push_str(&format!("sendq {}={:?}\n", res_key(sp, r.id), sendq));
                 out.push_str(&format!("recvq {}={:?}\n", res_key(sp, r.id), recvq));
             }
             ResKind::Condvar => {
-                let mut waiters: Vec<String> = toks(&PlaceKey::Condvar(r.id))
-                    .iter()
-                    .filter_map(|t| match t {
-                        concir::petri::net::NetToken::CondvarWait { thread, lock, .. } => {
-                            Some(format!("{}:{}", tn(*thread), res_key(sp, *lock)))
-                        }
+                let mut waiters: Vec<String> = tok_map
+                    .values()
+                    .filter_map(|t| match t.wait_tag {
+                        Some(WaitTag::Condvar { condvar, lock }) if condvar == rid => Some(format!(
+                            "{}:{}",
+                            tn(ThreadId(t.tid as u64)),
+                            res_key(sp, ResourceId(lock as u32))
+                        )),
                         _ => None,
                     })
                     .collect();
@@ -398,99 +418,95 @@ fn proj_pn(pn: &PetriEngine, sp: &SemProgram, s: &NetState) -> String {
         }
     }
     for f in &frame_order {
-        let fr = &s.store.frames[f];
+        let (fr, owner_tid) = frames[&(f.0 as u32)];
+        let tok = tok_map[&owner_tid];
         let mut locals: Vec<String> = fr
             .locals
             .iter()
-            .map(|(k, v)| format!("{k}={}", v.canonical()))
+            .map(|(k, v)| format!("{k}={}", hln_to_val(v).canonical()))
             .collect();
         locals.sort();
-        let owner = thread_order
+        let mut kids: Vec<(String, usize)> = fr
+            .handles
             .iter()
-            .find(|t| s.store.threads[t].stack.contains(&fr.id));
-        let mut kids: Vec<(String, usize)> = Vec::new();
-        if let Some(owner) = owner {
-            kids = fr
-                .handles
-                .iter()
-                .filter_map(|(name, h)| {
-                    s.store.threads[owner]
-                        .handle_children
-                        .get(h)
-                        .map(|c| (name.clone(), tmap[c]))
-                })
-                .collect();
-            kids.sort();
-        }
+            .filter_map(|(name, h)| {
+                tok.handle_children
+                    .get(h)
+                    .map(|c| (name.clone(), tmap[&ThreadId(*c as u64)]))
+            })
+            .collect();
+        kids.sort();
         let ret = match &fr.ret {
-            Some(r) => format!("ret(pc={},dst={:?})", r.pc_next, r.dst),
+            Some(r) => {
+                let dst = match (r.dst_local, r.dst_shared) {
+                    (Some(l), _) => SlotRef::Local(l),
+                    (None, Some(sh)) => SlotRef::Shared(ResourceId(sh as u32)),
+                    (None, None) => SlotRef::Discard,
+                };
+                format!("ret(pc={},dst={:?})", r.pc_next, dst)
+            }
             None => "ret(none)".to_string(),
         };
         out.push_str(&format!(
             "frame {} fn={} pc={} locals={:?} handles={:?} {}\n",
             fnn(*f),
-            fn_key(sp, fr.function),
+            fn_key(sp, FunctionId(fr.func as u32)),
             fr.pc,
             locals,
             kids,
             ret
         ));
     }
-    for (tid, t) in &s.store.threads {
+    for (&tid, t) in &tok_map {
         let stack: Vec<String> = t
             .stack
             .iter()
-            .map(|f| {
-                format!(
-                    "{}@{}",
-                    fn_key(sp, s.store.frames[f].function),
-                    s.store.frames[f].pc
-                )
-            })
+            .map(|fr| format!("{}@{}", fn_key(sp, FunctionId(fr.func as u32)), fr.pc))
             .collect();
-        let status = if s.store.finished.contains(tid) {
+        let status = if s.finished.contains(&tid) {
             "done".to_string()
         } else {
-            match &t.blocked_at {
+            match &t.wait_tag {
                 None => "run".to_string(),
-                Some(key) => format!("blocked:{}", block_pn(sp, key)),
+                Some(tag) => format!("blocked:{}", block_pn(sp, tag)),
             }
         };
         out.push_str(&format!(
             "thread {} entry={} stack={stack:?} {}\n",
-            tn(*tid),
-            fn_key(sp, t.entry_function),
+            tn(ThreadId(tid as u64)),
+            fn_key(sp, FunctionId(t.entry_func as u32)),
             status
         ));
     }
-    for sc in s.store.scopes.values() {
-        let mut rem: Vec<String> = sc.remaining.iter().map(|t| tn(*t)).collect();
+    for sc in s.scopes.values() {
+        let mut rem: Vec<String> = sc
+            .remaining
+            .iter()
+            .map(|t| tn(ThreadId(*t as u64)))
+            .collect();
         rem.sort();
         out.push_str(&format!(
             "scope owner={} frame={} remaining={:?}\n",
-            tn(sc.owner),
-            fnn(sc.owner_frame),
+            tn(ThreadId(sc.owner as u64)),
+            fnn(FrameId(sc.owner_frame as u64)),
             rem
         ));
     }
     let comp: BTreeMap<String, usize> = s
-        .store
         .completed_functions
         .iter()
-        .map(|(f, n)| (fn_key(sp, *f), *n))
+        .map(|(f, n)| (fn_key(sp, FunctionId(*f as u32)), *n))
         .collect();
     let mut reached: Vec<String> = s
-        .store
         .reached
         .iter()
-        .map(|(f, sid)| format!("{}@{}", fn_key(sp, *f), sid))
+        .map(|(f, sid)| format!("{}@{}", fn_key(sp, FunctionId(*f as u32)), sid))
         .collect();
     reached.sort();
     let mut scopes: Vec<String> = s
-        .store
         .completed_scopes
         .iter()
-        .map(|(f, sid)| format!("{}@{}", fn_key(sp, *f), sid))
+        .map(|(f, sid)| format!("{}@{}", fn_key(sp, FunctionId(*f as u32)), sid))
         .collect();
     scopes.sort();
     out.push_str(&format!(
@@ -499,16 +515,23 @@ fn proj_pn(pn: &PetriEngine, sp: &SemProgram, s: &NetState) -> String {
     out
 }
 
-fn block_pn(sp: &SemProgram, key: &PlaceKey) -> String {
-    match key {
-        PlaceKey::LockWait(r) => format!("lock:{}", res_key(sp, *r)),
-        PlaceKey::ChannelSend(r) => format!("send:{}", res_key(sp, *r)),
-        PlaceKey::ChannelRecv(r) => format!("recv:{}", res_key(sp, *r)),
-        PlaceKey::Condvar(r) => format!("condvar:{}", res_key(sp, *r)),
-        PlaceKey::SemWait(r) => format!("sem:{}", res_key(sp, *r)),
-        PlaceKey::JoinWait { .. } => "join".to_string(),
-        PlaceKey::ScopeWait { .. } => "scope".to_string(),
-        _ => "?".to_string(),
+fn block_pn(sp: &SemProgram, tag: &WaitTag) -> String {
+    match tag {
+        WaitTag::Mutex(r) => format!("lock:{}", res_key(sp, ResourceId(*r as u32))),
+        WaitTag::RwRead(r) => format!("rwread:{}", res_key(sp, ResourceId(*r as u32))),
+        WaitTag::RwWrite(r) => format!("rwwrite:{}", res_key(sp, ResourceId(*r as u32))),
+        WaitTag::ChannelSend { channel, .. } => {
+            format!("send:{}", res_key(sp, ResourceId(*channel as u32)))
+        }
+        WaitTag::ChannelRecv(r) => format!("recv:{}", res_key(sp, ResourceId(*r as u32))),
+        WaitTag::Condvar { condvar, .. } => {
+            format!("condvar:{}", res_key(sp, ResourceId(*condvar as u32)))
+        }
+        WaitTag::Semaphore { resource, .. } => {
+            format!("sem:{}", res_key(sp, ResourceId(*resource as u32)))
+        }
+        WaitTag::Join(_) => "join".to_string(),
+        WaitTag::Scope(_) => "scope".to_string(),
     }
 }
 
@@ -601,17 +624,24 @@ fn explore_pn(sp: &SemProgram) -> Explored {
         let p = proj_pn(&pn, sp, s);
         projections.insert(p.clone());
         for (t, label) in &r.edges[i] {
-            let thread_order: Vec<ThreadId> = s.store.threads.keys().copied().collect();
-            let tmap: BTreeMap<ThreadId, usize> = thread_order
+            let mut tids: Vec<u32> = s.all_tokens().map(|(_, tok)| tok.tid).collect();
+            tids.sort_unstable();
+            tids.dedup();
+            let tmap: BTreeMap<ThreadId, usize> = tids
                 .iter()
                 .enumerate()
-                .map(|(k, t)| (*t, k))
+                .map(|(k, &id)| (ThreadId(id as u64), k))
                 .collect();
-            let frame_order: Vec<FrameId> = s.store.frames.keys().copied().collect();
-            let fmap: BTreeMap<FrameId, usize> = frame_order
+            let mut fids: Vec<u32> = s
+                .all_tokens()
+                .flat_map(|(_, tok)| tok.stack.iter().map(|fr| fr.frame_id))
+                .collect();
+            fids.sort_unstable();
+            fids.dedup();
+            let fmap: BTreeMap<FrameId, usize> = fids
                 .iter()
                 .enumerate()
-                .map(|(k, f)| (*f, k))
+                .map(|(k, &id)| (FrameId(id as u64), k))
                 .collect();
             let tid = label
                 .thread
@@ -621,17 +651,14 @@ fn explore_pn(sp: &SemProgram) -> Explored {
                 .frame
                 .map(|x| format!("F{}", fmap[&x]))
                 .unwrap_or_default();
-            // Project auxiliary net steps onto the blocked thread's CIR
-            // statement (the interpreter's resume step).
-            let (function, sid) = match label.origin.sid {
-                Some(sid) => (fn_key(sp, label.origin.function), sid.to_string()),
-                None => {
-                    let frame = label.frame.expect("aux step binds a frame");
-                    let fr = s.store.frame(frame);
-                    (fn_key(sp, fr.function), fr.pc.to_string())
-                }
-            };
-            let key = format!("{function}#{sid}#{tid}#{fid}");
+            let sid = label.origin.sid;
+            let key = format!(
+                "{}#{}#{}#{}",
+                fn_key(sp, label.origin.function),
+                sid.map(|x| x.to_string()).unwrap_or_else(|| "-".into()),
+                tid,
+                fid
+            );
             edges.insert((p.clone(), key, proj_pn(&pn, sp, &r.states[*t])));
         }
     }

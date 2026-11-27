@@ -6,8 +6,8 @@ use concir::ast::Program;
 use concir::explore::contract::ContractSpec;
 use concir::explore::{verify_program, EngineKind, VerificationReport};
 use concir::interp::Interpreter;
-use concir::petri::exec::PetriEngine;
-use concir::petri::net::{NetState, PlaceKey};
+use concir::petri::PetriEngine;
+use concir::unipn_engine::{HlnState as NetState, WaitTag};
 use concir::repair::candidates::{FileCandidateProvider, LockOrderEnumerator};
 use concir::repair::{run_repair, RepairOutcome};
 use concir::sem::outcome::{AnalysisBounds, Outcome};
@@ -169,9 +169,11 @@ fn b3_rendezvous_enumerates_every_receiver() {
             continue;
         }
         let en = pn.successors(&s).unwrap();
-        let two = pn.net.places.iter().any(|pl| {
-            matches!(pl.key, PlaceKey::ChannelRecv(_)) && s.place_tokens(pl.id).len() == 2
-        });
+        let two = s
+            .all_tokens()
+            .filter(|(_, t)| matches!(t.wait_tag, Some(WaitTag::ChannelRecv(_))))
+            .count()
+            == 2;
         if two {
             assert_eq!(en.steps.len(), 2, "net must enumerate both receivers");
             petri_found = true;
