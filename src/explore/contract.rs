@@ -3,9 +3,12 @@
 //! modified by a candidate patch.
 
 use serde::{Deserialize, Serialize};
+use unipn::analysis::obligations::BugKind;
 use unipn::analysis::temporal::{
     explain_ctl, explain_ltl, CtlFormula, FairnessConstraint, LtlFormula,
 };
+
+use super::patterns::{CompiledPattern, ConstraintPattern};
 
 use crate::expr::CmpOp;
 use crate::sem::ids::{FunctionId, ResourceId};
@@ -162,6 +165,24 @@ pub enum PropertySpec {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         req: Vec<String>,
     },
+    /// Reusable constraint pattern compiled into CTL / Fair-LTL.
+    Pattern {
+        id: String,
+        #[serde(flatten)]
+        pattern: ConstraintPattern,
+        #[serde(default = "yes")]
+        non_vacuous: bool,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        req: Vec<String>,
+    },
+    /// Pure logic-driven concurrency health suite (`unipn::analysis::obligations`).
+    Health {
+        id: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        checks: Vec<BugKind>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        req: Vec<String>,
+    },
 }
 
 /// An observable behaviour a patch must preserve.
@@ -284,6 +305,18 @@ pub enum Property {
         non_vacuous: bool,
         explanation: String,
     },
+    PatternLtl {
+        formula: LtlFormula<Predicate>,
+        fairness: Vec<FairnessConstraint<Predicate>>,
+        non_vacuous: bool,
+        witness_reachable: Option<Predicate>,
+        witness_desc: Option<String>,
+        explanation: String,
+    },
+    Health {
+        checks: Vec<BugKind>,
+        explanation: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -403,6 +436,27 @@ fn collect_property_predicates<'a>(p: &'a Property, out: &mut Vec<&'a Predicate>
                 }
             }
         }
+        Property::PatternLtl {
+            formula,
+            fairness,
+            witness_reachable,
+            ..
+        } => {
+            collect_ltl_predicates(formula, out);
+            for fc in fairness {
+                match fc {
+                    FairnessConstraint::Justice { atom } => out.push(atom),
+                    FairnessConstraint::Compassion { enabled, taken } => {
+                        out.push(enabled);
+                        out.push(taken);
+                    }
+                }
+            }
+            if let Some(w) = witness_reachable {
+                out.push(w);
+            }
+        }
+        Property::Health { .. } => {}
     }
 }
 
@@ -566,6 +620,58 @@ impl ContractSpec {
                         },
                     )
                 }
+                PropertySpec::Pattern {
+                    id,
+                    pattern,
+                    non_vacuous,
+                    ..
+                } => {
+                    let prop = match pattern.resolve(program, default_module, *non_vacuous)? {
+                        CompiledPattern::Ctl {
+                            formula,
+                            non_vacuous,
+                            explanation,
+                        } => Property::Ctl {
+                            formula,
+                            non_vacuous,
+                            explanation,
+                        },
+                        CompiledPattern::Ltl {
+                            formula,
+                            fairness,
+                            non_vacuous,
+                            witness_reachable,
+                            witness_desc,
+                            explanation,
+                        } => Property::PatternLtl {
+                            formula,
+                            fairness,
+                            non_vacuous,
+                            witness_reachable,
+                            witness_desc,
+                            explanation,
+                        },
+                    };
+                    (id.clone(), prop)
+                }
+                PropertySpec::Health { id, checks, .. } => {
+                    let active = if checks.is_empty() {
+                        BugKind::default_suite()
+                    } else {
+                        checks.clone()
+                    };
+                    let names: Vec<&str> = active.iter().map(|b| b.label()).collect();
+                    (
+                        id.clone(),
+                        Property::Health {
+                            checks: active,
+                            explanation: format!(
+                                "Check concurrency health obligations: [{}].",
+                                names.join(", ")
+                            ),
+                        },
+                    )
+                }
             };
             properties.push(PropertySpecResolved { id, property });
         }
@@ -676,6 +782,36 @@ impl ContractSpec {
                     non_vacuous: *non_vacuous,
                     explanation: explain_ltl(formula, fairness, PredicateSpec::explain),
                 },
+                PropertySpec::Pattern {
+                    id,
+                    pattern,
+                    non_vacuous,
+                    req,
+                } => PropertyExplanation {
+                    id: id.clone(),
+                    kind: "pattern".to_string(),
+                    req: req.clone(),
+                    non_vacuous: *non_vacuous,
+                    explanation: pattern.explain(),
+                },
+                PropertySpec::Health { id, checks, req } => {
+                    let active = if checks.is_empty() {
+                        BugKind::default_suite()
+                    } else {
+                        checks.clone()
+                    };
+                    let names: Vec<&str> = active.iter().map(|b| b.label()).collect();
+                    PropertyExplanation {
+                        id: id.clone(),
+                        kind: "health".to_string(),
+                        req: req.clone(),
+                        non_vacuous: false,
+                        explanation: format!(
+                            "Verify concurrency health obligations: [{}].",
+                            names.join(", ")
+                        ),
+                    }
+                }
             })
             .collect();
 
@@ -884,7 +1020,9 @@ fn property_id(p: &PropertySpec) -> &str {
         | PropertySpec::AlwaysReachable { id, .. }
         | PropertySpec::Unreachable { id, .. }
         | PropertySpec::Ctl { id, .. }
-        | PropertySpec::Ltl { id, .. } => id,
+        | PropertySpec::Ltl { id, .. }
+        | PropertySpec::Pattern { id, .. }
+        | PropertySpec::Health { id, .. } => id,
     }
 }
 

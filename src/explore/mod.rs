@@ -5,19 +5,24 @@
 //! interpreter and the Petri-net executor are explored with exactly this code.
 
 pub mod contract;
+pub mod patterns;
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
 use serde::{Deserialize, Serialize};
+use unipn::analysis::obligations::{check_obligations_graph, BugKind, ObligationStateView};
+use unipn::net::PlaceId;
 
-use crate::sem::ids::FunctionId;
+use crate::fqn;
+use crate::sem::ids::{FunctionId, ResourceId, ThreadId};
 use crate::sem::outcome::{
     BackendError, BoundaryEvent, BoundaryKind, Invalid, Outcome, StepLabel, Unsupported,
 };
-use crate::sem::program::SemProgram;
+use crate::sem::program::{ResKind, SemOp, SemProgram};
 use crate::sem::system::{
-    BlockedRecord, DoomState, DoomThread, InstanceState, Step, TransitionSystem,
+    BlockedRecord, BlockKind, DoomState, DoomThread, InstanceState, Predicate, Step,
+    TransitionSystem,
 };
 
 use contract::{ContractError, ContractSpec, Preserved, Property, VerificationContract};
@@ -838,6 +843,421 @@ fn check_property<S: TransitionSystem>(
                 diagnostics,
             )
         }
+        Property::PatternLtl {
+            formula,
+            fairness,
+            non_vacuous,
+            witness_reachable,
+            witness_desc,
+            explanation,
+        } => {
+            let (edges, edge_labels) = flatten_graph_edges(graph);
+            let res = unipn::analysis::temporal::check_ltl_graph(
+                graph.states.len(),
+                0,
+                &edges,
+                formula,
+                fairness,
+                |s, pred| system.satisfied(&graph.states[s], pred),
+                |pred| pred.description(),
+            );
+            let mut prop_res = finalize_temporal_result(
+                system,
+                program,
+                graph,
+                id,
+                "Pattern-LTL",
+                *non_vacuous,
+                explanation,
+                res,
+                &edge_labels,
+                complete,
+                diagnostics,
+            );
+            if prop_res.outcome == Outcome::Pass
+                && *non_vacuous
+                && let Some(witness) = witness_reachable
+                && !graph.states.iter().any(|s| system.satisfied(s, witness))
+            {
+                let desc = witness_desc
+                    .clone()
+                    .unwrap_or_else(|| witness.description());
+                diagnostics.push(DiagnosticRecord {
+                    property: id.into(),
+                    outcome: Outcome::Fail,
+                    message: format!(
+                        "Pattern '{id}' passed vacuously because target effect [{desc}] is never reachable in any execution"
+                    ),
+                    complete,
+                    counterexample: Vec::new(),
+                    final_instances: Vec::new(),
+                    blocked: Vec::new(),
+                    cir_statements: Vec::new(),
+                    proven_facts: vec![
+                        format!("exhaustively explored {} reachable states", graph.states.len()),
+                        format!("unreachable effect: {desc}"),
+                    ],
+                    repair_hints: vec![
+                        "ensure the modeled program can reach the target condition rather than failing trivially before trigger".into(),
+                    ],
+                    counterexample_names: Vec::new(),
+                    doom_state: Default::default(),
+                });
+                prop_res.outcome = Outcome::Fail;
+                prop_res.vacuous = true;
+                prop_res.vacuous_antecedents = vec![desc.clone()];
+                prop_res.detail = format!(
+                    "vacuous pass rejected (non_vacuous=true): target effect [{desc}] is never reachable in any execution"
+                );
+            }
+            prop_res
+        }
+        Property::Health { checks, explanation } => {
+            check_health_property(system, program, graph, id, checks, explanation, complete, diagnostics)
+        }
+    }
+}
+
+struct GraphObligationView<'a, S: TransitionSystem> {
+    system: &'a S,
+    program: &'a SemProgram,
+    graph: &'a Graph<S::State>,
+    deadlock_set: HashSet<usize>,
+    lock_resources: Vec<ResourceId>,
+}
+
+impl<'a, S: TransitionSystem> GraphObligationView<'a, S> {
+    fn new(system: &'a S, program: &'a SemProgram, graph: &'a Graph<S::State>) -> Self {
+        let deadlock_set = graph
+            .states
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| {
+                (graph.processed[i]
+                    && !graph.had_boundary[i]
+                    && graph.edges[i].is_empty()
+                    && !system.is_finished(s))
+                .then_some(i)
+            })
+            .collect();
+        let lock_resources = program
+            .resources()
+            .iter()
+            .filter(|r| matches!(r.kind, ResKind::Mutex | ResKind::RwLock))
+            .map(|r| r.id)
+            .collect();
+        Self {
+            system,
+            program,
+            graph,
+            deadlock_set,
+            lock_resources,
+        }
+    }
+
+    fn site_place(func: FunctionId, sid: Option<usize>) -> PlaceId {
+        PlaceId((func.0 as usize) * 1024 + sid.unwrap_or(0))
+    }
+
+    fn thread_place(&self, state_idx: usize, tid: u32) -> PlaceId {
+        self.system
+            .instances(&self.graph.states[state_idx])
+            .into_iter()
+            .find(|i| i.thread.0 as u32 == tid)
+            .map_or(PlaceId(0), |i| Self::site_place(i.function, i.sid))
+    }
+}
+
+impl<S: TransitionSystem> ObligationStateView for GraphObligationView<'_, S> {
+    fn is_deadlock_state(&self, state_idx: usize) -> bool {
+        self.deadlock_set.contains(&state_idx)
+    }
+
+    fn all_threads_finished(&self, state_idx: usize) -> bool {
+        self.system.is_finished(&self.graph.states[state_idx])
+    }
+
+    fn all_locks_restored(&self, state_idx: usize) -> bool {
+        let st = &self.graph.states[state_idx];
+        self.lock_resources
+            .iter()
+            .all(|&r| self.system.satisfied(st, &Predicate::MutexFree(r)))
+    }
+
+    fn thread_ids(&self, state_idx: usize) -> Vec<u32> {
+        let ids: BTreeSet<u32> = self
+            .system
+            .instances(&self.graph.states[state_idx])
+            .into_iter()
+            .map(|i| i.thread.0 as u32)
+            .collect();
+        ids.into_iter().collect()
+    }
+
+    fn thread_active(&self, state_idx: usize, tid: u32) -> bool {
+        self.system
+            .instances(&self.graph.states[state_idx])
+            .into_iter()
+            .any(|i| i.thread.0 as u32 == tid && i.status != "finished")
+    }
+
+    fn condvar_wait_sites(&self, state_idx: usize) -> Vec<(u32, PlaceId)> {
+        self.system
+            .blocked(&self.graph.states[state_idx])
+            .into_iter()
+            .filter(|b| b.kind == BlockKind::Condvar)
+            .map(|b| {
+                let tid = b.thread.0 as u32;
+                (tid, self.thread_place(state_idx, tid))
+            })
+            .collect()
+    }
+
+    fn at_condvar_wait(&self, state_idx: usize, tid: u32, place: PlaceId) -> bool {
+        self.system
+            .blocked(&self.graph.states[state_idx])
+            .into_iter()
+            .any(|b| {
+                b.kind == BlockKind::Condvar
+                    && b.thread.0 as u32 == tid
+                    && self.thread_place(state_idx, tid) == place
+            })
+    }
+
+    fn contend_sites(&self, state_idx: usize) -> Vec<(u32, PlaceId)> {
+        self.system
+            .blocked(&self.graph.states[state_idx])
+            .into_iter()
+            .filter(|b| {
+                matches!(
+                    b.kind,
+                    BlockKind::Lock
+                        | BlockKind::Semaphore
+                        | BlockKind::ChannelSend
+                        | BlockKind::ChannelRecv
+                )
+            })
+            .map(|b| {
+                let tid = b.thread.0 as u32;
+                (tid, self.thread_place(state_idx, tid))
+            })
+            .collect()
+    }
+
+    fn at_contend(&self, state_idx: usize, tid: u32, place: PlaceId) -> bool {
+        self.system
+            .blocked(&self.graph.states[state_idx])
+            .into_iter()
+            .any(|b| {
+                matches!(
+                    b.kind,
+                    BlockKind::Lock
+                        | BlockKind::Semaphore
+                        | BlockKind::ChannelSend
+                        | BlockKind::ChannelRecv
+                ) && b.thread.0 as u32 == tid
+                    && self.thread_place(state_idx, tid) == place
+            })
+    }
+
+    fn contend_resume_enabled(&self, state_idx: usize, tid: u32, place: PlaceId) -> bool {
+        if !self.at_contend(state_idx, tid, place) {
+            return false;
+        }
+        self.graph.edges[state_idx]
+            .iter()
+            .any(|(_, lbl)| lbl.thread == Some(ThreadId(tid as u64)))
+    }
+
+    fn double_lock_detail(&self, state_idx: usize) -> Option<(u32, String)> {
+        let state = &self.graph.states[state_idx];
+        let doom = self.system.doom_snapshot(state);
+        let insts = self.system.instances(state);
+        for inst in insts {
+            if inst.status == "finished" {
+                continue;
+            }
+            let Some(sid) = inst.sid else { continue };
+            let Some(stmt) = self.program.function(inst.function).body.get(sid) else {
+                continue;
+            };
+            let lock_res = match &stmt.op {
+                SemOp::MutexLock { resource } | SemOp::RwLockWrite { resource } => *resource,
+                _ => continue,
+            };
+            let r = self.program.resource(lock_res);
+            let r_fqn = fqn::fqn(self.program.module_name(r.module), &r.name);
+            let tid = inst.thread.0 as u32;
+            if doom
+                .threads
+                .iter()
+                .any(|t| t.thread == tid && t.holds.iter().any(|h| h == &r_fqn))
+            {
+                return Some((tid, r_fqn));
+            }
+        }
+        None
+    }
+
+    fn data_race_detail(&self, state_idx: usize) -> Option<String> {
+        let state = &self.graph.states[state_idx];
+        let insts = self.system.instances(state);
+        let runnable: Vec<_> = insts
+            .into_iter()
+            .filter(|i| matches!(i.status.as_str(), "runnable" | "running"))
+            .filter_map(|i| {
+                let sid = i.sid?;
+                let stmt = self.program.function(i.function).body.get(sid)?;
+                let (reads, writes) = crate::unipn_engine::lower::stmt_rw_vars(self.program, stmt);
+                (!reads.is_empty() || !writes.is_empty())
+                    .then_some((i.thread.0 as u32, reads, writes))
+            })
+            .collect();
+        for i in 0..runnable.len() {
+            let (tid1, r1, w1) = &runnable[i];
+            for j in (i + 1)..runnable.len() {
+                let (tid2, r2, w2) = &runnable[j];
+                if tid1 == tid2 {
+                    continue;
+                }
+                for &v in w1 {
+                    if w2.contains(&v) || r2.contains(&v) {
+                        let res = self.program.resource(ResourceId(v as u32));
+                        return Some(fqn::fqn(self.program.module_name(res.module), &res.name));
+                    }
+                }
+                for &v in w2 {
+                    if r1.contains(&v) {
+                        let res = self.program.resource(ResourceId(v as u32));
+                        return Some(fqn::fqn(self.program.module_name(res.module), &res.name));
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_health_property<S: TransitionSystem>(
+    system: &S,
+    program: &SemProgram,
+    graph: &Graph<S::State>,
+    id: &str,
+    checks: &[BugKind],
+    explanation: &str,
+    complete: bool,
+    diagnostics: &mut Vec<DiagnosticRecord>,
+) -> PropertyResult {
+    let (edges, edge_labels) = flatten_graph_edges(graph);
+    let view = GraphObligationView::new(system, program, graph);
+    let report = check_obligations_graph(graph.states.len(), 0, &edges, !complete, checks, &view);
+
+    if let Some(v) = report.violations.first() {
+        let is_liveness = matches!(
+            v.kind,
+            BugKind::PartialDeadlock
+                | BugKind::LostWakeup
+                | BugKind::WakeStarvation
+                | BugKind::AcquireStarvation
+        );
+        if !complete && is_liveness {
+            let touches_boundary = v.trace.as_ref().is_none_or(|tr| {
+                tr.prefix_states
+                    .iter()
+                    .chain(tr.cycle_states.iter())
+                    .any(|&s| !graph.processed[s] || graph.had_boundary[s])
+            });
+            if touches_boundary {
+                return PropertyResult {
+                    id: id.into(),
+                    outcome: Outcome::Unknown,
+                    detail: format!(
+                        "health check '{}' inconclusive because exploration was incomplete",
+                        v.kind.label()
+                    ),
+                    vacuous: false,
+                    vacuous_antecedents: Vec::new(),
+                    explanation: Some(explanation.to_string()),
+                };
+            }
+        }
+
+        let (ce, final_idx) = if let Some(tr) = &v.trace {
+            let mut steps = Vec::new();
+            for &tag in tr.prefix_edges.iter().chain(tr.cycle_edges.iter()) {
+                if let Some(lbl) = edge_labels.get(tag) {
+                    steps.push(lbl.clone());
+                }
+            }
+            let idx = tr
+                .cycle_states
+                .last()
+                .or_else(|| tr.prefix_states.last())
+                .copied()
+                .unwrap_or(0);
+            (steps, idx)
+        } else {
+            (Vec::new(), 0)
+        };
+        let state = &graph.states[final_idx];
+        let instances = system.instances(state);
+        let blocked = system.blocked(state);
+        let cir_statements = instances
+            .iter()
+            .map(|i| cir_ref(program, i.function, i.sid))
+            .collect();
+        let ce_names: Vec<String> = ce.iter().map(|l| render_step_label(program, l)).collect();
+        let doom_state = system.doom_snapshot(state);
+        diagnostics.push(DiagnosticRecord {
+            property: id.into(),
+            outcome: Outcome::Fail,
+            message: format!("health check '{}' failed: {}", v.kind.label(), v.message),
+            complete,
+            counterexample: ce,
+            final_instances: instances,
+            blocked,
+            cir_statements,
+            proven_facts: vec![
+                format!("obligation formula: {}", v.formula),
+                format!("explored {} reachable states", graph.states.len()),
+            ],
+            repair_hints: doom_hints(&doom_state),
+            counterexample_names: ce_names,
+            doom_state,
+        });
+        return PropertyResult {
+            id: id.into(),
+            outcome: Outcome::Fail,
+            detail: v.message.clone(),
+            vacuous: false,
+            vacuous_antecedents: Vec::new(),
+            explanation: Some(explanation.to_string()),
+        };
+    }
+
+    if !complete {
+        return PropertyResult {
+            id: id.into(),
+            outcome: Outcome::Unknown,
+            detail: "health obligations held on explored fragment, but search was incomplete".into(),
+            vacuous: false,
+            vacuous_antecedents: Vec::new(),
+            explanation: Some(explanation.to_string()),
+        };
+    }
+
+    PropertyResult {
+        id: id.into(),
+        outcome: Outcome::Pass,
+        detail: format!(
+            "all {} concurrency health obligation(s) passed across {} states",
+            report.checks_run.len(),
+            graph.states.len()
+        ),
+        vacuous: false,
+        vacuous_antecedents: Vec::new(),
+        explanation: Some(explanation.to_string()),
     }
 }
 
