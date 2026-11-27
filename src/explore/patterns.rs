@@ -16,7 +16,10 @@ use crate::sem::system::Predicate;
 #[serde(tag = "pattern", rename_all = "snake_case")]
 pub enum ConstraintPattern {
     /// Safety invariant `AG(cond)`: `cond` holds in every reachable state.
-    Always { cond: PredicateSpec },
+    Always {
+        #[serde(alias = "invariant")]
+        cond: PredicateSpec,
+    },
     /// Mutual exclusion `AG(!(p1 && p2 && ...))`: listed predicates cannot all
     /// hold simultaneously in any reachable state.
     Exclude { preds: Vec<PredicateSpec> },
@@ -33,7 +36,9 @@ pub enum ConstraintPattern {
     },
     /// Fair response `G(cause -> F effect)` under justice/compassion fairness.
     Triggers {
+        #[serde(alias = "trigger")]
         cause: PredicateSpec,
+        #[serde(alias = "response")]
         effect: PredicateSpec,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         fairness: Vec<FairnessConstraint<PredicateSpec>>,

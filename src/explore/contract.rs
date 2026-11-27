@@ -235,6 +235,9 @@ pub enum PredicateSpec {
         function: String,
         sid: String,
     },
+    MilestoneReached {
+        milestone: String,
+    },
     MutexFree {
         resource: String,
     },
@@ -1079,6 +1082,9 @@ impl PredicateSpec {
             PredicateSpec::StatementReached { function, sid } => {
                 format!("statement '{function}::{sid}' is reached")
             }
+            PredicateSpec::MilestoneReached { milestone } => {
+                format!("milestone '{milestone}' has been reached")
+            }
             PredicateSpec::MutexFree { resource } => format!("lock '{resource}' is free"),
             PredicateSpec::MutexHeld { resource } => format!("lock '{resource}' is held"),
             PredicateSpec::HoldsAll {
@@ -1175,6 +1181,18 @@ impl PredicateSpec {
                     .stmt_index(sid)
                     .ok_or_else(|| format!("function '{function}' has no statement '{sid}'"))?;
                 Predicate::StatementReached { func: f, sid: idx }
+            }
+            PredicateSpec::MilestoneReached { milestone } => {
+                let sites = program.milestone_sites(milestone);
+                if sites.is_empty() {
+                    return Err(format!(
+                        "unknown milestone '{milestone}' (no statement carries this milestone)"
+                    ));
+                }
+                Predicate::MilestoneReached {
+                    milestone: milestone.clone(),
+                    sites,
+                }
             }
             PredicateSpec::MutexFree { resource } => {
                 let rid = resolve_resource(program, default_module, resource)?;
