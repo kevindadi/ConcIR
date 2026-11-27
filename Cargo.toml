@@ -8,8 +8,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 syn = { version = "2", features = ["full", "visit"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
-unipn = { git = "https://github.com/kevindadi/UniPN", rev = "b57297c9d5738eb4061a8a45acb8be97760db3d1", default-features = false }
-unipn-transfer = { git = "https://github.com/kevindadi/UniPN", rev = "b57297c9d5738eb4061a8a45acb8be97760db3d1" }
+unipn = { git = "https://github.com/kevindadi/UniPN", rev = "de05ca14c2df795a0c1937e88ed94cb5b89f89de", default-features = false }
+unipn-transfer = { git = "https://github.com/kevindadi/UniPN", rev = "de05ca14c2df795a0c1937e88ed94cb5b89f89de" }
 
 [[bin]]
 name = "concir-instrument"
