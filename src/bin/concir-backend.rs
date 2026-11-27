@@ -59,6 +59,8 @@ fn usage() -> ! {
          concir-backend schema\n  \
          concir-backend lower   <program.json> [--out <lowered.json>] [--trace-map <map.json>]\n  \
          concir-backend summarize <program.json> [--module <name>] [--out <summary.json>]\n  \
+         concir-backend check-req <req_ir.json> [--contract <contract.json>] [--out <report.json>]\n  \
+         concir-backend verify-design --req <req_ir.json> --design <program.json> [--contract <contract.json>] [--out <report.json>]\n  \
          concir-backend verify-refinement --spec <program.json> --impl-net <impl_net.json> [--contract <contract.json>] [--codegen-map <codegen.json>] [--module <name>] [--out <report.json>]\n  \
          concir-backend explain-contract <contract.json> [--output <file>]\n  \
          concir-backend export-cvn <program.json> [--output <file>]\n  \
@@ -352,6 +354,96 @@ fn main() {
             match report.outcome.as_str() {
                 "pass" => {}
                 "unknown" => process::exit(EXIT_UNKNOWN),
+                _ => process::exit(EXIT_FAIL),
+            }
+        }
+        "check-req" => {
+            let req_path = args.get(2).unwrap_or_else(|| usage());
+            let contract_path = flag_value(&args, "--contract");
+            let out_path = flag_value(&args, "--out").or_else(|| flag_value(&args, "--output"));
+            let req: concir::req_ir::ReqProgram = match serde_json::from_str(&read(req_path)) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("JSON parse error in '{req_path}': {e}");
+                    process::exit(EXIT_INVALID);
+                }
+            };
+            let contract = contract_path.as_ref().map(|p| {
+                match serde_json::from_str::<ContractSpec>(&read(p)) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("contract parse error in '{p}': {e}");
+                        process::exit(EXIT_INVALID);
+                    }
+                }
+            });
+            let max_states = contract
+                .as_ref()
+                .map(|c| c.bounds.max_states)
+                .unwrap_or_else(|| AnalysisBounds::default().max_states);
+            let report = concir::req_ir::check_req_program(&req, contract.as_ref(), max_states);
+            let json = serde_json::to_string_pretty(&report).expect("serialize");
+            if let Some(p) = &out_path {
+                if let Err(e) = fs::write(p, format!("{json}\n")) {
+                    eprintln!("error writing check-req report '{p}': {e}");
+                    process::exit(EXIT_USAGE);
+                }
+            }
+            println!("{json}");
+            match report.outcome.as_str() {
+                "pass" => {}
+                "unknown" => process::exit(EXIT_UNKNOWN),
+                "invalid" => process::exit(EXIT_INVALID),
+                "unsupported" => process::exit(EXIT_UNSUPPORTED),
+                _ => process::exit(EXIT_FAIL),
+            }
+        }
+        "verify-design" => {
+            let req_path = flag_value(&args, "--req").unwrap_or_else(|| usage());
+            let design_path = flag_value(&args, "--design").unwrap_or_else(|| usage());
+            let contract_path = flag_value(&args, "--contract");
+            let out_path = flag_value(&args, "--out").or_else(|| flag_value(&args, "--output"));
+
+            let req: concir::req_ir::ReqProgram = match serde_json::from_str(&read(&req_path)) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("JSON parse error in '{req_path}': {e}");
+                    process::exit(EXIT_INVALID);
+                }
+            };
+            let design = parse_program_raw(&design_path, EXIT_INVALID);
+            let contract = contract_path.as_ref().map(|p| {
+                match serde_json::from_str::<ContractSpec>(&read(p)) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("contract parse error in '{p}': {e}");
+                        process::exit(EXIT_INVALID);
+                    }
+                }
+            });
+            let bounds = contract
+                .as_ref()
+                .map(|c| AnalysisBounds::from(&c.bounds))
+                .unwrap_or_default();
+            let report = concir::design_refinement::verify_design_refinement(
+                &req,
+                &design,
+                contract.as_ref(),
+                bounds,
+            );
+            let json = serde_json::to_string_pretty(&report).expect("serialize");
+            if let Some(p) = &out_path {
+                if let Err(e) = fs::write(p, format!("{json}\n")) {
+                    eprintln!("error writing verify-design report '{p}': {e}");
+                    process::exit(EXIT_USAGE);
+                }
+            }
+            println!("{json}");
+            match report.outcome.as_str() {
+                "pass" => {}
+                "unknown" => process::exit(EXIT_UNKNOWN),
+                "invalid" => process::exit(EXIT_INVALID),
+                "unsupported" => process::exit(EXIT_UNSUPPORTED),
                 _ => process::exit(EXIT_FAIL),
             }
         }
