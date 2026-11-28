@@ -1,0 +1,14 @@
+[package]
+name = "concir-verify"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+concir-ir.workspace = true
+concir-sem.workspace = true
+concir-codegen.workspace = true
+concir-engine.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+unipn.workspace = true
+unipn-transfer.workspace = true

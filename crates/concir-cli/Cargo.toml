@@ -1,0 +1,15 @@
+[package]
+name = "concir-cli"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+concir-ir.workspace = true
+concir-sem.workspace = true
+concir-codegen.workspace = true
+concir-engine.workspace = true
+concir-verify.workspace = true
+concir-repair.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+unipn-transfer.workspace = true

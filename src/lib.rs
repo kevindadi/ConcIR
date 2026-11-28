@@ -1,26 +1,41 @@
-pub mod ast;
-pub mod codegen;
-pub mod conform;
-pub mod design_refinement;
-pub mod diagnostic;
-pub mod env;
-pub mod explore;
-pub mod export;
-pub mod expr;
-pub mod fqn;
-pub mod hash;
-pub mod instrument;
-pub mod interp;
-pub mod monitor;
-pub mod petri;
-pub mod refinement;
-pub mod req_ir;
-pub mod unipn_engine;
-pub mod repair;
-pub mod schema;
-pub mod scir;
-pub mod src_mutate;
-pub mod sem;
-pub mod summarize;
-pub mod typedef;
-pub mod validate;
+//! Thin backward-compatible facade re-exporting the 7 `concir-*` workspace crates.
+
+pub use concir_ir::{
+    ast, diagnostic, env, export, expr, fqn, hash, schema, scir, summarize, typedef, validate,
+};
+pub use concir_sem as sem;
+pub use concir_codegen as codegen;
+pub use concir_engine::{graph, hln as unipn_engine, interp};
+
+pub mod petri {
+    pub use concir_engine::hln::{
+        build, hln_to_val, val_to_hln, ControlToken, HlnNet as PetriNet, HlnState as NetState,
+        LockHoldMode, LoweredHlnNet, PlaceKey, RwState, UnipnEngine as PetriEngine, WaitTag,
+    };
+
+    pub mod exec {
+        pub use concir_engine::hln::UnipnEngine as PetriEngine;
+    }
+
+    pub mod net {
+        pub use concir_engine::hln::{
+            build, ControlToken, HlnNet as PetriNet, HlnState as NetState, LockHoldMode,
+            LoweredHlnNet, PlaceKey, RwState, WaitTag,
+        };
+    }
+}
+
+pub use concir_verify::conform;
+pub use concir_verify::model_check as explore;
+pub use concir_verify::refinement;
+
+pub mod design_refinement {
+    pub use concir_verify::refinement::design::*;
+}
+
+pub mod req_ir {
+    pub use concir_ir::req_ir::*;
+    pub use concir_verify::req_check::*;
+}
+
+pub use concir_repair as repair;

@@ -1,19 +1,51 @@
-[package]
-name = "concir"
+[workspace]
+members = [
+    "crates/concir-ir",
+    "crates/concir-sem",
+    "crates/concir-codegen",
+    "crates/concir-engine",
+    "crates/concir-verify",
+    "crates/concir-repair",
+    "crates/concir-cli",
+]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+[workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-syn = { version = "2", features = ["full", "visit"] }
-proc-macro2 = { version = "1", features = ["span-locations"] }
-unipn = { git = "https://github.com/kevindadi/UniPN", rev = "de05ca14c2df795a0c1937e88ed94cb5b89f89de", default-features = false }
-unipn-transfer = { git = "https://github.com/kevindadi/UniPN", rev = "de05ca14c2df795a0c1937e88ed94cb5b89f89de" }
+unipn = { git = "https://github.com/kevindadi/UniPN", rev = "41f72fab646c009385162ea024102cac8d5c5b9e", default-features = false }
+unipn-transfer = { git = "https://github.com/kevindadi/UniPN", rev = "41f72fab646c009385162ea024102cac8d5c5b9e" }
+concir-ir = { path = "crates/concir-ir" }
+concir-sem = { path = "crates/concir-sem" }
+concir-codegen = { path = "crates/concir-codegen" }
+concir-engine = { path = "crates/concir-engine" }
+concir-verify = { path = "crates/concir-verify" }
+concir-repair = { path = "crates/concir-repair" }
+concir-cli = { path = "crates/concir-cli" }
 
-[[bin]]
-name = "concir-instrument"
-path = "src/bin/instrument.rs"
+[package]
+name = "concir"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+concir-ir.workspace = true
+concir-sem.workspace = true
+concir-codegen.workspace = true
+concir-engine.workspace = true
+concir-verify.workspace = true
+concir-repair.workspace = true
+concir-cli.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 insta = "1"
+
+[[bin]]
+name = "concir-backend"
+path = "src/bin/concir-backend.rs"

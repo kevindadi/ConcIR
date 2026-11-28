@@ -1,0 +1,9 @@
+[package]
+name = "concir-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+concir-ir.workspace = true
+concir-sem.workspace = true
+unipn.workspace = true

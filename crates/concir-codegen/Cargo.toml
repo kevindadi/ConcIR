@@ -1,0 +1,10 @@
+[package]
+name = "concir-codegen"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+concir-ir.workspace = true
+concir-sem.workspace = true
+serde.workspace = true
+serde_json.workspace = true
